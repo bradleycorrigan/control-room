@@ -60,6 +60,11 @@ export interface SessionRecord {
   // refuses when removeWorktree && worktreePath === project.repoPath, but
   // this is what the UI checks to hide that option rather than let it fail).
   investigation?: boolean
+  // True when `branch` was already checked out somewhere (git allows a branch
+  // in one place only), so this session got a worktree at that branch's
+  // commit on no branch. `branch` says where it started. Ship pushes the
+  // branch the worktree is on now, so it never pushes that one.
+  detached?: boolean
   workspaceFile: string | null
   tmuxSessionName: string // "wt"
   tmuxWindowName: string // dirName with ":" and "." -> "-"

@@ -36,8 +36,13 @@ export default function SessionCard({
   const anchor = useRef<HTMLDivElement>(null)
   const title = session.record?.title ?? session.agentName ?? session.cwd
   // An investigate session runs in the repo itself; its recorded branch is
-  // whatever the repo had checked out, or "(unknown)". Say what it is.
-  const branch = session.record?.investigation ? 'no worktree' : session.record?.branch
+  // whatever the repo had checked out, or "(unknown)". Say what it is. A
+  // detached one started from a branch but isn't on it.
+  const branch = session.record?.investigation
+    ? 'no worktree'
+    : session.record?.detached
+      ? `from ${session.record.branch}`
+      : session.record?.branch
 
   return (
     <div className="cr-session-card-wrap" data-session-key={session.key}>

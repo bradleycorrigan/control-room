@@ -20,6 +20,7 @@ import {
   addWorktreeNewBranchResult,
   addWorktreeExistingLocalBranchResult,
   addWorktreeExistingRemoteBranchResult,
+  addWorktreeDetachedResult,
   getDefaultBranch,
   setSparseCheckout,
   hasUncommittedChanges,
@@ -435,6 +436,8 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
   let dirName: string
   let winName: string
   let recordBranch: string
+  // On no branch, at an existing branch's commit (see below).
+  let detached = false
 
   // "On a branch": the branch the project's own checkout already has runs
   // right there — git can't check it out a second time, and there's no
@@ -483,7 +486,10 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
     target = `${project.worktreeRoot}/${dirName}`
     recordBranch = branch
 
-    if (existsSync(target)) {
+    // An existing branch whose worktree is already there gets a detached
+    // worktree of its own below, rather than this error.
+    const mayBeExisting = !branchIsNew && !autoNamed
+    if (existsSync(target) && !mayBeExisting) {
       // Named in the user's own terms. This used to report the bare worktree
       // path — a filesystem location they never typed, with no hint that the
       // branch name was the thing to change, and no way to tell it apart from
@@ -528,8 +534,35 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
       log.info(branchIsNew ? `new branch ${branch}` : `checking out existing ${branch}`)
     }
 
+    if (branchIsNew && existsSync(target)) {
+      const error = `A worktree for '${branch}' already exists. Pick a different branch name, or resume that session from History.`
+      emitProgress(creationId, 'worktree', false, error)
+      return { ok: false, error }
+    }
+
+    // A branch already checked out elsewhere (main, in another session's
+    // worktree, is the usual one): git won't check it out twice, so this
+    // session gets its own worktree at that branch's commit, on no branch.
+    // Any number of sessions can start from main this way without sharing
+    // files. The agent makes a branch when it has something to commit.
+    if (!branchIsNew) {
+      const busyAt = existsSync(target)
+        ? target
+        : await isBranchCheckedOutElsewhere(project.repoPath, branch)
+      if (busyAt) {
+        detached = true
+        dirName = `${dirName}-${randomUUID().slice(0, 6)}`
+        winName = dirName.replace(/[:.]/g, '-')
+        target = `${project.worktreeRoot}/${dirName}`
+        log.info(`${branch} is checked out at ${busyAt}: starting a detached worktree`)
+      }
+    }
+
     let worktreeResult: GitOpResult = { ok: false }
-    if (branchIsNew) {
+    if (detached) {
+      const ref = (await localBranchExists(project.repoPath, branch)) ? branch : `origin/${branch}`
+      worktreeResult = await addWorktreeDetachedResult(project.repoPath, target, ref)
+    } else if (branchIsNew) {
       // Plan 4 §7.2 worktreeBaseBranch — falls back to the remote's actual
       // default branch, never a hardcoded "main".
       const baseBranch =
@@ -731,6 +764,7 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
     dirName,
     worktreePath: target,
     investigation: Boolean(investigate),
+    ...(detached ? { detached: true } : {}),
     workspaceFile,
     tmuxSessionName: project.tmuxSession,
     tmuxWindowName: winName,

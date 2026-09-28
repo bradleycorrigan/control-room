@@ -54,6 +54,7 @@ import { getShipInfo } from '../api-sessions'
 // investigate-mode session, which has no worktree to diff.
 import { useDismissible } from '../keyboard'
 import { CreateTicket } from './backlog/CreateTicket'
+import { Picker, type PickerOption } from './backlog/Picker'
 
 interface Props {
   session: LiveSession
@@ -124,6 +125,9 @@ function terminalStatusOf(session: LiveSession): TerminalStatus {
  * The Jira ticket a session works on: the one you linked it to (kept locally),
  * else a key from one of your Jira projects in its title or branch.
  */
+/** The Create or link menu's first option: make a new ticket rather than link one. */
+const CREATE_TICKET = '__create__'
+
 function useTicketKey(
   session: LiveSession,
   refresh: number
@@ -484,8 +488,18 @@ export default function SessionDetail({
   const title = session.record?.title ?? session.agentName ?? session.cwd
   const [ticketRefresh, setTicketRefresh] = useState(0)
   const { key: ticketKey, jiraReady, jiraProjects } = useTicketKey(session, ticketRefresh)
-  // Create ticket: the board (epics, priorities, cycle) for the form, once asked.
+  // Create or link ticket: the board (tickets to link; epics, priorities and
+  // cycle for the form), loaded once asked.
   const [ticketBoard, setTicketBoard] = useState<JiraBoardData | 'loading' | null>(null)
+  const [ticketMenu, setTicketMenu] = useState<HTMLElement | null>(null)
+  const [creatingTicket, setCreatingTicket] = useState(false)
+  const linkTicket = (key: string): void => {
+    if (!session.record) return
+    void linkSessionToTicket(session.record.id, key).then(() => {
+      setTicketRefresh((n) => n + 1)
+      pushToast?.(`Linked ${key} to this session`)
+    })
+  }
   const branch = session.record?.branch ?? null
 
   const handleStopSession = (): void => {
@@ -506,29 +520,64 @@ export default function SessionDetail({
       style={{ '--session-accent': accent } as React.CSSProperties}
     >
       {confirmNode}
-      {ticketBoard && ticketBoard !== 'loading' && session.record && jiraProjects.length > 0 && (
-        <CreateTicket
-          projects={jiraProjects}
-          board={ticketBoard}
-          defaultInCycle
-          initialSummary={title}
-          initialDescription={[
-            session.record.lastPrompt ?? '',
-            session.record.branch && !session.record.investigation
-              ? `Branch: {{${session.record.branch}}}`
-              : ''
-          ]
-            .filter(Boolean)
-            .join('\n\n')}
-          onCreated={(issue) => {
-            void linkSessionToTicket(session.record!.id, issue.key).then(() =>
-              setTicketRefresh((n) => n + 1)
-            )
-            pushToast?.(`Created ${issue.key} and linked it to this session`)
-          }}
-          onClose={() => setTicketBoard(null)}
+      {ticketMenu && ticketBoard && ticketBoard !== 'loading' && (
+        <Picker
+          anchor={ticketMenu}
+          title="Create or link a ticket"
+          options={[
+            ...(jiraProjects.length > 0
+              ? [
+                  {
+                    value: CREATE_TICKET,
+                    label: 'Create a new ticket',
+                    icon: <Icon name="Plus" size={12} />
+                  }
+                ]
+              : []),
+            ...ticketBoard.issues
+              .filter((i) => !i.isEpic && i.statusCategory !== 'done')
+              .map((i): PickerOption => ({
+                value: i.key,
+                label: `${i.key} ${i.summary}`
+              }))
+          ]}
+          emptyText="No tickets match. Type a key, like DSD-123"
+          custom={(text) =>
+            /^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(text) ? `Link ${text.toUpperCase()}` : null
+          }
+          onPick={(value) =>
+            value === CREATE_TICKET ? setCreatingTicket(true) : linkTicket(value.toUpperCase())
+          }
+          onClose={() => setTicketMenu(null)}
         />
       )}
+      {creatingTicket &&
+        ticketBoard &&
+        ticketBoard !== 'loading' &&
+        session.record &&
+        jiraProjects.length > 0 && (
+          <CreateTicket
+            projects={jiraProjects}
+            board={ticketBoard}
+            defaultInCycle
+            initialSummary={title}
+            initialDescription={[
+              session.record.lastPrompt ?? '',
+              session.record.branch && !session.record.investigation
+                ? `Branch: {{${session.record.branch}}}`
+                : ''
+            ]
+              .filter(Boolean)
+              .join('\n\n')}
+            onCreated={(issue) => {
+              void linkSessionToTicket(session.record!.id, issue.key).then(() =>
+                setTicketRefresh((n) => n + 1)
+              )
+              pushToast?.(`Created ${issue.key} and linked it to this session`)
+            }}
+            onClose={() => setCreatingTicket(false)}
+          />
+        )}
       {maximized && (
         <div className="session-detail-maximize-backdrop" onClick={() => setMaximized(false)} />
       )}
@@ -603,13 +652,17 @@ export default function SessionDetail({
               <button
                 type="button"
                 className="session-detail-ticket session-detail-ticket--create"
-                title="Make a Jira ticket from this session, and link them"
+                title="Make a Jira ticket from this session, or link one you already have"
                 disabled={ticketBoard === 'loading'}
-                onClick={() => {
+                onClick={(e) => {
+                  const anchor = e.currentTarget
+                  if (ticketBoard && ticketBoard !== 'loading') return setTicketMenu(anchor)
                   setTicketBoard('loading')
                   void loadJiraBoard().then((r) => {
-                    if (r.ok) setTicketBoard(r.value)
-                    else {
+                    if (r.ok) {
+                      setTicketBoard(r.value)
+                      setTicketMenu(anchor)
+                    } else {
                       setTicketBoard(null)
                       pushToast?.(`Jira: ${r.error}`)
                     }
@@ -617,7 +670,7 @@ export default function SessionDetail({
                 }}
               >
                 <Icon name="Plus" size={12} />
-                {ticketBoard === 'loading' ? 'Opening…' : 'Create ticket'}
+                {ticketBoard === 'loading' ? 'Opening…' : 'Create or link ticket'}
               </button>
             )}
           </div>

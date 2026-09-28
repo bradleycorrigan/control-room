@@ -203,6 +203,23 @@ export async function addWorktreeNewBranch(
   return (await addWorktreeNewBranchResult(repoPath, dir, branch, baseBranch)).ok
 }
 
+/**
+ * A worktree at `ref`'s commit, on no branch. Git checks a branch out only
+ * once, but any number of detached worktrees can sit on the same commit, so
+ * several sessions can all start from main.
+ */
+export async function addWorktreeDetachedResult(
+  repoPath: string,
+  dir: string,
+  ref: string
+): Promise<GitOpResult> {
+  const res = await run('git', ['-C', repoPath, 'worktree', 'add', '--detach', dir, ref], {
+    timeoutMs: 30_000
+  })
+  if (res.code === 0) return { ok: true }
+  return { ok: false, error: res.stderr.trim() || `git worktree add exited ${res.code}` }
+}
+
 export async function addWorktreeExistingLocalBranchResult(
   repoPath: string,
   dir: string,

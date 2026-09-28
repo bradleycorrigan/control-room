@@ -1324,6 +1324,13 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   {
     await until(() => Boolean($('.session-detail-ticket--create')), 4000)
     await click($('.session-detail-ticket--create'))
+    await until(() => Boolean($('.backlog-picker')), 6000)
+    await check(
+      'the ticket button offers to create a ticket or link one',
+      /Create a new ticket/.test($('.backlog-picker')?.textContent ?? '') &&
+        /DSD-103/.test($('.backlog-picker')?.textContent ?? '')
+    )
+    await key('Enter')
     await until(() => Boolean($('.cr-modal .backlog-create')), 6000)
     const summary = $<HTMLInputElement>('.cr-modal input[aria-label="Summary"]')?.value ?? ''
     const headerTitle = $('.session-detail-breadcrumb-title')?.textContent ?? ''
@@ -1364,6 +1371,70 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     'fixture-rec-stopped',
     'fixture-rec-resumable'
   ]
+  // Several sessions from a branch that's already checked out: each gets a
+  // detached worktree of its own, and Ship won't push the branch they started from.
+  {
+    type Created = {
+      ok: boolean
+      error?: string
+      record?: { id: string; worktreePath: string; detached?: boolean; branch: string }
+    }
+    const start = (): Promise<Created> =>
+      api.invoke<Created>('sessions:create', {
+        creationId: crypto.randomUUID(),
+        projectId: 'fixture-project',
+        branch: 'fixture/working',
+        basedOn: 'existing',
+        title: 'detached check'
+      })
+    const a = await start()
+    const b = await start()
+    await check(
+      'two sessions can start from a branch that is already checked out',
+      Boolean(
+        a.ok &&
+        b.ok &&
+        a.record?.detached &&
+        b.record?.detached &&
+        a.record.worktreePath !== b.record.worktreePath
+      ),
+      `${a.error ?? a.record?.worktreePath ?? ''} / ${b.error ?? b.record?.worktreePath ?? ''}`
+    )
+    if (a.record) {
+      const shipped = await api.invoke<{ ok: boolean; error?: string }>(
+        'sessions:ship',
+        a.record.id,
+        'title',
+        'body',
+        false
+      )
+      await check(
+        "Ship refuses a detached session until it's on a branch of its own",
+        !shipped.ok && /isn't on a branch of its own/.test(shipped.error ?? ''),
+        shipped.error ?? 'shipped'
+      )
+    }
+    for (const r of [a.record, b.record]) {
+      if (r)
+        await api.invoke('sessions:delete', r.id, { removeWorktree: true, discardChanges: true })
+    }
+  }
+
+  // Link an existing ticket from the same button.
+  for (const id of fixtureRecords) await api.invoke('jira:link', id, null)
+  await ctx.goTo('home')
+  await ctx.openFirstSession()
+  await until(() => Boolean($('.session-detail-ticket--create')), 4000)
+  await click($('.session-detail-ticket--create'))
+  await until(() => Boolean($('.backlog-picker')), 6000)
+  setText($<HTMLInputElement>('.backlog-picker-input'), 'DSD-103')
+  await wait(200)
+  await key('Enter')
+  await check(
+    'an existing ticket can be linked to a session',
+    await until(() => $('.session-detail-ticket')?.textContent === 'DSD-103', 4000),
+    $('.session-detail-ticket')?.textContent ?? 'no pill'
+  )
   for (const id of fixtureRecords) await api.invoke('jira:link', id, 'DSD-101')
   await ctx.goTo('home')
   await ctx.openFirstSession()
