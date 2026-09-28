@@ -462,14 +462,20 @@ const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(
     let attached = false
 
     ;(async () => {
-      const result = await terminalAttach(tmuxSessionName, paneId, BACKFILL_LINES)
+      const result = await terminalAttach(tmuxSessionName, paneId, BACKFILL_LINES, {
+        cols: term.cols,
+        rows: term.rows
+      })
       if (disposed) return
       if (!result.ok || result.fallback) {
         onFallback(result.reason ?? 'tmux control mode is unavailable')
         return
       }
       attached = true
-      if (result.backfill) term.write(result.backfill)
+      // capture-pane ends each line with a bare \n, which xterm reads as
+      // "down one row" without going back to the left edge, so every line
+      // started where the last one ended: text staircased across the screen.
+      if (result.backfill) term.write(result.backfill.replace(/\r?\n/g, '\r\n'))
       sendResize()
       onAtBottomChange?.(true)
       unsubscribeOutput = onTerminalOutput((payload) => {

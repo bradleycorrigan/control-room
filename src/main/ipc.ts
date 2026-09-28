@@ -1092,10 +1092,21 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle(
     'terminal:attach',
-    async (_evt, tmuxSessionName: string, paneId: string, scrollbackLines?: number) => {
+    async (
+      _evt,
+      tmuxSessionName: string,
+      paneId: string,
+      scrollbackLines?: number,
+      size?: { cols: number; rows: number }
+    ) => {
       const backfill = await capturePane(paneId, scrollbackLines ?? 2000)
       trackAttach(tmuxSessionName, paneId)
-      const result = await startPty(tmuxSessionName, 80, 24, paneId)
+      // Attach at the size the terminal already is. Starting at 80x24 and
+      // resizing a moment later made tmux squeeze the window to 80 columns
+      // and back on every tab switch, and the agent redrew at both widths.
+      const cols = Number.isInteger(size?.cols) && size!.cols > 1 ? size!.cols : 80
+      const rows = Number.isInteger(size?.rows) && size!.rows > 1 ? size!.rows : 24
+      const result = await startPty(tmuxSessionName, cols, rows, paneId)
       // Liveness (%window-add/%window-close/%exit) is best-effort — never
       // let a control-mode hiccup fall the real PTY attach back to polling.
       void attachControlSession(tmuxSessionName).then((r) => {

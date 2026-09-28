@@ -635,13 +635,15 @@ export interface TerminalAttachResult {
 export function terminalAttach(
   tmuxSessionName: string,
   paneId: string,
-  scrollbackLines?: number
+  scrollbackLines?: number,
+  size?: { cols: number; rows: number }
 ): Promise<TerminalAttachResult> {
   return window.api.invoke<TerminalAttachResult>(
     'terminal:attach',
     tmuxSessionName,
     paneId,
-    scrollbackLines
+    scrollbackLines,
+    size
   )
 }
 
