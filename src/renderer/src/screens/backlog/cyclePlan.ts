@@ -45,37 +45,3 @@ export function workingDays(startDate?: string | null, endDate?: string | null):
   }
   return days || 10
 }
-
-/**
- * The carry-over banner shows once a cycle is within a day of ending (or has
- * already ended) and still has unfinished tickets. `now` is a parameter
- * rather than `new Date()` inline so this is testable with fabricated dates
- * without touching the fixture's real cycle dates.
- */
-export function shouldShowCarryOver(
-  sprint: { state: string; endDate?: string | null } | null,
-  unfinishedCount: number,
-  now: Date = new Date()
-): boolean {
-  if (!sprint || sprint.state !== 'active' || !sprint.endDate || unfinishedCount === 0) {
-    return false
-  }
-  const end = new Date(sprint.endDate).getTime()
-  if (Number.isNaN(end)) return false
-  const oneDayMs = 24 * 60 * 60 * 1000
-  return end - now.getTime() <= oneDayMs
-}
-
-/** "ends tomorrow" vs "ended" — the banner's own wording for when. */
-export function carryOverTiming(
-  endDate: string,
-  now: Date = new Date()
-): 'ended' | 'ends today' | 'ends tomorrow' {
-  const end = new Date(endDate)
-  // Past the exact end time already: "ended", even if that was earlier today.
-  if (now.getTime() > end.getTime()) return 'ended'
-  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate())
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const diffDays = Math.round((endDay.getTime() - today.getTime()) / (24 * 60 * 60 * 1000))
-  return diffDays <= 0 ? 'ends today' : 'ends tomorrow'
-}

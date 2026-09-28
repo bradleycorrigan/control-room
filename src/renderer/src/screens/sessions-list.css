@@ -543,7 +543,8 @@
      — one design language for "a session" — laid out as a row instead of a
      tile. The status rail went: the chip already carries status in colour
      and words, as it does on the cards. */
-  padding: var(--space-16) var(--space-16) var(--space-16) var(--space-24);
+  /* 36px on the left: room for the pick check (.sessions-row-pick). */
+  padding: var(--space-16) var(--space-16) var(--space-16) calc(var(--space-24) + var(--space-12));
   border-radius: var(--radius-lg);
   background: var(--surface);
 }
@@ -893,4 +894,29 @@
 
 .sessions-project-chevron--open {
   transform: rotate(90deg);
+}
+
+/* Bulk pick: the shared check (components/selection) sits in the row's left
+   padding. It shows on hover or keyboard focus, and on every row once
+   anything is picked. */
+.sessions-row-pick {
+  position: absolute;
+  /* Centred on the row's full height, in a left gutter the row's padding
+     keeps free (see .sessions-row): 12px in, 8px clear of the title. */
+  top: 50%;
+  left: var(--space-12);
+  transform: translateY(-50%);
+  opacity: 0;
+}
+
+.sessions-row:hover .sessions-row-pick,
+.sessions-row:focus-visible .sessions-row-pick,
+.sessions-row-pick:focus-visible,
+.sessions-row--picking .sessions-row-pick {
+  opacity: 1;
+}
+
+.sessions-row--picked,
+.sessions-row--picked.sessions-row-clickable:hover {
+  background: var(--accent-soft);
 }

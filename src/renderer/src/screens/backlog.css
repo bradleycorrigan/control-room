@@ -1227,6 +1227,30 @@
 
 /* ---- Selection ---- */
 
+/* The shared pick check (components/selection): on hover or keyboard focus,
+   and on every ticket once anything is picked. */
+.backlog-row-pick,
+.backlog-card-pick {
+  opacity: 0;
+}
+
+.backlog-row:hover .backlog-row-pick,
+.backlog-row:focus-visible .backlog-row-pick,
+.backlog-row-pick:focus-visible,
+.backlog-row--picking .backlog-row-pick,
+.backlog-card:hover .backlog-card-pick,
+.backlog-card:focus-visible .backlog-card-pick,
+.backlog-card-pick:focus-visible,
+.backlog-card-pick--shown {
+  opacity: 1;
+}
+
+.backlog-card-pick {
+  position: absolute;
+  top: var(--space-8);
+  right: var(--space-8);
+}
+
 .backlog-row--picked,
 .backlog-row--picked:hover {
   background: var(--accent-soft);
@@ -1235,62 +1259,6 @@
 .backlog-card--picked {
   box-shadow: 0 0 0 2px var(--accent);
   background: var(--accent-soft);
-}
-
-.backlog-row-check {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  box-shadow: inset 0 0 0 1.5px var(--text-muted);
-}
-
-.backlog-row-check--on {
-  background: var(--accent);
-  box-shadow: none;
-  color: var(--bg);
-}
-
-.backlog-bulk {
-  position: fixed;
-  left: 50%;
-  bottom: var(--space-24);
-  z-index: var(--layer-overlay-content);
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-16);
-  border-radius: var(--radius-xl);
-  background: var(--surface-raised);
-  box-shadow:
-    0 0 0 1px var(--border),
-    var(--shadow-popover);
-}
-
-.backlog-bulk-count {
-  margin-right: var(--space-8);
-  font-size: var(--text-label-size);
-  font-weight: var(--text-label-weight);
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-.backlog-bulk kbd {
-  margin-left: var(--space-4);
-}
-
-/* Nothing in the bar squashes: when it runs out of width it scrolls. */
-.backlog-bulk {
-  overflow-x: auto;
-}
-
-.backlog-bulk > * {
-  flex-shrink: 0;
-  white-space: nowrap;
 }
 
 /* ---- Columns editor ---- */
@@ -2031,38 +1999,6 @@
   background: var(--bg);
 }
 
-/* Bulk bar: readable, and over the list rather than under the panel. */
-.backlog-bulk {
-  max-width: calc(100vw - 48px);
-  background: var(--surface-raised);
-  box-shadow:
-    0 0 0 1px var(--border-strong),
-    var(--shadow-popover);
-}
-
-.backlog--peek .backlog-bulk {
-  left: calc((100vw - var(--backlog-panel-width)) / 2);
-  max-width: calc(100vw - var(--backlog-panel-width) - 48px);
-}
-
-.backlog-bulk .cr-button {
-  color: var(--text);
-  gap: var(--space-8);
-}
-
-.backlog-bulk .cr-button:hover {
-  background: var(--surface);
-}
-
-.backlog-bulk kbd {
-  color: var(--text-muted);
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-}
-
-.backlog-bulk-count {
-  color: var(--accent);
-}
-
 /* Long lists scroll inside the picker, under its search box, and the picker
    never runs off the window whatever loads into it after it opens. */
 .backlog-picker {
@@ -2389,7 +2325,6 @@
    key hints to make room. */
 .backlog--peek .backlog-bulk {
   max-width: calc(100vw - var(--backlog-sidebar-width) - var(--backlog-panel-width) - 32px);
-  overflow-x: auto;
 }
 
 .backlog--peek .backlog-bulk kbd {
@@ -2535,47 +2470,6 @@
 .backlog-sidebar-item-wrap--plannable:hover .backlog-sidebar-item-plan,
 .backlog-sidebar-item-wrap--plannable:focus-within .backlog-sidebar-item-plan {
   opacity: 1;
-}
-
-/* ---- Carry-over banner ---- */
-
-.backlog-carryover {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  margin: var(--space-16) var(--space-24) 0;
-  padding: var(--space-8) var(--space-8) var(--space-8) var(--space-12);
-  border-radius: var(--radius-md);
-  background: var(--surface-raised);
-  box-shadow: inset 0 0 0 1px var(--border);
-  color: var(--text-muted);
-  font-size: var(--text-label-size);
-}
-
-.backlog-carryover > svg {
-  flex: none;
-  color: var(--status-attention);
-}
-
-.backlog-carryover > span {
-  flex: 1;
-  min-width: 0;
-}
-
-.backlog-carryover-action {
-  flex: none;
-  border: none;
-  background: transparent;
-  padding: var(--space-4) var(--space-8);
-  border-radius: var(--radius-sm);
-  color: var(--accent);
-  font-size: var(--text-label-size);
-  font-weight: var(--text-label-weight);
-  cursor: pointer;
-}
-
-.backlog-carryover-action:hover {
-  background: var(--accent-soft);
 }
 
 /* ---- Cycle planning modal ---- */

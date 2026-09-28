@@ -66,6 +66,24 @@ function toJoined(pane: TmuxPane): JoinedTmux {
  * and twenty-four windows meant well over three hundred — per poll, every two
  * seconds. It was the whole cost of discovery, 5.5s of a 5.6s pass.
  */
+/**
+ * Every ancestor of `pid`, from the same `ps` snapshot. Empty when `pid`
+ * isn't in it, so the caller can tell "not in tmux" from "don't know".
+ */
+function ancestorsOf(pid: number, childPidsByParent: Map<number, number[]>): Set<number> {
+  const parentOf = new Map<number, number>()
+  for (const [parent, children] of childPidsByParent) {
+    for (const child of children) parentOf.set(child, parent)
+  }
+  const ancestors = new Set<number>()
+  let current = parentOf.get(pid)
+  while (current !== undefined && current > 0 && !ancestors.has(current)) {
+    ancestors.add(current)
+    current = parentOf.get(current)
+  }
+  return ancestors
+}
+
 async function readChildPids(): Promise<Map<number, number[]>> {
   const byParent = new Map<number, number[]>()
   const ps = await run('ps', ['-eo', 'pid=,ppid='])
@@ -153,9 +171,17 @@ async function findPaneForSession(
   const scopedPanes = panes.filter((p) => scope.has(p.sessionName))
 
   if (typeof session.pid === 'number') {
+    // Up the whole parent chain, not just one step: a wrapper script or a
+    // login shell puts claude a generation or two below the pane's shell.
+    const ancestors = ancestorsOf(session.pid, childPidsByParent)
     for (const pane of scopedPanes) {
-      if (childPidsByParent.get(pane.panePid)?.includes(session.pid)) return toJoined(pane)
+      if (ancestors.has(pane.panePid)) return toJoined(pane)
     }
+    // Its ancestry is known and no tmux pane is in it, in any session: it
+    // runs in a plain terminal (Ghostty, Terminal). Guessing by folder here
+    // joined a Ghostty `claude` in the home folder to a brand-new General
+    // session's pane, and the record kept the wrong session id for good.
+    if (ancestors.size > 0 && !panes.some((p) => ancestors.has(p.panePid))) return null
   }
 
   if (session.cwd) {

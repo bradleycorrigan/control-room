@@ -2221,3 +2221,13 @@
   border-radius: 2px;
   background: var(--accent);
 }
+
+/* The sessions a bulk delete will end, listed so nothing is a surprise. */
+.delete-dialog-list {
+  max-height: 160px;
+  margin: 0;
+  padding-left: var(--space-16);
+  overflow-y: auto;
+  color: var(--text);
+  font-size: var(--text-body-size);
+}

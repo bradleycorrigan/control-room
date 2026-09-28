@@ -3,12 +3,7 @@
 // on, one PASS/FAIL line per behaviour. Uses the fixture sessions and the
 // CR_JIRA_FIXTURE sample issues. Only ever registered as a shot screen.
 
-import {
-  carryOverTiming,
-  parseEstimateHours,
-  shouldShowCarryOver,
-  workingDays
-} from '../screens/backlog/cyclePlan'
+import { parseEstimateHours, workingDays } from '../screens/backlog/cyclePlan'
 
 type Api = { invoke: <T>(channel: string, ...args: unknown[]) => Promise<T> }
 const api = (window as unknown as { api: Api }).api
@@ -25,7 +20,9 @@ async function click(el: Element | null | undefined, modifiers: Modifier[] = [])
   el.scrollIntoView({ block: 'center', inline: 'center' })
   await wait(100)
   const r = el.getBoundingClientRect()
-  const x = Math.round(r.left + Math.min(r.width / 2, 40))
+  // Past the leading controls a wide row starts with (the pick check, then
+  // priority), onto its key and title; the middle of anything narrower.
+  const x = Math.round(r.left + Math.min(r.width / 2, 120))
   const y = Math.round(r.top + r.height / 2)
   await input({ type: 'mouseMove', x, y, modifiers })
   await input({ type: 'mouseDown', x, y, button: 'left', clickCount: 1, modifiers })
@@ -849,11 +846,20 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     `${assignedBefore} → ${assignedAfter}`
   )
 
-  // Several at once: ⌘-click picks, the bar changes them all.
-  await click(row('TEAMDATA-202'), ['meta'])
-  await click(row('DSD-101'), ['meta'])
+  // Several at once: the hover check picks (as on Sessions), the bar changes
+  // them all. ⌘-click opens a ticket instead, as it does on Sessions.
+  const pick = (k: string): Promise<boolean> => click(row(k)?.querySelector('.backlog-row-pick'))
+  await click(row('DSD-103'), ['meta'])
   await check(
-    '⌘-click picks tickets, and a bar offers to change them together',
+    '⌘-click opens a ticket rather than picking it',
+    ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('DSD-103') &&
+      !$('.backlog-bulk')
+  )
+  await key('Escape')
+  await pick('TEAMDATA-202')
+  await pick('DSD-101')
+  await check(
+    'the check picks tickets, and a bar offers to change them together',
     /2 selected/.test($('.backlog-bulk')?.textContent ?? '')
   )
   await check(
@@ -889,7 +895,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   await key('Escape')
   await click(row('DSD-103'))
   await until(() => Boolean($('.backlog-drawer')))
-  await click(row('TEAMDATA-201'), ['meta'])
+  await pick('TEAMDATA-201')
   {
     const bar = $('.backlog-bulk')?.getBoundingClientRect()
     const panel = $('.backlog-drawer')?.getBoundingClientRect()
@@ -1413,7 +1419,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   // the Cycle picker (more than one cycle exists) should both show, not
   // just one or the other.
   await click(row('DSD-101'))
-  await click(row('TEAMDATA-202'), ['meta'])
+  await click(row('TEAMDATA-202')?.querySelector('.backlog-row-pick'))
   {
     const bar = $('.backlog-bulk')?.textContent ?? 'no bar'
     const moveBtn = byText('.backlog-bulk button', 'Move to')
@@ -1649,35 +1655,6 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       workingDays(undefined, undefined) === 10,
     `${workingDays('2026-09-14T00:00:00.000Z', '2026-09-18T00:00:00.000Z')}, ${workingDays(undefined, undefined)}`
   )
-  {
-    const now = new Date('2026-09-25T12:00:00.000Z')
-    const endingSoon = { state: 'active', endDate: '2026-09-26T09:00:00.000Z' }
-    const endingLater = { state: 'active', endDate: '2026-09-30T09:00:00.000Z' }
-    await check(
-      'shouldShowCarryOver is true within a day of the end, with unfinished tickets',
-      shouldShowCarryOver(endingSoon, 4, now) === true &&
-        shouldShowCarryOver(endingLater, 4, now) === false &&
-        shouldShowCarryOver(endingSoon, 0, now) === false,
-      `soon=${shouldShowCarryOver(endingSoon, 4, now)} later=${shouldShowCarryOver(endingLater, 4, now)} none-unfinished=${shouldShowCarryOver(endingSoon, 0, now)}`
-    )
-    await check(
-      'carryOverTiming says "ends tomorrow" the day before, "ended" once past',
-      carryOverTiming('2026-09-26T09:00:00.000Z', now) === 'ends tomorrow' &&
-        carryOverTiming('2026-09-20T09:00:00.000Z', now) === 'ended',
-      `${carryOverTiming('2026-09-26T09:00:00.000Z', now)}, ${carryOverTiming('2026-09-20T09:00:00.000Z', now)}`
-    )
-    // Same calendar day: "ends today" while still running, "ended" the
-    // moment the exact end time has passed, even though it's still today.
-    await check(
-      'carryOverTiming says "ends today" while running, "ended" once the exact time passes today',
-      carryOverTiming('2026-09-25T18:00:00.000Z', now) === 'ends today' &&
-        carryOverTiming('2026-09-25T09:00:00.000Z', now) === 'ended',
-      `${carryOverTiming('2026-09-25T18:00:00.000Z', now)}, ${carryOverTiming('2026-09-25T09:00:00.000Z', now)}`
-    )
-  }
-  // The fixture's honey-buzzard ends 2026-09-29, more than a day out from
-  // "today" in the fixture — so the banner itself never shows against real
-  // data, and isn't asserted on here. The pure checks above cover its rule.
 
   // Cycle planning view: opened from the sidebar's hover action, drag a
   // ticket in, capacity updates.
@@ -1801,6 +1778,52 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     const row = byText('.sessions-row-title', title)?.closest<HTMLElement>('.sessions-row')
     await click(row)
     await wait(900)
+  }
+
+  // Several sessions deleted at once: tick them, then Delete in the bar.
+  {
+    type Created = { ok: boolean; error?: string; record?: { id: string; title: string } }
+    const make = (name: string): Promise<Created> =>
+      api.invoke<Created>('sessions:create', {
+        creationId: crypto.randomUUID(),
+        projectId: 'fixture-project',
+        branch: `fixture/${name}`,
+        basedOn: 'new',
+        title: name
+      })
+    // Deleting keeps the branch, so each run needs names of its own.
+    const run = Date.now().toString(36)
+    const a = await make(`bulk-delete-a-${run}`)
+    const b = await make(`bulk-delete-b-${run}`)
+    await ctx.refreshSessions()
+    await ctx.goTo('sessions')
+    await wait(900)
+    const rowFor = (id?: string): HTMLElement | null =>
+      id ? $(`.sessions-row[data-record-id="${id}"]`) : null
+    await until(() => Boolean(rowFor(a.record?.id) && rowFor(b.record?.id)), 4000)
+    const bar = (): HTMLElement | null => $('.cr-selection-bar[aria-label="Selected sessions"]')
+    await click(rowFor(a.record?.id)?.querySelector('.sessions-row-pick'))
+    rowFor(b.record?.id)?.focus()
+    await key('x')
+    await check(
+      'the check or X picks sessions, and the shared bar offers to act on them together',
+      /2 selected/.test(bar()?.textContent ?? '') &&
+        Boolean(byText('.cr-selection-bar button', 'Open in tabs')),
+      bar()?.textContent ?? `no bar (${a.error ?? ''} ${b.error ?? ''})`
+    )
+    await key('Backspace')
+    await until(() => Boolean(byText('.cr-modal button', 'Delete 2 sessions')), 3000)
+    await check(
+      'the delete dialog lists every picked session',
+      /bulk-delete-a/.test($('.cr-modal')?.textContent ?? '') &&
+        /bulk-delete-b/.test($('.cr-modal')?.textContent ?? '')
+    )
+    await click(byText('.cr-modal button', 'Delete 2 sessions'))
+    await check(
+      'both are deleted in one go',
+      await until(() => !rowFor(a.record?.id) && !rowFor(b.record?.id) && !bar(), 8000),
+      $('.cr-modal')?.textContent?.slice(0, 120) ?? 'dialog closed'
+    )
   }
 
   // Ship panel (plan 7 step 3). No CR_SHIP_FIXTURE from the gate's

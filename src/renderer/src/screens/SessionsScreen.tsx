@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
   attentionRank,
   wantsYou,
@@ -8,6 +8,9 @@ import {
 } from '../../../main/store/types'
 import { STATUS_WORDS } from '../components/primitives/Badge'
 import DeleteSessionDialog from '../components/DeleteSessionDialog'
+import DeleteSessionsDialog from '../components/DeleteSessionsDialog'
+import { useDismissible } from '../keyboard'
+import { PickCheck, SelectionAction, SelectionBar } from '../components/selection'
 import { readAction, useSessionActions } from '../components/useSessionActions'
 import {
   Button,
@@ -377,6 +380,16 @@ function OverflowMenu({
   )
 }
 
+/**
+ * Sessions picked for a bulk action, by record id. Only sessions Control
+ * Room has a record for can be picked: they're the ones a delete can act on.
+ */
+const SessionSelection = createContext<{
+  selected: Set<string>
+  /** `range`: everything on screen between the last one picked and this. */
+  toggle: (recordId: string, range?: boolean) => void
+}>({ selected: new Set(), toggle: () => {} })
+
 interface SessionListRowProps {
   session: LiveSession
   /** `background`: ⌘- or middle-click — open it in a tab without switching. */
@@ -401,6 +414,11 @@ function SessionListRow({
 }: SessionListRowProps): React.JSX.Element {
   const [confirmNode, confirm] = useConfirm()
   const title = sessionTitle(session)
+  const selection = useContext(SessionSelection)
+  const recordId = session.record?.id ?? null
+  const picked = recordId !== null && selection.selected.has(recordId)
+  // Once anything is picked, a plain click picks too, as on the Backlog.
+  const picking = selection.selected.size > 0
   const branch = session.record?.investigation
     ? 'no worktree'
     : (session.record?.branch ?? session.agentName ?? null)
@@ -569,15 +587,26 @@ function SessionListRow({
     <>
       {confirmNode}
       <div
-        className={
-          session.unread
-            ? 'sessions-row sessions-row-unread sessions-row-clickable'
-            : 'sessions-row sessions-row-clickable'
-        }
+        className={[
+          'sessions-row sessions-row-clickable',
+          session.unread ? 'sessions-row-unread' : '',
+          picked ? 'sessions-row--picked' : '',
+          picking ? 'sessions-row--picking' : ''
+        ]
+          .filter(Boolean)
+          .join(' ')}
         role="button"
         tabIndex={0}
         data-session-item
-        onClick={(e) => onOpen(e.metaKey || e.ctrlKey)}
+        data-record-id={recordId ?? undefined}
+        // As on the Backlog: ⇧-click picks the run up to this row, and once
+        // anything is picked a plain click picks too. ⌘-click still opens
+        // it in a background tab, as it always has here.
+        onClick={(e) => {
+          if (recordId && e.shiftKey) selection.toggle(recordId, true)
+          else if (picking && recordId && !e.metaKey && !e.ctrlKey) selection.toggle(recordId)
+          else onOpen(e.metaKey || e.ctrlKey)
+        }}
         onAuxClick={(e) => {
           if (e.button === 1) onOpen(true)
         }}
@@ -588,6 +617,14 @@ function SessionListRow({
           }
         }}
       >
+        {recordId && (
+          <PickCheck
+            on={picked}
+            label={`Select ${title}`}
+            className="sessions-row-pick"
+            onToggle={() => selection.toggle(recordId)}
+          />
+        )}
         {/* Line 1: the title. The status chip used to sit before it in a
             column sized for "external session", so a short chip like "done"
             left a wide hole; it now leads the second line instead. */}
@@ -1279,6 +1316,68 @@ export default function SessionsScreen({
     onAdopted()
   }
 
+  // Bulk delete: sessions picked by their row's checkbox.
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [deletingPicked, setDeletingPicked] = useState(false)
+  const lastPicked = useRef<string | null>(null)
+  const pickedSessions = sessions.filter((s) => s.record && picked.has(s.record.id))
+  const pickedRecords = pickedSessions.map((s) => s.record!)
+  const selection = useMemo(
+    () => ({
+      selected: picked,
+      toggle: (id: string, range = false) => {
+        // The rows in the order they're on screen, for a ⇧-click run.
+        const onScreen = [...document.querySelectorAll<HTMLElement>('[data-record-id]')].map(
+          (el) => el.dataset.recordId!
+        )
+        const from = lastPicked.current ? onScreen.indexOf(lastPicked.current) : -1
+        const to = onScreen.indexOf(id)
+        setPicked((cur) => {
+          const next = new Set(cur)
+          if (range && from >= 0 && to >= 0) {
+            for (const k of onScreen.slice(Math.min(from, to), Math.max(from, to) + 1)) next.add(k)
+          } else if (next.has(id)) next.delete(id)
+          else next.add(id)
+          return next
+        })
+        lastPicked.current = id
+      }
+    }),
+    [picked]
+  )
+  useDismissible(picked.size > 0 && !deletingPicked, 'overlay', () => {
+    setPicked(new Set())
+  })
+  const openPicked = (): void => {
+    for (const s of pickedSessions) onOpenSession(s.key, true)
+    setPicked(new Set())
+  }
+  // X picks the focused row; with anything picked, ⌫ deletes and O opens
+  // them all in tabs. Never while typing in a field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey || deletingPicked) return
+      const target = e.target as HTMLElement | null
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
+      if (target?.isContentEditable) return
+      const key = e.key.toLowerCase()
+      if (key === 'x') {
+        const row = target?.closest<HTMLElement>('[data-record-id]')
+        if (!row) return
+        e.preventDefault()
+        selection.toggle(row.dataset.recordId!, e.shiftKey)
+      } else if (picked.size > 0 && (e.key === 'Backspace' || e.key === 'Delete')) {
+        e.preventDefault()
+        setDeletingPicked(true)
+      } else if (picked.size > 0 && key === 'o') {
+        e.preventDefault()
+        openPicked()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
   const hasAnySessions = visibleSessions.length > 0
   const filteredToNothing = !hasAnySessions && scopedSessions.length > 0 && filtersOn
   const clearFilters = (): void => {
@@ -1290,281 +1389,318 @@ export default function SessionsScreen({
     : null
 
   return (
-    <div className="sessions-view">
-      <div className="sessions-main">
-        <div className="sessions-main-header">
-          <div className="sessions-main-heading">
-            <h1 className="sessions-main-title">Sessions</h1>
-            {attentionOnly ? (
-              <p className="sessions-main-caption">
-                {visibleSessions.length === 0
-                  ? 'Nothing is waiting on you'
-                  : `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'} need${visibleSessions.length === 1 ? 's' : ''} you`}
-                {' - '}
-                <button
-                  type="button"
-                  className="sessions-main-caption-clear"
-                  onClick={onClearAttentionFilter}
-                >
-                  show all sessions
-                </button>
-              </p>
-            ) : (
-              <p className="sessions-main-caption">
-                {filtersOn ? `${visibleSessions.length} of ` : ''}
-                {scopedSessions.length} session{scopedSessions.length === 1 ? '' : 's'}
-                {effectiveProjectId ? ' in this project' : ' across all projects'}
-              </p>
-            )}
-          </div>
-          <div className="sessions-main-controls">
-            {scopedSessions.length > 0 && (
-              <div className="sessions-sort" ref={sortAnchor}>
-                <button
-                  type="button"
-                  className="sessions-sort-button"
-                  aria-haspopup="menu"
-                  aria-expanded={sortOpen}
-                  onClick={() => setSortOpen((v) => !v)}
-                >
-                  <Icon name="ArrowUpDown" size={14} />
-                  {SORT_OPTIONS.find((o) => o.value === sortMode)?.label}
-                  <Icon name="ChevronDown" size={14} />
-                </button>
-                <Popover
-                  open={sortOpen}
-                  onClose={() => setSortOpen(false)}
-                  anchorRef={sortAnchor}
-                  placement="bottom-end"
-                  className="sessions-sort-menu"
-                  aria-label="Sort sessions"
-                >
-                  {SORT_OPTIONS.map((o) => (
-                    <button
-                      key={o.value}
-                      type="button"
-                      role="menuitemradio"
-                      aria-checked={sortMode === o.value}
-                      className="cr-popover-item sessions-sort-item"
-                      onClick={() => {
-                        setSortMode(o.value)
-                        setSortOpen(false)
-                      }}
-                    >
-                      <span>Sort by {o.label.toLowerCase()}</span>
-                      {sortMode === o.value && <Icon name="Check" size={14} />}
-                    </button>
-                  ))}
-                </Popover>
-              </div>
-            )}
-            <div className="sessions-view-toggle" role="radiogroup" aria-label="View">
-              {(
-                [
-                  { value: 'list', icon: 'List', label: 'List view' },
-                  { value: 'grid', icon: 'LayoutGrid', label: 'Grid view' }
-                ] as const
-              ).map((o) => (
-                <Tooltip key={o.value} label={o.label}>
+    <SessionSelection.Provider value={selection}>
+      <div className="sessions-view">
+        {pickedRecords.length > 0 && (
+          <SelectionBar
+            count={pickedRecords.length}
+            label="Selected sessions"
+            onClear={() => setPicked(new Set())}
+          >
+            <SelectionAction shortcut="O" onClick={openPicked}>
+              Open in tabs
+            </SelectionAction>
+            <SelectionAction shortcut="⌫" onClick={() => setDeletingPicked(true)}>
+              Delete
+            </SelectionAction>
+          </SelectionBar>
+        )}
+        {deletingPicked && pickedRecords.length > 0 && (
+          <DeleteSessionsDialog
+            records={pickedRecords}
+            onCancel={() => setDeletingPicked(false)}
+            onDone={(failed) => {
+              setDeletingPicked(false)
+              setPicked(new Set(failed.map((f) => f.record.id)))
+              handleSessionRowChanged()
+              const done = pickedRecords.length - failed.length
+              if (failed.length === 0) {
+                pushToast?.(`Deleted ${done} session${done === 1 ? '' : 's'}`)
+              } else {
+                pushToast?.(
+                  `Deleted ${done}. Couldn't delete ${failed
+                    .map((f) => `${f.record.title} (${f.error})`)
+                    .join(', ')}`
+                )
+              }
+            }}
+          />
+        )}
+        <div className="sessions-main">
+          <div className="sessions-main-header">
+            <div className="sessions-main-heading">
+              <h1 className="sessions-main-title">Sessions</h1>
+              {attentionOnly ? (
+                <p className="sessions-main-caption">
+                  {visibleSessions.length === 0
+                    ? 'Nothing is waiting on you'
+                    : `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'} need${visibleSessions.length === 1 ? 's' : ''} you`}
+                  {' - '}
                   <button
                     type="button"
-                    role="radio"
-                    aria-checked={view === o.value}
-                    aria-label={o.label}
-                    className={
-                      view === o.value
-                        ? 'sessions-view-option sessions-view-option--selected'
-                        : 'sessions-view-option'
-                    }
-                    onClick={() => setView(o.value)}
+                    className="sessions-main-caption-clear"
+                    onClick={onClearAttentionFilter}
                   >
-                    <Icon name={o.icon} size={16} />
+                    show all sessions
                   </button>
-                </Tooltip>
-              ))}
+                </p>
+              ) : (
+                <p className="sessions-main-caption">
+                  {filtersOn ? `${visibleSessions.length} of ` : ''}
+                  {scopedSessions.length} session{scopedSessions.length === 1 ? '' : 's'}
+                  {effectiveProjectId ? ' in this project' : ' across all projects'}
+                </p>
+              )}
+            </div>
+            <div className="sessions-main-controls">
+              {scopedSessions.length > 0 && (
+                <div className="sessions-sort" ref={sortAnchor}>
+                  <button
+                    type="button"
+                    className="sessions-sort-button"
+                    aria-haspopup="menu"
+                    aria-expanded={sortOpen}
+                    onClick={() => setSortOpen((v) => !v)}
+                  >
+                    <Icon name="ArrowUpDown" size={14} />
+                    {SORT_OPTIONS.find((o) => o.value === sortMode)?.label}
+                    <Icon name="ChevronDown" size={14} />
+                  </button>
+                  <Popover
+                    open={sortOpen}
+                    onClose={() => setSortOpen(false)}
+                    anchorRef={sortAnchor}
+                    placement="bottom-end"
+                    className="sessions-sort-menu"
+                    aria-label="Sort sessions"
+                  >
+                    {SORT_OPTIONS.map((o) => (
+                      <button
+                        key={o.value}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={sortMode === o.value}
+                        className="cr-popover-item sessions-sort-item"
+                        onClick={() => {
+                          setSortMode(o.value)
+                          setSortOpen(false)
+                        }}
+                      >
+                        <span>Sort by {o.label.toLowerCase()}</span>
+                        {sortMode === o.value && <Icon name="Check" size={14} />}
+                      </button>
+                    ))}
+                  </Popover>
+                </div>
+              )}
+              <div className="sessions-view-toggle" role="radiogroup" aria-label="View">
+                {(
+                  [
+                    { value: 'list', icon: 'List', label: 'List view' },
+                    { value: 'grid', icon: 'LayoutGrid', label: 'Grid view' }
+                  ] as const
+                ).map((o) => (
+                  <Tooltip key={o.value} label={o.label}>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={view === o.value}
+                      aria-label={o.label}
+                      className={
+                        view === o.value
+                          ? 'sessions-view-option sessions-view-option--selected'
+                          : 'sessions-view-option'
+                      }
+                      onClick={() => setView(o.value)}
+                    >
+                      <Icon name={o.icon} size={16} />
+                    </button>
+                  </Tooltip>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* One quiet row: status tabs (pick one, or All), and Unread as a
+          {/* One quiet row: status tabs (pick one, or All), and Unread as a
             toggle on the end so it still combines with a status. */}
-        {scopedSessions.length > 0 && (
-          <div className="sessions-filters">
-            <div className="sessions-filter-tabs" role="radiogroup" aria-label="Filter by status">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={statusFilter === null}
-                className={
-                  statusFilter === null
-                    ? 'sessions-filter-tab sessions-filter-tab--selected'
-                    : 'sessions-filter-tab'
-                }
-                onClick={() => setStatusFilter(null)}
-              >
-                All
-                <span className="sessions-filter-count">{allCount}</span>
-              </button>
-              {/* Only statuses something actually has — plus the selected
-                  one, so it can always be switched off again. */}
-              {STATUS_FILTERS.filter(
-                (f) => (statusCounts.get(f.id) ?? 0) > 0 || statusFilter === f.id
-              ).map((f) => (
+          {scopedSessions.length > 0 && (
+            <div className="sessions-filters">
+              <div className="sessions-filter-tabs" role="radiogroup" aria-label="Filter by status">
                 <button
-                  key={f.id}
                   type="button"
                   role="radio"
-                  aria-checked={statusFilter === f.id}
+                  aria-checked={statusFilter === null}
                   className={
-                    statusFilter === f.id
+                    statusFilter === null
                       ? 'sessions-filter-tab sessions-filter-tab--selected'
                       : 'sessions-filter-tab'
                   }
-                  onClick={() => setStatusFilter(statusFilter === f.id ? null : f.id)}
+                  onClick={() => setStatusFilter(null)}
                 >
-                  <StatusDot status={f.statuses[0]} size={8} />
-                  {sentenceCase(STATUS_WORDS[f.statuses[0]])}
-                  <span className="sessions-filter-count">{statusCounts.get(f.id) ?? 0}</span>
+                  All
+                  <span className="sessions-filter-count">{allCount}</span>
                 </button>
+                {/* Only statuses something actually has — plus the selected
+                  one, so it can always be switched off again. */}
+                {STATUS_FILTERS.filter(
+                  (f) => (statusCounts.get(f.id) ?? 0) > 0 || statusFilter === f.id
+                ).map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={statusFilter === f.id}
+                    className={
+                      statusFilter === f.id
+                        ? 'sessions-filter-tab sessions-filter-tab--selected'
+                        : 'sessions-filter-tab'
+                    }
+                    onClick={() => setStatusFilter(statusFilter === f.id ? null : f.id)}
+                  >
+                    <StatusDot status={f.statuses[0]} size={8} />
+                    {sentenceCase(STATUS_WORDS[f.statuses[0]])}
+                    <span className="sessions-filter-count">{statusCounts.get(f.id) ?? 0}</span>
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={unreadOnly}
+                className={
+                  unreadOnly
+                    ? 'sessions-unread-toggle sessions-unread-toggle--on'
+                    : 'sessions-unread-toggle'
+                }
+                onClick={() => setUnreadOnly(!unreadOnly)}
+              >
+                <span className="sessions-unread-switch" aria-hidden="true" />
+                Unread only
+                <span className="sessions-filter-count">{unreadCount}</span>
+              </button>
+            </div>
+          )}
+
+          {filteredToNothing && (
+            <div className="sessions-empty-wrap">
+              <div className="sessions-empty-box">
+                <h2 className="sessions-empty-title">No sessions match these filters</h2>
+                <Button variant="outlined" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {!hasAnySessions && !filteredToNothing && (
+            <SessionsEmptyState
+              filtered={effectiveProjectId !== null}
+              attentionOnly={attentionOnly}
+              projectName={filterProjectName}
+              onNewSession={onNewSession ? () => onNewSession() : undefined}
+              onClearFilter={onClearFilter}
+              onClearAttentionFilter={onClearAttentionFilter}
+            />
+          )}
+
+          {hasAnySessions && view === 'list' && (
+            <div className="sessions-groups-list">
+              {projectGroups.map((group) => (
+                <ProjectContainer
+                  key={group.project.id}
+                  group={group}
+                  forceOpen={filtersOn}
+                  onOpenSession={onOpenSession}
+                  onAdopt={handleAdopt}
+                  onRowChanged={handleSessionRowChanged}
+                  onNewSession={onNewSession}
+                  onProjectsChanged={onProjectsChanged}
+                  pushToast={pushToast}
+                  onOpenInIde={onOpenInIde}
+                  onFocusTerminal={onFocusTerminal}
+                />
               ))}
+
+              {otherSessions.length > 0 && (
+                <section className="sessions-project sessions-project-other">
+                  <div className="sessions-project-header">
+                    <span className="sessions-project-name">Other sessions</span>
+                    <span className="sessions-project-count">
+                      {otherSessions.length} session{otherSessions.length === 1 ? '' : 's'}
+                    </span>
+                  </div>
+                  <div className="sessions-project-rows">
+                    {otherSessions.map((session) => {
+                      const adoptableProject = !session.record
+                        ? projectForCwd(session.cwd, projects)
+                        : null
+                      return (
+                        <SessionListRow
+                          key={session.key}
+                          session={session}
+                          onOpen={(background) => onOpenSession(session.key, background)}
+                          onAdopt={
+                            adoptableProject
+                              ? () => handleAdopt(session, adoptableProject.id)
+                              : undefined
+                          }
+                          onOpenInIde={onOpenInIde ? () => onOpenInIde(session) : undefined}
+                          onFocusTerminal={
+                            onFocusTerminal ? () => onFocusTerminal(session) : undefined
+                          }
+                          onDeleted={handleSessionRowChanged}
+                          onRenamed={handleSessionRowChanged}
+                        />
+                      )
+                    })}
+                  </div>
+                </section>
+              )}
             </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={unreadOnly}
-              className={
-                unreadOnly
-                  ? 'sessions-unread-toggle sessions-unread-toggle--on'
-                  : 'sessions-unread-toggle'
-              }
-              onClick={() => setUnreadOnly(!unreadOnly)}
-            >
-              <span className="sessions-unread-switch" aria-hidden="true" />
-              Unread only
-              <span className="sessions-filter-count">{unreadCount}</span>
-            </button>
-          </div>
-        )}
+          )}
 
-        {filteredToNothing && (
-          <div className="sessions-empty-wrap">
-            <div className="sessions-empty-box">
-              <h2 className="sessions-empty-title">No sessions match these filters</h2>
-              <Button variant="outlined" onClick={clearFilters}>
-                Clear filters
-              </Button>
-            </div>
-          </div>
-        )}
+          {hasAnySessions &&
+            view === 'grid' &&
+            GROUP_ORDER.map((groupId) => {
+              const groupSessions = groups.get(groupId) ?? []
+              if (groupSessions.length === 0) return null
+              return (
+                <section key={groupId} className="sessions-group-section">
+                  <div className="sessions-group-header">
+                    <span className="sessions-group-label">{GROUP_LABEL[groupId]}</span>
+                    <span className="sessions-group-count">{groupSessions.length}</span>
+                  </div>
 
-        {!hasAnySessions && !filteredToNothing && (
-          <SessionsEmptyState
-            filtered={effectiveProjectId !== null}
-            attentionOnly={attentionOnly}
-            projectName={filterProjectName}
-            onNewSession={onNewSession ? () => onNewSession() : undefined}
-            onClearFilter={onClearFilter}
-            onClearAttentionFilter={onClearAttentionFilter}
-          />
-        )}
-
-        {hasAnySessions && view === 'list' && (
-          <div className="sessions-groups-list">
-            {projectGroups.map((group) => (
-              <ProjectContainer
-                key={group.project.id}
-                group={group}
-                forceOpen={filtersOn}
-                onOpenSession={onOpenSession}
-                onAdopt={handleAdopt}
-                onRowChanged={handleSessionRowChanged}
-                onNewSession={onNewSession}
-                onProjectsChanged={onProjectsChanged}
-                pushToast={pushToast}
-                onOpenInIde={onOpenInIde}
-                onFocusTerminal={onFocusTerminal}
-              />
-            ))}
-
-            {otherSessions.length > 0 && (
-              <section className="sessions-project sessions-project-other">
-                <div className="sessions-project-header">
-                  <span className="sessions-project-name">Other sessions</span>
-                  <span className="sessions-project-count">
-                    {otherSessions.length} session{otherSessions.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <div className="sessions-project-rows">
-                  {otherSessions.map((session) => {
-                    const adoptableProject = !session.record
-                      ? projectForCwd(session.cwd, projects)
-                      : null
-                    return (
-                      <SessionListRow
-                        key={session.key}
-                        session={session}
-                        onOpen={(background) => onOpenSession(session.key, background)}
-                        onAdopt={
-                          adoptableProject
-                            ? () => handleAdopt(session, adoptableProject.id)
-                            : undefined
-                        }
-                        onOpenInIde={onOpenInIde ? () => onOpenInIde(session) : undefined}
-                        onFocusTerminal={
-                          onFocusTerminal ? () => onFocusTerminal(session) : undefined
-                        }
-                        onDeleted={handleSessionRowChanged}
-                        onRenamed={handleSessionRowChanged}
-                      />
-                    )
-                  })}
-                </div>
-              </section>
-            )}
-          </div>
-        )}
-
-        {hasAnySessions &&
-          view === 'grid' &&
-          GROUP_ORDER.map((groupId) => {
-            const groupSessions = groups.get(groupId) ?? []
-            if (groupSessions.length === 0) return null
-            return (
-              <section key={groupId} className="sessions-group-section">
-                <div className="sessions-group-header">
-                  <span className="sessions-group-label">{GROUP_LABEL[groupId]}</span>
-                  <span className="sessions-group-count">{groupSessions.length}</span>
-                </div>
-
-                <div className="sessions-card-grid">
-                  {groupSessions.map((session) => {
-                    const adoptableProject = !session.record
-                      ? projectForCwd(session.cwd, projects)
-                      : null
-                    return (
-                      <SessionCard
-                        key={session.key}
-                        session={session}
-                        projectName={
-                          session.record
-                            ? (projects.find((p) => p.id === session.record!.projectId)?.name ??
-                              null)
-                            : null
-                        }
-                        onOpen={(background) => onOpenSession(session.key, background)}
-                        onAdopt={
-                          adoptableProject
-                            ? () => handleAdopt(session, adoptableProject.id)
-                            : undefined
-                        }
-                      />
-                    )
-                  })}
-                </div>
-              </section>
-            )
-          })}
+                  <div className="sessions-card-grid">
+                    {groupSessions.map((session) => {
+                      const adoptableProject = !session.record
+                        ? projectForCwd(session.cwd, projects)
+                        : null
+                      return (
+                        <SessionCard
+                          key={session.key}
+                          session={session}
+                          projectName={
+                            session.record
+                              ? (projects.find((p) => p.id === session.record!.projectId)?.name ??
+                                null)
+                              : null
+                          }
+                          onOpen={(background) => onOpenSession(session.key, background)}
+                          onAdopt={
+                            adoptableProject
+                              ? () => handleAdopt(session, adoptableProject.id)
+                              : undefined
+                          }
+                        />
+                      )
+                    })}
+                  </div>
+                </section>
+              )
+            })}
+        </div>
       </div>
-    </div>
+    </SessionSelection.Provider>
   )
 }

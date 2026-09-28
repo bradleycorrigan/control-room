@@ -62,7 +62,7 @@ import { ColumnsEditor } from './backlog/ColumnsEditor'
 import { CreateTicket } from './backlog/CreateTicket'
 import { CyclePlanning } from './backlog/CyclePlanning'
 import { Picker, type PickerOption } from './backlog/Picker'
-import { shouldShowCarryOver, carryOverTiming } from './backlog/cyclePlan'
+import { PickCheck, SelectionAction, SelectionBar } from '../components/selection'
 import './backlog.css'
 
 /** What Start session hands the composer. */
@@ -267,9 +267,6 @@ export default function BacklogScreen({
   const [editingColumns, setEditingColumns] = useState(false)
   // The cycle open in the planning view, or null when it's closed.
   const [planningSprintId, setPlanningSprintId] = useState<number | null>(null)
-  // The id of the cycle whose carry-over banner was closed, so it stays shut
-  // until a different cycle is the one ending.
-  const [carryOverDismissed, setCarryOverDismissed] = useState<number | null>(null)
   // While a ticket is being dragged, empty groups show too, as drop targets.
   const [dragging, setDragging] = useState(false)
   const loadedAt = useRef(0)
@@ -1494,30 +1491,6 @@ export default function BacklogScreen({
     setBoard(null)
   }
 
-  // Carry-over: the active cycle ending (or about to) with tickets still
-  // open — offer to bulk-move them into the next upcoming one.
-  const unfinishedInActive = activeSprint
-    ? allTickets.filter((i) => i.sprint?.id === activeSprint.id && i.statusCategory !== 'done')
-    : []
-  const nextCycle = sprints.find((sp) => sp.state !== 'active') ?? null
-  const showCarryOver =
-    carryOverDismissed !== activeSprint?.id &&
-    Boolean(nextCycle) &&
-    shouldShowCarryOver(activeSprint, unfinishedInActive.length)
-  const carryOver = (): void => {
-    if (!nextCycle) return
-    const fromSprint = new Map(unfinishedInActive.map((i) => [i.key, i.sprint?.id ?? null]))
-    const keys = [...fromSprint.keys()]
-    void runAll(unfinishedInActive, (i) => actions.cycle(i, nextCycle.id))
-    pushToast?.(`Moved ${keys.length} ticket${keys.length === 1 ? '' : 's'} to ${nextCycle.name}`, {
-      label: 'Undo',
-      onClick: () => {
-        const back = keys.map(byKey).filter((i): i is JiraIssue => Boolean(i))
-        void runAll(back, (i) => actions.cycle(i, fromSprint.get(i.key) ?? null))
-      }
-    })
-  }
-
   return (
     <div
       className="backlog-layout"
@@ -1615,27 +1588,6 @@ export default function BacklogScreen({
           />
         )}
         {picker && <Picker {...picker} onClose={() => setPicker(null)} />}
-        {showCarryOver && activeSprint && nextCycle && (
-          <div className="backlog-carryover" role="status">
-            <Icon name="CalendarClock" size={14} />
-            <span>
-              {activeSprint.name}{' '}
-              {activeSprint.endDate ? carryOverTiming(activeSprint.endDate) : 'has ended'} with{' '}
-              {unfinishedInActive.length} unfinished ticket
-              {unfinishedInActive.length === 1 ? '' : 's'}
-            </span>
-            <button type="button" className="backlog-carryover-action" onClick={carryOver}>
-              Move them to {nextCycle.name}
-            </button>
-            <IconButton
-              icon="X"
-              label="Dismiss"
-              size={28}
-              variant="ghost"
-              onClick={() => setCarryOverDismissed(activeSprint.id)}
-            />
-          </div>
-        )}
         <div className="backlog-header">
           <div className="backlog-heading">
             <h1 className="backlog-title">Backlog</h1>
@@ -2139,12 +2091,12 @@ function ticketHandlers(
       e.dataTransfer.setData(DRAG_TYPE, issue.key)
       e.dataTransfer.effectAllowed = 'move'
     },
-    // ⌘-click picks it, ⇧-click picks the run up to it. Once anything is
-    // picked, a plain click picks too — no holding a key for each one.
-    // Otherwise a plain click opens it.
+    // Picking works as it does on Sessions (and in Linear): the check, X,
+    // or ⇧-click for the run up to it. Once anything is picked, a plain
+    // click picks too. ⌘-click always opens, as it does on Sessions.
     onClick: (e) => {
       if (e.shiftKey) onSelect(issue.key, 'range')
-      else if (e.metaKey || e.ctrlKey || selected.length > 0) onSelect(issue.key, 'toggle')
+      else if (selected.length > 0 && !e.metaKey && !e.ctrlKey) onSelect(issue.key, 'toggle')
       else onOpen(issue.key)
     },
     onKeyDown: (e) => {
@@ -2535,7 +2487,8 @@ function IssueRow({ issue, ...p }: { issue: JiraIssue } & RowActions): React.JSX
           'backlog-row',
           entries.length ? 'backlog-row--in-session' : '',
           selected ? 'backlog-row--selected' : '',
-          picked ? 'backlog-row--picked' : ''
+          picked ? 'backlog-row--picked' : '',
+          selecting ? 'backlog-row--picking' : ''
         ].join(' ')}
         data-issue={issue.key}
         data-nav-item=""
@@ -2543,14 +2496,12 @@ function IssueRow({ issue, ...p }: { issue: JiraIssue } & RowActions): React.JSX
         aria-selected={picked || undefined}
         {...ticketHandlers(issue, p)}
       >
-        {p.selected.length > 0 && (
-          <span
-            className={`backlog-row-check${picked ? ' backlog-row-check--on' : ''}`}
-            aria-hidden="true"
-          >
-            {picked && <Icon name="Check" size={11} />}
-          </span>
-        )}
+        <PickCheck
+          on={picked}
+          label={`Select ${issue.key}`}
+          className="backlog-row-pick"
+          onToggle={() => p.onSelect(issue.key, 'toggle')}
+        />
         <Editable label={`Priority: ${issue.priority ?? 'none'}`} onEdit={edit('priority')}>
           <PriorityGlyph priority={issue.priority} />
         </Editable>
@@ -2711,6 +2662,12 @@ function BoardColumn({
               data-nav-item=""
               {...ticketHandlers(issue, p)}
             >
+              <PickCheck
+                on={p.selected.includes(issue.key)}
+                label={`Select ${issue.key}`}
+                className={`backlog-card-pick${p.selected.length ? ' backlog-card-pick--shown' : ''}`}
+                onToggle={() => p.onSelect(issue.key, 'toggle')}
+              />
               <div className="backlog-card-top">
                 <Editable
                   label={`Priority: ${issue.priority ?? 'none'}`}
@@ -4594,38 +4551,31 @@ function BulkBar({
   const allMine = issues.every((i) => i.assignedToMe)
   const allCurrent = issues.every((i) => i.sprint?.state === 'active')
   return (
-    <div className="backlog-bulk" role="toolbar" aria-label="Selected tickets">
-      <span className="backlog-bulk-count">{issues.length} selected</span>
-      <Button variant="ghost" size="compact" onClick={(e) => onStatus(e.currentTarget)}>
-        Status <kbd>S</kbd>
-      </Button>
-      <Button variant="ghost" size="compact" onClick={(e) => onPriority(e.currentTarget)}>
-        Priority <kbd>P</kbd>
-      </Button>
-      <Button variant="ghost" size="compact" onClick={(e) => onEpic(e.currentTarget)}>
-        Epic <kbd>E</kbd>
-      </Button>
-      <Button variant="ghost" size="compact" onClick={onAssign}>
-        {allMine ? 'Unassign me' : 'Assign to me'} <kbd>A</kbd>
-      </Button>
+    <SelectionBar
+      count={issues.length}
+      label="Selected tickets"
+      className="backlog-bulk"
+      onClear={onClear}
+    >
+      <SelectionAction shortcut="S" onClick={onStatus}>
+        Status
+      </SelectionAction>
+      <SelectionAction shortcut="P" onClick={onPriority}>
+        Priority
+      </SelectionAction>
+      <SelectionAction shortcut="E" onClick={onEpic}>
+        Epic
+      </SelectionAction>
+      <SelectionAction shortcut="A" onClick={onAssign}>
+        {allMine ? 'Unassign me' : 'Assign to me'}
+      </SelectionAction>
       {hasCycle && (
-        <Button variant="ghost" size="compact" onClick={onCycle}>
-          {allCurrent ? 'Move to backlog' : 'Move to current cycle'} <kbd>M</kbd>
-        </Button>
+        <SelectionAction shortcut="M" onClick={onCycle}>
+          {allCurrent ? 'Move to backlog' : 'Move to current cycle'}
+        </SelectionAction>
       )}
-      {onPickCycle && (
-        <Button variant="ghost" size="compact" onClick={(e) => onPickCycle(e.currentTarget)}>
-          Cycle
-        </Button>
-      )}
-      <IconButton
-        icon="X"
-        label="Clear selection"
-        tooltip="Clear selection (Esc)"
-        size={28}
-        onClick={onClear}
-      />
-    </div>
+      {onPickCycle && <SelectionAction onClick={onPickCycle}>Cycle</SelectionAction>}
+    </SelectionBar>
   )
 }
 
