@@ -1,0 +1,343 @@
+/* ============================================================================
+   Git tab (plan 2.2, milestone U7) — status/stage/commit + commit log.
+   Scoped to GitTab.tsx only so it never collides with the other three tabs
+   built concurrently. Every colour comes from a theme token.
+   ========================================================================= */
+
+.git-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding: var(--space-16) var(--space-6);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.git-tab-muted {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+.git-tab-error {
+  color: var(--status-error);
+  font-size: var(--text-caption-size);
+}
+
+.git-tab-empty {
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+  padding: var(--space-2) 0;
+}
+
+.git-tab-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.git-tab-branch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.git-tab-branch {
+  font-family: var(--font-mono);
+  font-size: var(--text-label-size);
+  color: var(--text);
+}
+
+.git-tab-ahead-behind {
+  display: flex;
+  gap: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.git-tab-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.git-tab-file-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  background: var(--surface);
+}
+
+.git-tab-file-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+
+.git-tab-file-group-header button {
+  font-size: var(--text-mono-size);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.git-tab-file-group-header button:hover:not(:disabled) {
+  background: var(--border);
+}
+
+.git-tab-file-group-header button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.git-tab-file-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-caption-size);
+}
+
+.git-tab-file-row:first-of-type {
+  border-top: none;
+}
+
+.git-tab-file-status {
+  flex-shrink: 0;
+  width: 72px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: var(--text-caption-size);
+}
+
+.git-tab-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+
+.git-tab-file-renamed-from {
+  color: var(--text-faint);
+}
+
+.git-tab-file-row button {
+  flex-shrink: 0;
+  font-size: var(--text-mono-size);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.git-tab-file-row button:hover:not(:disabled) {
+  background: var(--border);
+}
+
+.git-tab-file-row button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.git-tab-commit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.git-tab-commit-message {
+  resize: vertical;
+  min-height: 60px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+}
+
+.git-tab-commit-message:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.git-tab-commit-message:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.git-tab-commit-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.git-tab-commit-row button {
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: var(--text-caption-size);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.git-tab-commit-row button:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.git-tab-commit-row button:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+
+.git-tab-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.git-tab-log-heading {
+  font-size: var(--text-caption-size);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.git-tab-commit-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.git-tab-commit-row-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-caption-size);
+}
+
+.git-tab-commit-row-item:first-child {
+  border-top: none;
+}
+
+.git-tab-commit-sha {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+
+.git-tab-commit-subject {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.git-tab-commit-author {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-tab-commit-date {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.git-tab-load-more {
+  align-self: flex-start;
+  margin-top: var(--space-2);
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--text-caption-size);
+  cursor: pointer;
+}
+
+.git-tab-load-more:hover:not(:disabled) {
+  background: var(--surface-raised);
+}
+
+.git-tab-load-more:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* The checkout this tab is pointed at. Reads as the heading it replaces until
+   you hover it, because most of the time you just want to know where you are. */
+.git-tab-checkout-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-4) var(--space-8);
+  margin-left: calc(-1 * var(--space-8));
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+}
+
+.git-tab-checkout-picker:hover {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.git-tab-checkout-menu {
+  min-width: 280px;
+  max-width: 420px;
+}
+
+.git-tab-checkout-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-tab-checkout-branch {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+}
+
+/* Sticks to the top of the menu so it stays reachable while the list below
+   scrolls. */
+.git-tab-checkout-search {
+  position: sticky;
+  top: 0;
+  margin-bottom: var(--space-4);
+}

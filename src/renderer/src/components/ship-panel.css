@@ -1,0 +1,170 @@
+/* The Ship panel — a window over the app, same family as the diff overlay:
+   review, PR, Jira and Slack in one place instead of four different screens. */
+
+.ship-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-32);
+  z-index: var(--layer-modal-backdrop);
+}
+
+.ship-panel {
+  width: min(560px, 100%);
+  max-height: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-popover);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: var(--layer-modal);
+}
+
+.ship-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-16) var(--space-16) var(--space-16) var(--space-24);
+  border-bottom: 1px solid var(--border);
+}
+
+.ship-panel-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.ship-panel-title h2 {
+  margin: 0;
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+}
+
+.ship-panel-body {
+  overflow-y: auto;
+  padding: var(--space-24);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+.ship-panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.ship-panel-section-title {
+  margin: 0;
+  font-size: var(--text-caption-size);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.ship-panel-muted {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-body-size);
+}
+
+.ship-panel-commits {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.ship-panel-commit {
+  display: flex;
+  gap: var(--space-8);
+  font-size: var(--text-body-size);
+}
+
+.ship-panel-commit-sha {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.ship-panel-commit-subject {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ship-panel-diffstat {
+  margin: 0;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.ship-panel-add {
+  color: var(--status-done);
+}
+
+.ship-panel-remove {
+  color: var(--status-error);
+}
+
+.ship-panel-pr-existing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.ship-panel-pr-existing a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.ship-panel-pr-existing a:hover {
+  text-decoration: underline;
+}
+
+.ship-panel-pr-state {
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.ship-panel-pr-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.ship-panel-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.ship-panel-pr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.ship-panel-jira-row {
+  display: flex;
+  gap: var(--space-8);
+}
+
+.ship-panel-error {
+  margin: 0;
+  color: var(--status-error);
+  font-size: var(--text-caption-size);
+}

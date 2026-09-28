@@ -1,0 +1,356 @@
+/* ============================================================================
+   Session detail (plan 7, stage B5) — header, terminal, context modal.
+   Scoped to SessionDetail.tsx so it never collides with other screens.
+   Every colour comes from a theme token.
+   ========================================================================= */
+
+.session-detail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.session-detail-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-shrink: 0;
+  /* Real top and bottom padding, not just centring inside a fixed height —
+     the row used to sit dead-centre in 56px with nothing above or below it
+     to call breathing room. */
+  padding: var(--space-12) var(--space-16);
+  background: var(--surface);
+  /* Rounded like every card and tab around it; a small gap above the
+     terminal replaces the hairline that ran under a full-width bar. */
+  border-radius: var(--radius-lg);
+  margin-bottom: var(--space-8);
+  position: relative;
+}
+
+.session-detail-breadcrumb-column {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.session-detail-breadcrumb {
+  font-size: var(--text-card-size);
+  font-weight: 600;
+  color: var(--text-card);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: var(--text-card-line);
+}
+
+.session-detail-breadcrumb-project {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.session-detail-breadcrumb-sep {
+  color: var(--text-faint);
+  margin: 0 var(--space-2);
+}
+
+.session-detail-breadcrumb-title {
+  color: var(--text-card);
+  font-weight: 600;
+}
+
+.session-detail-rename-form {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.session-detail-rename-form input {
+  font-size: var(--text-label-size);
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+}
+
+.session-detail-rename-form button {
+  font-size: var(--text-label-size);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.session-detail-inline-error {
+  font-size: var(--text-micro-size);
+  color: var(--status-error);
+  margin: 0;
+  line-height: var(--text-micro-line);
+}
+
+/* The title column already takes the free space and pushes the actions
+   right (flex: 1 above) — a growing spacer used to split that space in half,
+   cutting titles off with room to spare, so there's no spacer element at all
+   any more. The action group gets its own margin instead, so it reads as one
+   thing set apart from the title rather than every icon sharing the header's
+   own gap with it. */
+.session-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-left: var(--space-8);
+  flex-shrink: 0;
+}
+
+/* The secondary, quiet controls (diff, resume, more, close) sit closer to
+   each other than to the model picker beside them — one cluster, not four
+   equally-weighted tiles. */
+.session-detail-actions-icons {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Stop is destructive, so it goes red under the cursor.
+   The primitive owns this button's geometry — size, radius, centring — so the
+   only thing here is the destructive intent. It needs `.cr-icon-button` in the
+   selector to out-specify `.cr-icon-button--ghost:not(:disabled):hover`, which
+   is (0,3,0); without it the ghost's grey hover won and the red never showed. */
+.cr-icon-button.session-detail-stop-button:not(:disabled):hover {
+  background: var(--status-error);
+  color: var(--accent-fg);
+}
+
+.cr-icon-button.session-detail-stop-button:not(:disabled):focus-visible {
+  outline-color: var(--status-error);
+}
+
+/* Sizing only; .cr-popover carries the surface and the positioning. */
+.session-detail-menu {
+  min-width: 200px;
+  padding: var(--space-2);
+}
+
+.session-detail-menu button {
+  text-align: left;
+  padding: 6px var(--space-2);
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.session-detail-menu button:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.session-detail-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.session-detail-terminal-msg {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-label-size);
+  margin-bottom: var(--space-3);
+  color: var(--text);
+  margin: var(--space-3) var(--space-8) 0;
+}
+
+.session-detail-terminal-msg button {
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: var(--text-micro-size);
+  font-family: var(--font-mono);
+}
+
+/* Centered modal overlay for the context window panel */
+.context-window-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--layer-modal-backdrop);
+}
+
+/* Centered modal, used for delete confirmations */
+.delete-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--layer-modal-backdrop);
+}
+
+.delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.delete-confirm-actions button {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+  font-size: var(--text-label-size);
+  font-family: var(--font-ui);
+}
+
+.delete-confirm-actions button:hover {
+  background: var(--surface);
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+  font-family: var(--font-ui);
+}
+
+/* A destructive item in a menu reads as destructive before it is clicked, not
+   only in the dialog that follows. */
+/* Scoped to the menu, or `.session-detail-menu button` (0,1,1) outranks this
+   single class (0,1,0) and Delete renders in ordinary text — which is what it
+   had been doing, while the same action on a session card was red. */
+.session-detail-menu button.session-detail-menu-destructive {
+  color: var(--status-error);
+}
+
+.session-detail-menu button.session-detail-menu-destructive:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  color: var(--status-error);
+}
+
+/* Claude exited inside a session — a slim bar over the terminal offering to
+   start it again (SessionDetail.tsx). Quiet surface, not an alarm: exiting
+   is usually on purpose. */
+.session-detail-exited {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  flex-shrink: 0;
+  margin: var(--space-8) 0 0;
+  padding: var(--space-8) var(--space-8) var(--space-8) var(--space-16);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.session-detail-exited-text {
+  font-size: var(--text-label-size);
+  color: var(--text-muted);
+}
+
+.session-detail-exited-actions {
+  display: flex;
+  gap: var(--space-8);
+  flex-shrink: 0;
+}
+
+/* Scoped under the header to outrank the legacy `.session-detail-header
+   button` rule (styles.css), whose padding and grey fill made this a tile
+   inside a bigger tile. The base focus ring still applies. */
+.session-detail-header .session-detail-folder {
+  all: unset;
+  display: inline-flex;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: filter var(--motion-fast) var(--motion-easing);
+}
+
+.session-detail-header .session-detail-folder:hover {
+  filter: brightness(1.25);
+}
+
+.session-detail-status-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-12);
+  min-width: 0;
+}
+
+/* Badge (the status word) is a flex row itself (dot + word), so it has no
+   single text baseline for the row's `baseline` above to find — align it on
+   its own word instead of the dot, so it lines up with the ticket pill's
+   text rather than the whole badge's bounding box. */
+.session-detail-status-row .status-badge-word {
+  vertical-align: baseline;
+}
+.session-detail-status-row > .status-badge {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+/* The ticket this session works on — opens it on Backlog. */
+.session-detail-ticket {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 var(--space-8);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  cursor: pointer;
+}
+
+.session-detail-ticket:hover {
+  background: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+/* No ticket yet: a quiet offer to make one. */
+.session-detail-ticket--create {
+  gap: var(--space-4);
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+}
+
+.session-detail-ticket--create:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+/* The legacy `.session-detail-header button` rule (styles.css) pads every
+   button 10px a side, which squeezed the 16px icons in the 28px buttons down
+   to 8px. The primitive centres its own icon. */
+.session-detail-header .cr-icon-button {
+  padding: 0;
+}

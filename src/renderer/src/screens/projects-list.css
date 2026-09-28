@@ -1,0 +1,309 @@
+/* ============================================================================
+   Projects list screen (plan 7, stage B2)
+   ========================================================================= */
+
+.projects-list-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  /* More room above "Your Projects" than the general screen-top token gives
+     — the header sat almost flush against the tab strip above it. */
+  padding: var(--space-64) var(--space-64) var(--space-48);
+}
+
+.app-root[data-shell-size='medium'] .projects-list-screen {
+  padding: var(--space-64) var(--space-32) var(--space-48);
+}
+
+.app-root[data-shell-size='narrow'] .projects-list-screen {
+  padding: var(--space-48) var(--space-16) var(--space-32);
+}
+
+.projects-list-screen > * {
+  max-width: 1100px;
+  margin-left: auto;
+  margin-right: auto;
+  width: 100%;
+}
+
+/* Header: title + count + buttons + sort controls */
+.projects-list-header {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--space-32);
+}
+
+.projects-list-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-24);
+  margin-bottom: var(--space-32);
+}
+
+.projects-list-title-block {
+  display: flex;
+  flex-direction: column;
+}
+
+.projects-list-title {
+  font-family: var(--font-ui);
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-line);
+  font-weight: var(--text-display-weight);
+  color: var(--text);
+  margin: 0;
+}
+
+.projects-list-count {
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  font-weight: var(--text-caption-weight);
+  color: var(--text-muted);
+  margin: var(--space-8) 0 0 0;
+}
+
+.projects-list-header-buttons {
+  display: flex;
+  gap: var(--space-12);
+}
+
+/* Sort controls */
+.projects-list-sort {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  color: var(--text);
+  margin-bottom: var(--space-24);
+}
+
+.projects-list-sort > svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.projects-list-sort-label {
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line);
+  font-weight: var(--text-label-weight);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Project card grid */
+.project-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* Project row card — a Linear-density list row, not a spaced-out card:
+   smaller padding and radius than plan 7's original spec, which read as
+   sparse once there were more than a couple of rows. */
+.project-row-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: var(--space-12) var(--space-16);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-easing);
+  outline-offset: 2px;
+}
+
+.project-row-card:hover {
+  background: var(--surface-raised);
+}
+
+.project-row-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.project-row-container {
+  display: flex;
+  gap: var(--space-12);
+  align-items: center;
+}
+
+.project-row-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  flex: 1;
+}
+
+.project-row-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+}
+
+.project-row-name {
+  font-family: var(--font-ui);
+  font-size: var(--text-card-size);
+  line-height: var(--text-card-line);
+  font-weight: var(--text-card-weight);
+  color: var(--text);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.project-row-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  font-weight: var(--text-meta-weight);
+  color: var(--text-faint);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.project-row-actions {
+  display: none;
+  gap: var(--space-8);
+  flex-shrink: 0;
+}
+
+.project-row-card:hover .project-row-actions,
+.project-row-card:focus-within .project-row-actions {
+  display: flex;
+}
+
+.project-row-branch {
+  color: var(--accent);
+}
+
+.project-row-active {
+  color: var(--status-working);
+}
+
+.project-row-rename-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.project-row-rename-form input {
+  font-family: var(--font-ui);
+  font-size: var(--text-card-size);
+  font-weight: var(--text-card-weight);
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  height: var(--space-36);
+}
+
+.project-row-rename-form button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-12);
+  height: var(--space-36);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  transition: background var(--motion-fast) var(--motion-easing);
+}
+
+.project-row-rename-form button:hover {
+  background: var(--bg);
+}
+
+.project-row-error {
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line);
+  color: var(--status-error);
+  margin: 0;
+}
+
+/* Empty state */
+.empty-state-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-16);
+  padding: var(--space-32) 0;
+}
+
+.empty-state-title {
+  font-family: var(--font-ui);
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+  color: var(--text);
+  margin: 0;
+}
+
+.empty-state-caption {
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ============================================================================
+   Tabs (plan 2.2) — underline nav, top-level navigation only.
+   ========================================================================= */
+
+.tabs {
+  display: flex;
+  gap: var(--space-5);
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--space-32);
+}
+
+.tab {
+  background: none;
+  border: none;
+  padding: var(--space-3) 0;
+
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab-selected {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* Visible without hovering — the pin action itself only appears on hover. */
+.project-row-pinned {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.project-row-title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}

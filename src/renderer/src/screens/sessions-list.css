@@ -1,0 +1,896 @@
+/* Plan 2.3 — the sessions list. Scoped to its own file (imported only by
+   SessionsScreen.tsx) rather than added to the shared styles.css, so this
+   milestone's styling can't collide with sibling milestones editing that
+   file at the same time. Every colour is a token — see theme/tokens.css. */
+
+.sessions-list {
+  padding: var(--space-16) var(--space-6);
+  overflow-y: auto;
+  height: 100%;
+}
+
+.sessions-list-empty {
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+  padding: var(--space-16) 0;
+}
+
+/* Plan 7 B4 note: Old .session-list-row* and .session-group-* classes deleted.
+   These are replaced by .sessions-row (new structure with two lines) and the
+   project containers (.sessions-project-*). */
+
+/* ---- bottom sections: Found in terminal / Stopped ---- */
+
+.session-section {
+  margin-top: var(--space-6);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
+/* ==== V5 — Sessions view: rail + grouped card grid ====
+   Plan 2.4 — a project filter rail on the left, sessions grouped into
+   Needs you / Working / Idle / Found in terminal / Stopped on the right,
+   attention always first and above the fold. */
+
+.sessions-view {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* W6 removed the sessions-rail project filter here — it duplicated the real
+   sidebar (App.tsx's ProjectsScreen), each with its own selection state, so
+   the two could show different projects selected at once and the same
+   project name appeared twice on screen. Filtering now reads
+   selectedProjectId straight from the ProjectsScreen sidebar; see
+   SessionsScreen.tsx. */
+
+.sessions-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  /* Top padding is the gap between the top bar and this screen's title —
+     32px exactly (design-system --space-32), not the legacy --space-4
+     (redefined to 4px by the plan-3 token set further down tokens.css). */
+  padding: var(--space-32) var(--space-6) var(--space-6);
+}
+
+.sessions-main-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.sessions-main-heading {
+  min-width: 0;
+}
+
+.sessions-main-title {
+  margin: 0;
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-line);
+  font-weight: var(--text-display-weight);
+}
+
+.sessions-main-caption {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+}
+
+/* Job 2 — the title bar bell's attention-only filter: visible (this text)
+   and escapable (this control), inline in the caption rather than a
+   separate banner so it never looks like a second header. */
+.sessions-main-caption-clear {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.sessions-main-caption-clear:hover {
+  color: var(--text);
+}
+
+.sessions-main-caption-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---- empty state (designed, not just worded) ---- */
+
+.sessions-empty-wrap {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-8) 0;
+}
+
+.sessions-empty-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 420px;
+  padding: var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+}
+
+.sessions-empty-title {
+  margin: 0;
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+  color: var(--text);
+}
+
+.sessions-empty-caption {
+  margin: 0;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  color: var(--text-muted);
+}
+
+/* --space-4 and friends were redefined to 4px-scale by the plan-3 tokens,
+   which left each group heading sitting on the cards above it. */
+.sessions-group-section {
+  margin-bottom: var(--space-24);
+}
+
+.sessions-group-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  padding: var(--space-4) 0;
+  margin-bottom: var(--space-12);
+}
+
+.sessions-group-label {
+  font-size: var(--text-mono-size);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.sessions-group-count {
+  font-size: var(--text-mono-size);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.sessions-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-2);
+}
+
+.session-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: background 120ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-card {
+    transition: none;
+  }
+}
+
+.session-card:hover {
+  background: var(--surface-raised);
+}
+
+.session-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.session-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.session-card-time {
+  font-size: var(--text-mono-size);
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-card-title {
+  font-size: var(--text-body-size);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-card-branch {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-card-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-0-5, 4px);
+}
+
+/* JSX used to reference .session-list-row-adopt, a class from a deleted
+   list generation (see the Plan 7 B4 note below) that no longer exists in
+   this file — Grid's own Adopt button was rendering fully unstyled. */
+.session-card-adopt {
+  flex: none;
+  font-size: var(--text-mono-size);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-sunken);
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  white-space: nowrap;
+}
+
+.session-card-adopt:hover {
+  background: var(--surface-raised);
+}
+
+/* ============================================================================
+   Plan 5 — grouped inset list (the List view, now the default). One
+   container per project holding its own session rows, instead of one
+   status-grouped card grid spanning the whole screen. Grid (above) is
+   untouched — this is additive, scoped to its own classnames so it can't
+   collide with the card grid's.
+   ========================================================================= */
+
+.sessions-groups-list {
+  display: flex;
+  flex-direction: column;
+  /* 16px between projects, per plan 5. */
+  gap: var(--space-16);
+}
+
+/* ---- header controls: sort menu + view toggle ---- */
+
+.sessions-main-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.sessions-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 32px;
+  padding: 0 var(--space-12);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+}
+
+.sessions-sort-button:hover,
+.sessions-sort-button[aria-expanded='true'] {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.sessions-sort-menu {
+  min-width: 200px;
+}
+
+.sessions-sort-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.sessions-view-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.sessions-view-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sessions-view-option:hover {
+  color: var(--text);
+}
+
+.sessions-view-option--selected {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.sessions-view-option:focus-visible,
+.sessions-sort-button:focus-visible,
+.sessions-filter-tab:focus-visible,
+.sessions-unread-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- filter row: status tabs + unread switch ----
+   No borders anywhere: the chosen tab is a soft fill, the rest is text. Seven
+   outlined pills plus two segmented bars read as a wall of controls. */
+
+.sessions-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  margin: var(--space-12) 0 var(--space-16);
+}
+
+.sessions-filter-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.sessions-filter-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 30px;
+  padding: 0 var(--space-12);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sessions-filter-tab:hover {
+  color: var(--text);
+}
+
+.sessions-filter-tab--selected {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.sessions-filter-count {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.sessions-unread-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 30px;
+  padding: 0 var(--space-8);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sessions-unread-toggle:hover,
+.sessions-unread-toggle--on {
+  color: var(--text);
+}
+
+/* A small switch, so "on" is visible without another bordered pill. */
+.sessions-unread-switch {
+  position: relative;
+  width: 26px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  /* Its track all but vanishes on light themes without an edge. */
+  box-shadow: inset 0 0 0 1px var(--border);
+  transition: background var(--motion-fast) var(--motion-easing);
+}
+
+.sessions-unread-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform var(--motion-fast) var(--motion-easing);
+}
+
+.sessions-unread-toggle--on .sessions-unread-switch {
+  background: var(--accent);
+}
+
+.sessions-unread-toggle--on .sessions-unread-switch::after {
+  background: var(--accent-fg);
+  transform: translateX(10px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sessions-unread-switch,
+  .sessions-unread-switch::after {
+    transition: none;
+  }
+}
+
+.sessions-project {
+  width: 100%;
+  /* No fill of its own: the rows are the cards, sitting on the page the way
+     Home's recent sessions do, and the header is a section heading over them. */
+  padding: var(--space-4) 0;
+}
+
+.sessions-project-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: 40px;
+  margin-bottom: var(--space-8);
+}
+
+.sessions-project-glyph {
+  flex: none;
+  font-size: var(--text-body-size);
+  line-height: 1;
+}
+
+.sessions-project-name {
+  flex: none;
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+  color: var(--text);
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A project holding a needs-you session — colour AND the header's own
+   "needs an answer" rows already carry the words; this dot is a glance-level
+   summary, so it still gets an aria-label rather than relying on colour
+   alone. */
+.sessions-project-attention-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-attention);
+}
+
+.sessions-project-count {
+  flex: none;
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sessions-project-header-actions {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.sessions-project-rows {
+  display: flex;
+  flex-direction: column;
+  /* 8px between rows, per plan 5. */
+  gap: var(--space-8);
+}
+
+/* ---- session row (plan 7 B4) ---- */
+
+.sessions-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  /* Same fill, radius and chip as the shared session card (session-card.css)
+     — one design language for "a session" — laid out as a row instead of a
+     tile. The status rail went: the chip already carries status in colour
+     and words, as it does on the cards. */
+  padding: var(--space-16) var(--space-16) var(--space-16) var(--space-24);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.sessions-row-clickable {
+  cursor: pointer;
+}
+
+/* J / K land here (App.tsx moveSessionFocus), so the focused row has to be
+   unmistakable — the only thing on screen that shows where you are. */
+.sessions-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sessions-row-clickable:hover {
+  background: var(--surface-raised);
+}
+
+/* Line 1: [StatusDot 8px][8px gap][Badge 72px][12px gap][Title flex][16px right] */
+.sessions-row-line1 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.sessions-row-line1 > svg {
+  flex: 0 0 8px;
+}
+
+.sessions-row-badge {
+  flex: none;
+  display: flex;
+}
+
+.sessions-row-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-card-size);
+  line-height: var(--text-card-line);
+  /* Medium when read; unread goes bold (primitives.css). */
+  font-weight: var(--text-label-weight);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Sits right after the title, before it can ellipsis away — same quiet
+   treatment as the project list's own pin mark. */
+.sessions-row-pinned {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+/* Line 2: [GitBranch branch][16px][Database context%][12px][Clock elapsed][8px][⋯] */
+.sessions-row-line2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.sessions-row-branch-cell {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  color: var(--text-meta-color);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.sessions-row-branch {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sessions-row-time-cell {
+  flex: 0 0 56px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  color: var(--text-meta-color);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sessions-row-elapsed {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sessions-row-overflow {
+  flex: 0 0 28px;
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--motion-easing);
+}
+
+.sessions-row:hover .sessions-row-overflow,
+.sessions-row:focus-within .sessions-row-overflow {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sessions-row-overflow {
+    transition: none;
+  }
+}
+
+/* Job 2 — "N agents working", shown only when this session has an active
+   sub-agent (exec/claude.ts's listSubagentsForSession). Always paired with
+   the word "working", never colour alone, and always a full text button
+   (never an icon-only control) so it needs no separate tooltip. */
+.sessions-row-subagents-toggle {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  color: var(--status-working);
+  font-family: var(--font-ui);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.sessions-row-subagents-toggle:hover {
+  color: var(--text);
+}
+
+.sessions-row-subagents-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.sessions-row-subagents-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.sessions-row-subagent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  color: var(--text-meta-color);
+}
+
+.sessions-row-subagent-desc {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.sessions-row-subagent-type {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  color: var(--text-faint);
+}
+
+.overflow-menu-item-danger {
+  color: var(--status-error);
+}
+
+.sessions-project-rename-form {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.sessions-project-rename-form input {
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+  color: var(--text);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-ui);
+}
+
+.sessions-project-rename-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.sessions-project-rename-form button {
+  font-size: var(--text-label-size);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-sunken);
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  white-space: nowrap;
+}
+
+.sessions-project-rename-form button:hover:not(:disabled) {
+  background: var(--surface-raised);
+}
+
+.sessions-project-rename-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sessions-project-pin-indicator {
+  flex: none;
+  font-size: var(--text-body-size);
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.sessions-project-inline-error {
+  margin: var(--space-2) 0 0 0;
+  font-size: var(--text-caption-size);
+  color: var(--status-error);
+}
+
+.sessions-row-rename-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.sessions-row-rename-form input {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-label-size);
+  color: var(--text);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-family: var(--font-ui);
+}
+
+.sessions-row-rename-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.sessions-row-rename-form button {
+  font-size: var(--text-mono-size);
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-sunken);
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sessions-row-rename-form button:hover:not(:disabled) {
+  background: var(--surface-raised);
+}
+
+.sessions-row-rename-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sessions-row-inline-error {
+  margin: 4px 0 0 var(--space-16);
+  font-size: var(--text-mono-size);
+  color: var(--status-error);
+}
+
+/* Delete confirmation modal (plan 7 B4) */
+.delete-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.delete-modal-content p {
+  margin: 0;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  color: var(--text);
+}
+
+.delete-modal-actions {
+  display: flex;
+  gap: var(--space-8);
+  justify-content: flex-end;
+}
+
+.sessions-project-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex: none;
+}
+
+.sessions-project-collapse:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.sessions-project-chevron {
+  transition: transform 120ms ease-out;
+}
+
+.sessions-project-chevron--open {
+  transform: rotate(90deg);
+}

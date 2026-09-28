@@ -1,0 +1,251 @@
+/* Block elements and box drawing for the terminal, drawn to fill the whole
+   cell (scripts/fonts/build-terminal-blocks.py). Menlo's own full block
+   covers ~88% of its line, so in the DOM renderer Claude Code's banner and
+   box outlines came apart row by row. Only these code points use it. */
+@font-face {
+  font-family: 'CR Terminal Blocks';
+  src: url('../assets/cr-terminal-blocks.ttf') format('truetype');
+  unicode-range: U+2500-259F;
+  font-display: block;
+}
+
+/* ============================================================================
+   Terminal frame (plan 7, stage B5) — full pane container for xterm.js.
+   The terminal fills edge to edge on --term-bg with no border/radius.
+   Focus hint appears below as a one-line caption.
+   ========================================================================= */
+
+.terminal-frame {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--term-bg);
+  overflow: hidden;
+}
+
+.terminal-frame-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.terminal-surface {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A file or text dragged over the terminal: an accent edge and a soft wash
+   say "drop here", the same accent the unread highlight uses. */
+.terminal-surface--dropping::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  pointer-events: none;
+  z-index: var(--layer-raised);
+}
+
+/* The box xterm draws into: fills the surface, so the find bar can overlay it. */
+.terminal-xterm {
+  position: absolute;
+  inset: 0;
+}
+
+/* A drop that couldn't be used, briefly, bottom-centre over the terminal. */
+.terminal-drop-note {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space-16);
+  transform: translateX(-50%);
+  z-index: var(--layer-raised);
+  max-width: 80%;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  box-shadow:
+    0 0 0 1px var(--border),
+    var(--shadow-popover);
+  color: var(--text);
+  font-size: var(--text-label-size);
+}
+
+/* ⌘F find bar, top-right over the terminal. */
+.terminal-search {
+  position: absolute;
+  top: var(--space-8);
+  right: var(--space-16);
+  z-index: var(--layer-raised);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-12);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  box-shadow:
+    0 0 0 1px var(--border),
+    var(--shadow-popover);
+}
+
+.terminal-search-input {
+  width: 200px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  outline: none;
+}
+
+/* The base focus ring (assets/base.css) drew a second box inside the bar.
+   The bar's own edge takes the accent instead, so focus is still shown. */
+.terminal-search-input:focus-visible {
+  outline: none;
+}
+
+.terminal-search:focus-within {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    var(--shadow-popover);
+}
+
+.terminal-search-count {
+  min-width: 64px;
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* xterm.js sizes its own canvas/rows internally; this just makes sure the
+   host div (and therefore FitAddon's measurement) fills the space. */
+.terminal-surface .xterm {
+  height: 100%;
+}
+
+/* Rows come in whole-cell steps, so a sliver below the last row is left
+   over. xterm's own stylesheet paints that sliver black; it should read as
+   more terminal. */
+.terminal-surface .xterm,
+.terminal-surface .xterm .xterm-viewport {
+  background-color: var(--term-bg);
+}
+
+.terminal-frame-fallback-note {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-4);
+  right: var(--space-4);
+  font-size: var(--text-micro-size);
+  color: var(--status-attention);
+  z-index: var(--layer-raised);
+  font-family: var(--font-mono);
+  line-height: var(--text-micro-line);
+}
+
+.pane-output-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 240px;
+  max-height: 50vh;
+  display: flex;
+}
+
+.pane-output {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--term-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+}
+
+.pane-output pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro-size);
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--term-fg);
+  line-height: var(--text-micro-line);
+}
+
+.terminal-frame-jump {
+  position: absolute;
+  bottom: var(--space-4);
+  right: 16px;
+  padding: 6px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+  box-shadow: var(--shadow-popover);
+  z-index: var(--layer-raised);
+  font-family: var(--font-ui);
+}
+
+.terminal-frame-jump:hover {
+  background: var(--surface);
+}
+
+.terminal-frame-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0 var(--space-8);
+  background: var(--term-bg);
+  border-top: 1px solid var(--border);
+}
+
+.terminal-frame-focus-hint {
+  font-size: var(--text-meta-size);
+  font-weight: var(--text-meta-weight);
+  color: var(--text-meta-color);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-ui);
+  line-height: var(--text-meta-line);
+}
+
+/* A failed split/switch/close briefly replaces the hint text (plan 7,
+   TerminalFrame's "add terminal" control) rather than opening a toast —
+   this component has no toast channel of its own. */
+.terminal-frame-focus-hint-error {
+  color: var(--status-error);
+}
+
+.terminal-frame-footer-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Plan 7, Stage B5 — ⌘⏎ or the footer button expands the terminal to fill the
+   window; the header stays, the rest of the app fades back. */
+.terminal-frame-maximized {
+  position: fixed;
+  top: 56px; /* Below the session detail header */
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--layer-overlay-content);
+  border-radius: 0;
+}
+
+.session-detail-maximize-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-overlay);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+}

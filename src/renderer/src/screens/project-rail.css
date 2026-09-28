@@ -1,0 +1,177 @@
+/* ============================================================================
+   Project rail (plan 6) — left sidebar on Sessions screen only
+   ========================================================================= */
+
+.projects-rail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  padding: 0;
+  overflow-y: auto;
+}
+
+.projects-rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Rail header padding: 32px top, 20px sides, 12px bottom. The 12px bottom
+     is now available as var(--space-12). */
+  padding: var(--space-32) 20px var(--space-12);
+  gap: var(--space-8);
+  flex: 0 0 auto;
+}
+
+.projects-rail-title {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0;
+  font-weight: 500;
+}
+
+.projects-rail-add-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--text-card-size);
+  flex: 0 0 auto;
+}
+
+.projects-rail-add-button:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.projects-rail-items {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px;
+  min-height: 0;
+}
+
+.projects-rail-item {
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--text-body-size);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  transition: background var(--motion-fast) var(--motion-easing);
+}
+
+.projects-rail-item:hover {
+  background: var(--surface-raised);
+}
+
+.projects-rail-item-selected,
+.projects-rail-item-selected:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.projects-rail-label-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.projects-rail-glyph {
+  font-size: var(--text-card-size);
+  flex: 0 0 auto;
+  display: none;
+}
+
+.projects-rail-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  text-align: left;
+}
+
+.projects-rail-count-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.projects-rail-count {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.projects-rail-item-selected .projects-rail-count {
+  color: var(--text);
+}
+
+.projects-rail-attention-dot {
+  color: var(--status-attention);
+  flex: 0 0 auto;
+  transform: scale(0.75);
+  transform-origin: center;
+}
+
+/* Footer: "New session" button with rail gutters */
+.projects-rail-footer {
+  flex: 0 0 auto;
+  padding: 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.projects-rail-new-session-button {
+  width: 100%;
+  height: auto;
+  padding: var(--space-3) var(--space-16);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-fg);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  transition: opacity var(--motion-fast) var(--motion-easing);
+}
+
+.projects-rail-new-session-button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.projects-rail-new-session-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* .sessions-main itself lives in screens/sessions-list.css (scoped to
+   SessionsScreen, which owns the 32px top-gap requirement) — a duplicate
+   padding rule used to live here and could shadow it depending on CSS load
+   order. The descendant selectors below are unused legacy rules (no current
+   component renders a bare .session-row) and are left as-is. */

@@ -1,0 +1,2223 @@
+.app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+  background: var(--bg);
+}
+
+.app-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.sidebar-column {
+  position: relative;
+  display: flex;
+  /* Width: 260px wide (plan 6, the project rail — supersedes plan 4/W6's
+     280px for this component), 220px medium, collapses toward an icon rail
+     narrow (a ResizeObserver-driven bucket set on .app-root, not a viewport
+     media query — see App.tsx). */
+  flex: 0 0 260px;
+  flex-direction: column;
+  /* Inset and rounded, so the rail reads as a panel sitting in the window
+     rather than a slab welded to its left edge. The border went with the
+     square edge — the gap and the surface colour already separate it. */
+  margin: var(--space-8) 0 var(--space-8) var(--space-8);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.app-root[data-shell-size='medium'] .sidebar-column {
+  flex-basis: 220px;
+}
+
+.app-root[data-shell-size='narrow'] .sidebar-column {
+  /* The plan calls for a collapsed icon rail with a toggle at this width;
+     that needs its own pass through ProjectsScreen's internals (out of this
+     milestone's file ownership), so for now this only prevents the sidebar
+     from clipping its own content — see V2 report. */
+  flex-basis: 200px;
+}
+
+/* ============================================================================
+   Page container — gutters + max-width content column (plan 3, 1.7)
+   ========================================================================= */
+
+.page {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-6) var(--space-32);
+}
+
+/* Same reason as .project-detail: the end of a scroll should look like the
+   end, not like a cut. */
+.page > :last-child {
+  margin-bottom: var(--space-48);
+}
+
+.app-root[data-shell-size='medium'] .page {
+  padding: var(--space-6) var(--space-16);
+}
+
+.app-root[data-shell-size='narrow'] .page {
+  /* 20px is the plan's explicit floor (1.7: "page gutter... never less than
+     20px"), not on the 8px scale by design. */
+  padding: var(--space-16) 20px;
+}
+
+.page-content {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.main-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-pane > * {
+  flex: 1;
+  min-height: 0;
+}
+
+/* ============================================================================
+   Global shell — custom title bar (plan section 2.0)
+   ========================================================================= */
+
+.app-titlebar {
+  flex: 0 0 auto;
+  /* 56px tall with a single baseline of items, plan 3 section 2.1. */
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  /* Room for the traffic lights, which sit inset in the top-left corner
+     under titleBarStyle: 'hiddenInset' — macOS needs ~78px of clearance for
+     them; 88px is the floor (plan 5), so the draggable region never swallows
+     the Projects | Sessions control sitting right after it. */
+  padding-left: 88px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+
+/* Every interactive control inside the draggable bar needs this, or it
+   can't be clicked (plan: "-webkit-app-region: drag ... every interactive
+   control inside it given -webkit-app-region: no-drag"). */
+.app-titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+.app-titlebar-left {
+  flex: 1;
+  display: flex;
+  justify-content: flex-start;
+  min-width: 0;
+}
+
+.app-titlebar-center {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+.app-titlebar-right {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.segmented-control {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+}
+
+.segmented-option {
+  height: 100%;
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  
+  cursor: pointer;
+}
+
+.segmented-option-selected {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.command-input-button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 360px;
+  height: 26px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  color: var(--text-faint);
+  font-family: var(--font-ui);
+  
+  cursor: pointer;
+  text-align: left;
+}
+
+.command-input-button:hover {
+  background: var(--surface-raised);
+}
+
+.command-input-icon {
+  flex: none;
+  font-family: var(--font-ui);
+  color: var(--text-muted);
+}
+
+.command-input-placeholder {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* <840px: search collapses to a ⌘K icon button (plan 3, 1.5). */
+.command-input-icon-button {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  
+  cursor: pointer;
+}
+
+.command-input-icon-button:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.session-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  /* Flex items default to min-width: auto, which lets this row's intrinsic
+     content width (it grows with every distinct status present) push past
+     its flex share and paint over the centred command button instead of
+     shrinking. min-width: 0 lets flexbox actually size it down to the space
+     .app-titlebar-right has left; overflow: hidden then clips instead of
+     letting the tail of the chip list render on top of a sibling. */
+  min-width: 0;
+  overflow: hidden;
+  /* flex-grow: 1 (not the default 0) so this box always occupies exactly
+     the space .app-titlebar-right has left over after the overflow menu —
+     a stable width AppShell.tsx measures against. Without it, flex-basis:
+     auto sizes the box to its OWN current content, so once JS hides a chip
+     the box shrinks to fit what's left, the next measurement reads that
+     smaller size as "available", and it collapses everything in a feedback
+     loop regardless of how much real space the titlebar has. justify-content
+     keeps the (now possibly wider-than-content) box's children hugging the
+     overflow menu, preserving the original visual alignment. */
+  flex-grow: 1;
+  flex-shrink: 1;
+  justify-content: flex-end;
+}
+
+.session-summary-total {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.status-dot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.status-dot-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  flex: none;
+}
+
+.status-dot-chip-count {
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.status-dot-chip-word {
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-dot-chip-overflow .status-dot-chip-count {
+  color: var(--text-muted);
+}
+
+/* 840-1199px: status summary collapses to dot + count pairs, words dropped
+   (plan 3, 1.5 — "● 2 ● 1 ● 7"). */
+.session-summary-compact .status-dot-chip-word,
+.session-summary-compact .session-summary-total {
+  display: none;
+}
+
+/* <840px: the whole summary becomes one badge with the attention count. */
+.session-summary-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  color: var(--text);
+  
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* A divider ahead of the overflow menu, per plan 3 section 2.1, once there is
+   something to its left to separate it from. */
+.overflow-menu::before {
+  content: '';
+  position: absolute;
+  left: calc(-1 * var(--space-2));
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+}
+
+/* Renders every possible chip off-screen (never display:none, which would
+   report a 0 width and defeat the measurement in AppShell.tsx) purely so
+   AppShell can measure how many chips actually fit before collapsing the
+   rest into a single "+N more" chip. */
+.session-summary-measure {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
+  display: flex;
+  gap: var(--space-2);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.overflow-menu {
+  position: relative;
+}
+
+.overflow-menu-button {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  
+}
+
+.overflow-menu-button:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+/* Sizing only; .cr-popover carries the surface and the positioning. */
+.overflow-menu-list {
+  min-width: 180px;
+  padding: var(--space-1);
+}
+
+.overflow-menu-item {
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  
+  text-align: left;
+  cursor: pointer;
+}
+
+.overflow-menu-item:hover {
+  background: var(--bg-sunken);
+}
+
+/* ============================================================================
+   Command palette
+   ========================================================================= */
+
+.command-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  z-index: var(--layer-modal-backdrop);
+}
+
+.command-palette {
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+}
+
+.command-palette-input {
+  flex: none;
+  padding: var(--space-3) var(--space-8);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  
+  outline: none;
+}
+
+.command-palette-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.command-palette-input::placeholder {
+  color: var(--text-faint);
+}
+
+.command-palette-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-1);
+}
+
+.command-palette-empty {
+  padding: var(--space-16);
+  color: var(--text-faint);
+  
+  text-align: center;
+}
+
+.command-palette-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  
+  text-align: left;
+  cursor: pointer;
+}
+
+.command-palette-item-highlighted {
+  background: var(--accent-soft);
+}
+
+.command-palette-item-kind {
+  flex: none;
+  width: 56px;
+  font-size: var(--text-caption-size);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.command-palette-item-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette-item-sublabel {
+  flex: none;
+  font-family: var(--font-mono);
+  
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+/* ============================================================================
+   Keyboard help overlay (backdrop/panel now come from the Modal primitive —
+   only the content-level rules below are still used)
+   ========================================================================= */
+
+.keyboard-help-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.keyboard-help-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  
+}
+
+.keyboard-help-combo {
+  flex: none;
+  font-family: var(--font-mono);
+  
+  color: var(--text);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+}
+
+.keyboard-help-description {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.session-row-highlighted {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ============================================================================
+   Project rail (plan 6) — left sidebar on Sessions screen only
+   ========================================================================= */
+
+.projects-rail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 0;
+  overflow-y: auto;
+}
+
+.projects-rail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Rail header padding: 32px top, 20px sides, 12px bottom. The 12px bottom
+     is now available as var(--space-12). */
+  padding: var(--space-32) 20px var(--space-12);
+  gap: var(--space-8);
+  flex: 0 0 auto;
+}
+
+.projects-rail-title {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0;
+  font-weight: 500;
+}
+
+.projects-rail-add-button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--text-card-size);
+  flex: 0 0 auto;
+}
+
+.projects-rail-add-button:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.projects-rail-items {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 12px;
+  min-height: 0;
+}
+
+.projects-rail-item {
+  height: 32px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--text-body-size);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  transition: background var(--motion-fast) var(--motion-easing);
+}
+
+.projects-rail-item:hover {
+  background: var(--surface-raised);
+}
+
+.projects-rail-item-selected {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.projects-rail-label-wrapper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.projects-rail-glyph {
+  font-size: var(--text-card-size);
+  flex: 0 0 auto;
+}
+
+.projects-rail-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  text-align: left;
+}
+
+.projects-rail-count {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.projects-rail-item-selected .projects-rail-count {
+  color: var(--text);
+}
+
+/* Footer: "New session" button with rail gutters */
+.projects-rail-footer {
+  flex: 0 0 auto;
+  padding: 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.projects-rail-new-session-button {
+  width: 100%;
+  height: auto;
+  padding: var(--space-3) var(--space-16);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--accent);
+  color: var(--accent-fg);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  transition: opacity var(--motion-fast) var(--motion-easing);
+}
+
+.projects-rail-new-session-button:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.projects-rail-new-session-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* .sessions-main itself lives in screens/sessions-list.css (scoped to
+   SessionsScreen, which owns the 32px top-gap requirement) — a duplicate
+   padding rule used to live here and could shadow it depending on CSS load
+   order. The descendant selectors below are unused legacy rules (no current
+   component renders a bare .session-row) and are left as-is. */
+
+.sessions-main h3 {
+  
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text);
+  opacity: 0.7;
+  margin: 20px 0 8px;
+}
+
+.sessions-main section:first-child h3 {
+  margin-top: 0;
+}
+
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-background-soft);
+  margin-bottom: 6px;
+}
+
+.session-row-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.session-row-title {
+  
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-row-adopt {
+  
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--ev-c-gray-2);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.session-row-clickable {
+  cursor: pointer;
+}
+
+.session-row-clickable:hover {
+  background: var(--ev-c-gray-3);
+}
+
+.session-row-branch {
+  
+  color: var(--color-text);
+  opacity: 0.5;
+}
+
+.session-row-time,
+.session-row-agent {
+  
+  color: var(--color-text);
+  opacity: 0.5;
+  white-space: nowrap;
+}
+
+.status-badge {
+  
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.status-working {
+  background: var(--status-working);
+  color: var(--accent-fg);
+}
+
+.status-needs_attention {
+  background: var(--status-attention);
+  color: var(--accent-fg);
+}
+
+.status-done {
+  background: var(--status-done);
+  color: var(--accent-fg);
+}
+
+.status-idle,
+.status-shell {
+  background: var(--ev-c-gray-2);
+  color: var(--color-text);
+}
+
+.status-errored {
+  background: var(--status-error);
+  color: var(--accent-fg);
+}
+
+.status-stopped,
+.status-missing {
+  background: var(--ev-c-gray-3);
+  color: var(--color-text);
+  opacity: 0.7;
+}
+
+.status-unknown {
+  background: var(--ev-c-gray-3);
+  color: var(--color-text);
+  opacity: 0.5;
+}
+
+.empty-state {
+  
+  color: var(--text-muted);
+}
+
+.settings-screen {
+  padding: 16px 24px;
+  overflow-y: auto;
+  max-width: 640px;
+}
+
+.settings-screen-header {
+  margin-bottom: var(--space-6);
+}
+
+.settings-screen-title {
+  margin: 0;
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-line);
+  font-weight: var(--text-display-weight);
+}
+
+.settings-screen-caption {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+}
+
+.settings-screen h2 {
+  margin-bottom: 12px;
+}
+
+.settings-screen h3 {
+  margin: 16px 0 8px;
+  
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+}
+
+.settings-follow-system {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  
+  margin-bottom: 16px;
+}
+
+.settings-hint {
+  
+  color: var(--text-muted);
+  margin-top: -8px;
+  margin-bottom: 16px;
+}
+
+.theme-swatch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.theme-swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-ui);
+  
+}
+
+.theme-swatch-row:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.theme-swatch-row-selected {
+  border-width: 2px;
+}
+
+.theme-swatch-chip {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  flex: none;
+}
+
+.theme-swatch-chip-text {
+  border-radius: var(--radius-pill);
+}
+
+.theme-swatch-dots {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.theme-swatch-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  flex: none;
+}
+
+.theme-swatch-name {
+  margin-left: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-hooks-state {
+  margin: 0 0 var(--space-8);
+  color: var(--text);
+}
+
+.settings-hooks-detail {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.settings-hooks-details {
+  margin: 0 0 var(--space-12);
+}
+
+.settings-hooks-details summary {
+  cursor: pointer;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  margin-bottom: var(--space-8);
+}
+
+.settings-hooks-details summary:hover {
+  color: var(--text);
+}
+
+.settings-preview {
+  background: var(--color-background-soft);
+  padding: 12px;
+  border-radius: var(--radius-md);
+  
+  overflow-x: auto;
+}
+
+.settings-error {
+  color: var(--status-error);
+  
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.settings-actions button {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--ev-c-gray-3);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.settings-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.session-detail {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 24px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.session-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.session-detail-header h2 {
+  flex: 1;
+  
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-detail-header button,
+.session-detail-actions button {
+  
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--ev-c-gray-3);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.session-detail-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.session-detail-terminal-msg {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--ev-c-gray-3);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  
+  margin-bottom: 12px;
+}
+
+.session-detail-terminal-msg button {
+  border: none;
+  background: var(--ev-c-gray-2);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+  
+}
+
+.pane-output {
+  flex: 1;
+  min-height: 240px;
+  max-height: 50vh;
+  overflow-y: auto;
+  background: var(--term-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+}
+
+.pane-output pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--term-fg);
+}
+
+.session-detail-input {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.session-detail-input input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ev-c-gray-3);
+  background: var(--color-background-soft);
+  color: var(--color-text);
+  
+}
+
+.session-detail-input button {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--ev-c-gray-3);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.session-detail-input button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.diff-view {
+  margin-top: 16px;
+}
+
+.diff-view h3,
+.diff-view h4 {
+  
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+  margin: 12px 0 6px;
+}
+
+.diff-file-list {
+  
+  margin-bottom: 8px;
+}
+
+.diff-file-list li {
+  padding: 2px 0;
+}
+
+.diff-stat {
+  opacity: 0.6;
+}
+
+.diff-status {
+  display: inline-block;
+  min-width: 60px;
+  
+  opacity: 0.8;
+}
+
+.diff-status-added {
+  color: var(--status-done);
+}
+
+.diff-status-deleted {
+  color: var(--status-error);
+}
+
+.diff-status-renamed,
+.diff-status-modified {
+  color: var(--status-attention);
+}
+
+.diff-patch {
+  background: var(--term-bg);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  font-family: var(--font-mono);
+  
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.diff-line {
+  white-space: pre;
+}
+
+.diff-add {
+  background: color-mix(in srgb, var(--status-done) 12%, transparent);
+  color: var(--status-done);
+}
+
+.diff-remove {
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  color: var(--status-error);
+}
+
+.diff-hunk {
+  color: var(--status-working);
+}
+
+/* Bottom-right, not top-right. A toast pinned to the top sat inside the
+   56px title bar's band and lost the stacking fight to it, so "session
+   deleted" reported itself from behind the chrome. Down here it overlaps
+   nothing the app puts in a corner — the "+ New session" button is bottom
+   left. Anchored at the bottom, so the newest toast is the one nearest the
+   corner and older ones are pushed up out of the way. */
+.toast-stack {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  z-index: var(--layer-toast);
+  max-width: calc(100vw - 24px);
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  width: 360px;
+  max-width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
+  padding: var(--space-12) var(--space-8) var(--space-12) var(--space-16);
+}
+
+/* Message + optional action stack above one another so a long message can
+   wrap onto several lines without fighting the action button for space
+   (plan 7 toast rework — messages used to overflow a fixed one-line row). */
+.toast-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+}
+
+.toast-message {
+  color: var(--text);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.toast-action {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: inherit;
+  font-size: var(--text-label-size);
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  background: var(--surface-raised);
+}
+
+.new-skill-dialog-warning {
+  
+  color: var(--status-error);
+  margin: -6px 0 0;
+}
+
+.add-rule-diff-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.add-rule-diff-label {
+  
+  opacity: 0.8;
+}
+
+.add-rule-diff {
+  background: var(--color-background);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+  
+  font-family: var(--font-mono, monospace);
+  max-height: 140px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+
+.add-rule-diff-line-added {
+  color: var(--status-done);
+}
+
+/* Backdrop/panel chrome for Add-to-rules and New-skill now comes from the
+   Modal primitive — only the content-level rules below are still used. */
+
+.new-session-form label,
+.new-skill-dialog label,
+.add-rule-dialog label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  
+  opacity: 0.9;
+}
+
+.new-session-form input[type='text'],
+.new-session-form input:not([type]),
+.new-session-form select,
+.new-session-form textarea,
+.new-skill-dialog input,
+.new-skill-dialog select,
+.new-skill-dialog textarea,
+.add-rule-dialog input,
+.add-rule-dialog select,
+.add-rule-dialog textarea {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ev-c-gray-3);
+  background: var(--color-background);
+  color: var(--color-text);
+  
+  font-family: inherit;
+}
+
+.new-session-investigate {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  
+}
+
+.new-session-investigate-hint {
+  margin: -4px 0 0;
+  
+  color: var(--text-faint);
+}
+
+.new-session-basedon {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  
+}
+
+.new-session-basedon label {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.new-session-steps {
+  
+  background: var(--color-background);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
+}
+
+.new-session-steps li {
+  padding: 2px 0;
+}
+
+.step-ok {
+  color: var(--status-done);
+}
+
+.step-fail {
+  color: var(--status-error);
+}
+
+.session-detail-delete {
+  background: var(--status-error);
+  color: var(--accent-fg);
+}
+
+/* ============================================================================
+   Delete session dialog (content inside the Modal primitive)
+   ========================================================================= */
+
+.delete-dialog-copy {
+  color: var(--text);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+}
+
+.delete-dialog-field-label {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+}
+
+.delete-dialog-path {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.delete-dialog-path-value {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line);
+  color: var(--text);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-8) var(--space-12);
+  overflow-wrap: anywhere;
+}
+
+/* Uncommitted-changes warning stays prominent — a tinted panel with an icon,
+   not just another paragraph the way the old copy buried it. */
+.delete-dialog-warning {
+  color: var(--status-error);
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-8) var(--space-12);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+}
+
+.delete-dialog-note {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+}
+
+.delete-dialog-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+}
+
+/* Two classes deliberately, so this beats .cr-button--filled's accent
+   background on specificity regardless of stylesheet load order — a destroy
+   action must never read as an ordinary filled confirm. */
+.cr-button.delete-dialog-destructive {
+  background: var(--status-error);
+  color: var(--accent-fg);
+}
+
+.cr-button.delete-dialog-destructive:not(:disabled):hover {
+  background: var(--status-error);
+  filter: brightness(1.05);
+}
+
+/* ============================================================================
+   Projects list (plan 3, section 2.2 — cards, not bare rows)
+   ========================================================================= */
+
+.projects-list-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  /* Screen padding per plan 3, 1.7: 48px top, 64px sides at >=1200px,
+     stepping down with the shell's ResizeObserver-driven size bucket. */
+  padding: var(--space-48) var(--space-64);
+}
+
+.app-root[data-shell-size='medium'] .projects-list-screen {
+  padding: var(--space-48) var(--space-32);
+}
+
+.app-root[data-shell-size='narrow'] .projects-list-screen {
+  padding: var(--space-32) 20px;
+}
+
+.projects-list-screen > * {
+  max-width: 1100px;
+  margin-left: 0;
+  margin-right: auto;
+  width: 100%;
+}
+
+.projects-list-header {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: var(--space-48);
+}
+
+.projects-list-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-16);
+}
+
+.projects-list-title {
+  font-family: var(--font-ui);
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-line);
+  font-weight: var(--text-display-weight);
+  color: var(--text);
+  margin: 0;
+}
+
+.projects-list-count {
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+  margin: var(--space-8) 0 0;
+}
+
+.projects-list-sort {
+  margin-top: var(--space-32);
+}
+
+.project-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.project-card {
+  cursor: pointer;
+  outline-offset: 2px;
+}
+
+.project-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.project-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  position: relative;
+}
+
+.project-card-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.project-card-heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-width: 0;
+  flex: 1;
+}
+
+.project-card-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-family: var(--font-ui);
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-card-pinned {
+  font-size: var(--text-caption-size);
+}
+
+.project-card-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: var(--text-mono-line);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.project-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  margin-top: var(--space-16);
+  padding-left: 24px;
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.project-card-branch {
+  font-family: var(--font-mono);
+}
+
+.project-card-meta-dot {
+  color: var(--text-faint);
+}
+
+.project-card-actions {
+  position: absolute;
+  right: 0;
+  top: 0;
+  display: none;
+  gap: var(--space-8);
+}
+
+.project-card:hover .project-card-actions,
+.project-card:focus-within .project-card-actions {
+  display: flex;
+}
+
+.project-card-action {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  
+  transition: background var(--motion-fast) var(--motion-easing);
+}
+
+.project-card-action:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.project-card-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.project-card-action-danger:hover {
+  color: var(--status-error);
+}
+
+.project-card-rename-form {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-16);
+}
+
+.project-card-rename-form input {
+  
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.project-card-rename-form button {
+  
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.project-card-inline-error {
+  
+  color: var(--status-error);
+  margin: var(--space-8) 0 0 0;
+}
+
+.empty-state-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-16);
+  padding: var(--space-32) 0;
+}
+
+.empty-state-title {
+  font-family: var(--font-ui);
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+  color: var(--text);
+  margin: 0;
+}
+
+.empty-state-caption {
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* ============================================================================
+   Tabs (plan 2.2) — underline nav, top-level navigation only.
+   ========================================================================= */
+
+.tabs {
+  display: flex;
+  gap: var(--space-5);
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--space-32);
+}
+
+.tab {
+  background: none;
+  border: none;
+  padding: var(--space-3) 0;
+  
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab-selected {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+/* ============================================================================
+   Project detail (plan 2.2)
+   ========================================================================= */
+
+.project-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.project-detail-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* Plan 5 spacing fix #3 — 32px between the top bar and the first control
+     below it, everywhere it occurs. */
+  padding: var(--space-32) var(--space-32) var(--space-16);
+}
+
+.project-detail-back {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--text-card-size);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  /* Plan 5 spacing fix #2 — 16px between the back control and the title
+     (folder glyph + name) that follows it, using the plan-3 design-system
+     token (see session-detail.css for why not --space-4). */
+  margin-right: var(--space-16);
+}
+
+.project-detail-back:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.project-detail-folder {
+  font-size: var(--text-title-size);
+}
+
+.project-detail-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.project-detail-title h2 {
+  
+  color: var(--text);
+  font-weight: 600;
+}
+
+.project-detail-path {
+  font-family: var(--font-mono);
+  
+  color: var(--text-faint);
+}
+
+.project-detail-body {
+  padding: var(--space-6) var(--space-32);
+}
+
+.tab-placeholder {
+  color: var(--text-faint);
+  
+  padding: var(--space-8) 0;
+}
+
+/* ============================================================================
+   Overview tab (plan 3, section 2.3) — mission box, ACTIVE grid, WORKTREES,
+   Recent | CLI history. All spacing/type from the plan-3 token scale.
+   ========================================================================= */
+
+.overview-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-32);
+  max-width: 1100px;
+}
+
+.cr-mission-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-24);
+}
+
+.cr-mission-box-textarea {
+  resize: vertical;
+  min-height: 96px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-body-weight);
+}
+
+.cr-mission-box-textarea:focus {
+  outline: none;
+}
+
+.cr-mission-box-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cr-mission-box-textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.cr-mission-box-branch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: var(--space-8);
+}
+
+.cr-mission-box-branch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.cr-mission-box-branch-hint {
+  font-size: var(--text-caption-size);
+  color: var(--text-faint);
+}
+
+.cr-mission-box-branch-row input {
+  flex: 1;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+}
+
+.cr-mission-box-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-16);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-16);
+}
+
+.cr-mission-box-empty {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 16px;
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  cursor: pointer;
+}
+
+.cr-mission-box-empty:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.cr-mission-box-submit {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 8px 20px;
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  cursor: pointer;
+}
+
+.cr-mission-box-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.overview-section-header {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-16) 0;
+}
+
+.overview-section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-16);
+}
+
+.overview-section-header-row .overview-section-header {
+  margin-bottom: 0;
+}
+
+/* Active sessions + worktrees grids share the plan-1.7 card-grid recipe. */
+.cr-active-grid,
+.cr-worktree-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-16);
+}
+
+.cr-session-card,
+.cr-worktree-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  background: var(--surface);
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: var(--space-24);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  transition: background 120ms ease-out;
+}
+
+.cr-session-card:hover,
+.cr-worktree-card:hover {
+  background: var(--surface-raised);
+}
+
+.cr-session-card:focus-visible,
+.cr-worktree-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cr-session-card-title {
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-session-card-branch {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-session-card--new,
+.cr-worktree-card--new {
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+  min-height: 96px;
+}
+
+.cr-session-card--new:hover,
+.cr-worktree-card--new:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.cr-worktree-card-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.cr-worktree-card-branch {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.cr-worktree-card-actions {
+  display: flex;
+  gap: var(--space-8);
+  margin-top: auto;
+  padding-top: var(--space-8);
+}
+
+.cr-worktree-card-actions button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  cursor: pointer;
+}
+
+.cr-worktree-card-actions button:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+/* Plan 4 Part 7.2 — worktree settings, inside its own collapsible OVERVIEW
+   section. Field layout matches .cr-mission-box-branch's label+input idiom;
+   actions/errors reuse SettingsScreen's .settings-actions/.settings-error. */
+.cr-worktree-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  max-width: 480px;
+}
+
+.cr-worktree-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.cr-worktree-settings-field input[type='text'],
+.cr-worktree-settings-field textarea,
+.cr-worktree-settings-field select {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+}
+
+.cr-worktree-settings-field textarea {
+  resize: vertical;
+  font-family: var(--font-mono);
+}
+
+.cr-worktree-settings-field input:focus-visible,
+.cr-worktree-settings-field textarea:focus-visible,
+.cr-worktree-settings-field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cr-worktree-settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.recent-session-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.recent-session-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  padding: var(--space-8) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  font-size: var(--text-body-size);
+}
+
+.recent-session-branch {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+}
+
+.recent-session-row-clickable {
+  cursor: pointer;
+}
+
+.recent-session-row-clickable:hover {
+  background: var(--surface-raised);
+}
+
+.recent-session-title {
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-session-time {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.recent-session-archived {
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  font-size: var(--text-caption-size);
+  text-transform: uppercase;
+}
+
+.cli-history-count {
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cli-history-actions {
+  display: flex;
+  gap: var(--space-8);
+  flex-shrink: 0;
+}
+
+/* Drag to resize the rail. 4px of grab area sitting over the border, widened to
+   a visible line only while hovered or dragged, so it is findable without being
+   another piece of chrome in the resting state. Double-click resets. */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  transition: background-color var(--motion-fast) var(--motion-easing);
+  z-index: var(--layer-raised);
+}
+
+.sidebar-resize-handle:hover,
+.sidebar-resize-handle:active {
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-resize-handle {
+    transition: none;
+  }
+}
+
+.settings-defaults {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  margin-bottom: var(--space-32);
+}
+
+.settings-defaults-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.settings-defaults-label {
+  min-width: 96px;
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+}
+
+/* A project's name, contained: on cards it sits beside the branch, and can
+   come from any project, so it reads as a tag rather than more path. */
+.cr-project-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 160px;
+  height: 20px;
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-meta-size);
+  line-height: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-project-pill::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--accent);
+}

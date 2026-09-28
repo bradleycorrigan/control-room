@@ -1,0 +1,244 @@
+/* The diff overlay — a window over the app, not a strip beside it.
+
+   The old side sheet was 560px wide, which is narrower than the code people
+   are reviewing, so every other line wrapped. This takes the window. */
+
+.diff-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-32);
+  z-index: var(--layer-modal-backdrop);
+}
+
+.diff-overlay {
+  width: min(1100px, 100%);
+  height: 100%;
+  max-height: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-popover);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: var(--layer-modal);
+}
+
+.diff-overlay-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  padding: var(--space-16) var(--space-16) var(--space-16) var(--space-24);
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-overlay-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+}
+
+.diff-overlay-title h2 {
+  margin: 0;
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+}
+
+.diff-overlay-base {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+/* The counts sit between the title and the controls and take the slack, so
+   the close button stays pinned to the corner whatever the numbers say. */
+.diff-overlay-summary {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.diff-overlay-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.diff-overlay-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-16) var(--space-24) var(--space-48);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.diff-overlay-truncated {
+  margin: 0 0 var(--space-8);
+  padding: var(--space-8) var(--space-16);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--status-attention) 12%, transparent);
+  color: var(--text);
+  font-size: var(--text-caption-size);
+}
+
+/* flex: none is what makes the overlay scroll at all. The body is a column
+   flex container, so without it every box shrinks to share the height on
+   offer instead of overflowing — and since each box clips its own content,
+   the patch inside simply disappeared and the body's scrollHeight matched its
+   clientHeight exactly. Nothing looked wrong in a screenshot; there was just
+   no scrollbar, and less diff than the file had. */
+.diff-file {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.diff-file-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  padding: var(--space-8) var(--space-16);
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-body-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.diff-file-header:hover {
+  background: var(--surface-raised);
+}
+
+.diff-file-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.diff-file-chevron {
+  display: inline-block;
+  width: 12px;
+  color: var(--text-muted);
+  transition: transform 120ms ease;
+}
+
+.diff-file-chevron--open {
+  transform: rotate(90deg);
+}
+
+.diff-overlay .diff-status {
+  min-width: 72px;
+  font-size: var(--text-caption-size);
+  font-family: var(--font-mono);
+}
+
+.diff-status-untracked {
+  color: var(--text-muted);
+}
+
+.diff-file-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl; /* keeps the filename when the path is too long to fit */
+  text-align: left;
+}
+
+.diff-file-path > * {
+  direction: ltr;
+  unicode-bidi: embed;
+}
+
+.diff-file-dir {
+  color: var(--text-faint);
+}
+
+.diff-file-name {
+  color: var(--text);
+}
+
+.diff-file-stat {
+  display: flex;
+  gap: var(--space-8);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+}
+
+.diff-stat-add {
+  color: var(--status-done);
+}
+
+.diff-stat-remove {
+  color: var(--status-error);
+}
+
+/* Capped, and scrolls inside. Uncapped, one 200-line file was most of the
+   overlay's scroll height and pushed every other file off the bottom — you
+   could not see what else had changed without scrolling past all of it. The
+   cap is a share of the window rather than a pixel count, so it holds roughly
+   the same number of lines whatever size the window is. */
+.diff-file-patch {
+  margin: 0;
+  max-height: 50vh;
+  overflow: auto;
+  padding: var(--space-8) 0;
+  border-top: 1px solid var(--border);
+  /* --bg, not --term-bg: this is code being read, not a terminal, and a
+     terminal-dark block inside a light theme looks like a bug. */
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  line-height: 1.5;
+}
+
+.diff-overlay .diff-line {
+  display: flex;
+  padding: 0 var(--space-16) 0 0;
+  white-space: pre;
+}
+
+/* Two gutters, base and new, so a line tells you where it is on both sides.
+   The width comes from the file's own largest number (--diff-gutter), set
+   inline — a fixed gutter is cramped on a long file and wasted on a short one.
+   user-select: none keeps the numbers out of anything you copy. */
+.diff-num {
+  flex: none;
+  width: calc(var(--diff-gutter, 3ch) + var(--space-16));
+  padding-right: var(--space-8);
+  text-align: right;
+  color: var(--text-faint);
+  background: var(--surface);
+  user-select: none;
+}
+
+.diff-text {
+  flex: 1;
+  min-width: 0;
+  padding-left: var(--space-16);
+}
+
+.diff-file-empty {
+  margin: 0;
+  padding: var(--space-8) var(--space-16);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}

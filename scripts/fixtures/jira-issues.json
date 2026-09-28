@@ -1,0 +1,356 @@
+{
+  "statuses": [
+    {
+      "name": "Backlog",
+      "category": "new"
+    },
+    {
+      "name": "To Do",
+      "category": "new"
+    },
+    {
+      "name": "In Progress",
+      "category": "indeterminate"
+    },
+    {
+      "name": "In Review",
+      "category": "indeterminate"
+    },
+    {
+      "name": "Blocked/Waiting",
+      "category": "indeterminate"
+    },
+    {
+      "name": "Done",
+      "category": "done"
+    }
+  ],
+  "sprints": [
+    {
+      "id": 1,
+      "name": "honey-buzzard",
+      "state": "active",
+      "startDate": "2026-09-15T09:00:00.000Z",
+      "endDate": "2026-09-29T17:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "name": "kestrel",
+      "state": "future"
+    }
+  ],
+  "issues": [
+    {
+      "key": "TEAMDATA-50",
+      "summary": "Internal reporting",
+      "description": "Everything for the internal reporting refresh.",
+      "status": "In Progress",
+      "statusCategory": "indeterminate",
+      "project": "TEAMDATA",
+      "issueType": "Epic",
+      "isEpic": true,
+      "priority": null,
+      "assignee": "You",
+      "assignedToMe": true,
+      "updated": "2026-09-22T09:00:00.000Z",
+      "sprint": null,
+      "parent": null,
+      "links": [],
+      "reporter": "Someone Else",
+      "created": "2026-09-10T10:00:00.000Z",
+      "labels": [],
+      "requestType": null,
+      "estimate": null,
+      "why": null,
+      "pullRequests": null
+    },
+    {
+      "key": "TEAMDATA-60",
+      "summary": "Partner dashboards",
+      "description": "",
+      "status": "To Do",
+      "statusCategory": "new",
+      "project": "TEAMDATA",
+      "issueType": "Epic",
+      "isEpic": true,
+      "priority": null,
+      "assignee": null,
+      "assignedToMe": false,
+      "updated": "2026-09-21T09:00:00.000Z",
+      "sprint": null,
+      "parent": null,
+      "links": [],
+      "reporter": "Someone Else",
+      "created": "2026-09-10T10:00:00.000Z",
+      "labels": [],
+      "requestType": null,
+      "estimate": null,
+      "why": null,
+      "pullRequests": null
+    },
+    {
+      "key": "DSD-101",
+      "summary": "Backfill partner metrics after the warehouse migration so dashboards stop showing gaps",
+      "description": "The migration left a gap in March.\n\n- Re-run the model for 2026-03\n- Check the partner dashboard totals",
+      "status": "In Progress",
+      "statusCategory": "indeterminate",
+      "project": "DSD",
+      "issueType": "Task",
+      "isEpic": false,
+      "priority": "High",
+      "assignee": "You",
+      "assignedToMe": true,
+      "updated": "2026-09-24T09:00:00.000Z",
+      "sprint": {
+        "id": 1,
+        "name": "honey-buzzard",
+        "state": "active"
+      },
+      "parent": {
+        "key": "TEAMDATA-60",
+        "summary": "Partner dashboards"
+      },
+      "links": [
+        {
+          "url": "https://example.slack.com/archives/C000/p1",
+          "title": "\ud83d\udcac Open in Slack"
+        }
+      ],
+      "reporter": "Someone Else",
+      "created": "2026-09-10T10:00:00.000Z",
+      "labels": ["data-ask"],
+      "requestType": "Internal Request",
+      "estimate": "4h",
+      "why": "Partner dashboards show gaps for March",
+      "pullRequests": null
+    },
+    {
+      "key": "DSD-102",
+      "summary": "Review the donations model tests",
+      "description": "h3. Context\nThe *model tests* fail on the nightly run. See [the dbt docs|https://docs.getdbt.com].\n\n* Run {{dbt test -s donations}}\n* Fix the two failing assertions",
+      "status": "In Review",
+      "statusCategory": "indeterminate",
+      "project": "DSD",
+      "issueType": "Task",
+      "isEpic": false,
+      "priority": "Medium",
+      "assignee": "You",
+      "assignedToMe": true,
+      "updated": "2026-09-23T15:00:00.000Z",
+      "sprint": {
+        "id": 1,
+        "name": "honey-buzzard",
+        "state": "active"
+      },
+      "parent": {
+        "key": "TEAMDATA-50",
+        "summary": "Internal reporting"
+      },
+      "links": [],
+      "reporter": "Someone Else",
+      "created": "2026-09-10T10:00:00.000Z",
+      "labels": ["data-ask"],
+      "requestType": "Internal Request",
+      "estimate": null,
+      "why": null,
+      "pullRequests": "open"
+    },
+    {
+      "key": "TEAMDATA-201",
+      "summary": "Waiting on access to the vendor bucket",
+      "description": "Blocked until the vendor shares credentials.",
+      "status": "Blocked/Waiting",
+      "statusCategory": "indeterminate",
+      "project": "TEAMDATA",
+      "issueType": "Task",
+      "isEpic": false,
+      "priority": null,
+      "assignee": "You",
+      "assignedToMe": true,
+      "updated": "2026-09-20T10:00:00.000Z",
+      "sprint": {
+        "id": 1,
+        "name": "honey-buzzard",
+        "state": "active"
+      },
+      "parent": null,
+      "links": [
+        {
+          "url": "https://example.slack.com/archives/C000/p2",
+          "title": "\ud83d\udcac Open in Slack"
+        }
+      ],
+      "reporter": "Someone Else",
+      "created": "2026-09-10T10:00:00.000Z",
+      "labels": ["data-ask"],
+      "requestType": null,
+      "estimate": null,
+      "why": null,
+      "pullRequests": null,
+      "blocking": [
+        {
+          "linkId": "fixture-link-1",
+          "key": "DSD-103",
+          "summary": "Add freshness checks to the nightly run",
+          "status": "Backlog",
+          "statusCategory": "new"
+        }
+      ],
+      "blockedBy": [
+        {
+          "linkId": "fixture-link-2",
+          "key": "PLAT-9",
+          "summary": "Grant the data team read access to the vendor bucket",
+          "status": "In Progress",
+          "statusCategory": "indeterminate"
+        }
+      ]
+    },
+    {
+      "key": "TEAMDATA-202",
+      "summary": "Document the ingestion runbook",
+      "description": "",
+      "status": "Backlog",
+      "statusCategory": "new",
+      "project": "TEAMDATA",
+      "issueType": "Story",
+      "isEpic": false,
+      "priority": "Low",
+      "assignee": null,
+      "assignedToMe": false,
+      "updated": "2026-09-18T10:00:00.000Z",
+      "sprint": null,
+      "parent": {
+        "key": "TEAMDATA-50",
+        "summary": "Internal reporting"
+      },
+      "links": [],
+      "reporter": "Someone Else",
+      "created": "2026-09-10T10:00:00.000Z",
+      "labels": ["data-ask"],
+      "requestType": null,
+      "estimate": null,
+      "why": null,
+      "pullRequests": null
+    },
+    {
+      "key": "DSD-103",
+      "summary": "Add freshness checks to the nightly run",
+      "description": "",
+      "status": "Backlog",
+      "statusCategory": "new",
+      "project": "DSD",
+      "issueType": "Task",
+      "isEpic": false,
+      "priority": "Medium",
+      "assignee": "Someone Else",
+      "assignedToMe": false,
+      "updated": "2026-09-17T10:00:00.000Z",
+      "sprint": {
+        "id": 2,
+        "name": "kestrel",
+        "state": "future"
+      },
+      "parent": null,
+      "links": [],
+      "reporter": "Someone Else",
+      "created": "2026-09-10T10:00:00.000Z",
+      "labels": ["data-ask"],
+      "requestType": "Internal Request",
+      "estimate": "4h",
+      "why": null,
+      "pullRequests": null,
+      "blockedBy": [
+        {
+          "linkId": "fixture-link-1",
+          "key": "TEAMDATA-201",
+          "summary": "Waiting on access to the vendor bucket",
+          "status": "Blocked/Waiting",
+          "statusCategory": "indeterminate"
+        }
+      ]
+    },
+    {
+      "key": "DSD-104",
+      "summary": "Re-run the dbt model for 2026-03",
+      "description": "",
+      "status": "Done",
+      "statusCategory": "done",
+      "project": "DSD",
+      "issueType": "Sub-task",
+      "isEpic": false,
+      "isSubtask": true,
+      "priority": null,
+      "assignee": "You",
+      "assignedToMe": true,
+      "updated": "2026-09-22T09:00:00.000Z",
+      "sprint": null,
+      "parent": {
+        "key": "DSD-101",
+        "summary": "Backfill partner metrics after the warehouse migration so dashboards stop showing gaps"
+      },
+      "links": [],
+      "reporter": "You",
+      "created": "2026-09-11T10:00:00.000Z",
+      "labels": [],
+      "requestType": null,
+      "estimate": null,
+      "why": null,
+      "pullRequests": null
+    },
+    {
+      "key": "DSD-105",
+      "summary": "Check partner dashboard totals match after the backfill",
+      "description": "",
+      "status": "To Do",
+      "statusCategory": "new",
+      "project": "DSD",
+      "issueType": "Sub-task",
+      "isEpic": false,
+      "isSubtask": true,
+      "priority": null,
+      "assignee": null,
+      "assignedToMe": false,
+      "updated": "2026-09-22T09:00:00.000Z",
+      "sprint": null,
+      "parent": {
+        "key": "DSD-101",
+        "summary": "Backfill partner metrics after the warehouse migration so dashboards stop showing gaps"
+      },
+      "links": [],
+      "reporter": "You",
+      "created": "2026-09-11T10:05:00.000Z",
+      "labels": [],
+      "requestType": null,
+      "estimate": null,
+      "why": null,
+      "pullRequests": null
+    }
+  ],
+  "columns": [
+    {
+      "name": "Backlog/Not started",
+      "statuses": ["Backlog", "To Do"]
+    },
+    {
+      "name": "In Progress",
+      "statuses": ["In Progress"]
+    },
+    {
+      "name": "Blocked",
+      "statuses": ["Blocked/Waiting"]
+    },
+    {
+      "name": "In Review",
+      "statuses": ["In Review"]
+    },
+    {
+      "name": "Done/Not doing",
+      "statuses": ["Done"]
+    }
+  ],
+  "projectStatuses": {
+    "DSD": ["Backlog", "To Do", "In Progress", "In Review", "Blocked/Waiting", "Done"],
+    "TEAMDATA": ["Backlog", "To Do", "In Progress", "In Review", "Blocked/Waiting", "Done"]
+  }
+}

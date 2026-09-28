@@ -1,0 +1,80 @@
+/* Part 7.4 — context-window panel styling for Modal (plan 7, B6). Every colour is a token. */
+
+.context-window-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.context-window-tokens {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-12);
+}
+
+.context-window-token-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-12);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+}
+
+.context-window-token-label {
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  font-weight: var(--text-meta-weight);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+}
+
+.context-window-token-value {
+  font-size: var(--text-stat-size);
+  line-height: var(--text-stat-line);
+  font-weight: var(--text-stat-weight);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.context-window-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-12);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+}
+
+.context-window-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+}
+
+.context-window-info-label {
+  color: var(--text-muted);
+  font-weight: var(--text-meta-weight);
+  font-family: var(--font-mono);
+}
+
+.context-window-info-value {
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.context-window-empty {
+  margin: 0;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  color: var(--text-muted);
+}

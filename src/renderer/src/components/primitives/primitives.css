@@ -1,0 +1,859 @@
+/* Primitives (plan 3, Part 1 / milestone V1). Every value here comes from a
+   token in theme/tokens.css — no hex literals, no arbitrary px. */
+
+/* ---- Card (1.2) --------------------------------------------------------- */
+.cr-card {
+  border-radius: var(--radius-lg);
+}
+.cr-card--flat {
+  background: var(--bg);
+}
+.cr-card--raised {
+  background: var(--surface);
+  padding: var(--card-padding);
+  transition: background var(--motion-fast) var(--motion-easing);
+}
+.cr-card--raised:hover {
+  background: var(--surface-raised);
+}
+.cr-card--outlined {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: var(--card-padding);
+}
+
+/* ---- Section (1.7) ------------------------------------------------------ */
+.cr-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+.cr-section__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-16);
+}
+.cr-section__title {
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0;
+}
+
+/* ---- Stack / Row (1.4 alignment) ---------------------------------------- */
+.cr-stack {
+  display: flex;
+  flex-direction: column;
+}
+.cr-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+/* ---- Button (1.6) -------------------------------------------------------- */
+.cr-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  border-radius: var(--radius-md);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line);
+  font-weight: var(--text-label-weight);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition:
+    background var(--motion-fast) var(--motion-easing),
+    border-color var(--motion-fast) var(--motion-easing);
+  outline-offset: 2px;
+  /* Every size has a fixed height, so a label that wrapped would spill out
+     of the button. It stays on one line; its container makes room. */
+  white-space: nowrap;
+}
+.cr-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.cr-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.cr-button--compact {
+  height: 28px;
+  padding: 0 var(--space-16);
+}
+.cr-button--default {
+  height: 36px;
+  padding: 0 var(--space-16);
+}
+.cr-button--primary-size {
+  height: 44px;
+  padding: 0 var(--space-24);
+}
+.cr-button--filled {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.cr-button--filled:not(:disabled):hover {
+  background: var(--accent);
+  filter: brightness(1.05);
+}
+.cr-button--outlined {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+.cr-button--outlined:not(:disabled):hover {
+  background: var(--surface);
+}
+.cr-button--ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+.cr-button--ghost:not(:disabled):hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* ---- Input (1.6) --------------------------------------------------------- */
+.cr-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 36px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-16);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  transition: border-color var(--motion-fast) var(--motion-easing);
+}
+.cr-input::placeholder {
+  color: var(--text-faint);
+}
+.cr-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+/* ---- SegmentedControl (1.6) ---------------------------------------------- */
+.cr-segmented {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+/* A two-word label never breaks across lines. Without this "This checkout"
+   and "New worktree" stacked into two lines the moment the control was in a
+   container narrower than they wanted, blowing past the 28px height and
+   making the whole row look broken. */
+.cr-segmented__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  white-space: nowrap;
+  height: 28px;
+  padding: 0 var(--space-16);
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-easing);
+}
+.cr-segmented__option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.cr-segmented__option--selected {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.cr-segmented__option:not(.cr-segmented__option--selected):hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* ---- Icon Button (plan 7, A2) -------------------------------------------- */
+.cr-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background var(--motion-fast) var(--motion-easing),
+    color var(--motion-fast) var(--motion-easing);
+}
+.cr-icon-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.cr-icon-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.cr-icon-button--28 {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+}
+.cr-icon-button--36 {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+}
+.cr-icon-button--ghost {
+  background: transparent;
+}
+.cr-icon-button--ghost:not(:disabled):hover {
+  background: var(--surface);
+}
+.cr-icon-button--filled {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.cr-icon-button--filled:not(:disabled):hover {
+  background: var(--accent);
+  filter: brightness(1.05);
+}
+
+/* ---- Icon Tile (plan 7, A2) ------------------------------------------------ */
+.cr-icon-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--icon-tile-tone) 15%, var(--surface));
+  border-radius: var(--radius-lg);
+  flex-shrink: 0;
+  color: var(--icon-tile-tone);
+}
+.cr-icon-tile--28 {
+  width: 28px;
+  height: 28px;
+}
+.cr-icon-tile--36 {
+  width: 36px;
+  height: 36px;
+}
+.cr-icon-tile--40 {
+  width: 40px;
+  height: 40px;
+}
+.cr-icon-tile--48 {
+  width: 48px;
+  height: 48px;
+}
+
+/* ---- Status Dot (plan 7, A2) ----------------------------------------------- */
+.status-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.status-dot-working {
+  color: var(--status-working);
+}
+.status-dot-attention {
+  color: var(--status-attention);
+}
+.status-dot-done {
+  color: var(--status-done);
+}
+.status-dot-idle {
+  color: var(--status-idle);
+}
+.status-dot-error {
+  color: var(--status-error);
+}
+.status-dot-faint {
+  color: var(--text-faint);
+}
+
+/* Breathing animation for needs_attention and done states (plan 7, status section) */
+@keyframes attention-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes finished-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Four breaths, then still. A pulse that never stops kept the GPU redrawing
+   the window 60 times a second for as long as anything needed an answer —
+   ~19% CPU on an otherwise idle app — and a pulse you've already seen for
+   hours is noise. It plays again whenever a dot newly needs an answer,
+   because the class arriving is what starts it. */
+.status-dot-animate {
+  animation: attention-glow 2.5s ease-in-out 4;
+}
+
+.status-dot-done.status-dot-animate {
+  animation: finished-glow 3s ease-in-out 4;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-dot-animate {
+    animation: none;
+  }
+}
+
+/* ---- Meta and MetaItem (plan 7, A2) ---------------------------------------- */
+.cr-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12, 12px);
+}
+
+.cr-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-meta-size, 11px);
+  line-height: var(--text-meta-line, 16px);
+  font-weight: var(--text-meta-weight, 400);
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.cr-meta-item-label {
+  white-space: nowrap;
+}
+
+/* ---- Badge / Status Chip (plan 7, A2 — moved from sessions-list.css) ------ */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.status-badge--chip {
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.status-badge-word {
+  font-size: var(--text-meta-size, 11px);
+  line-height: var(--text-meta-line, 16px);
+  font-weight: var(--text-meta-weight, 400);
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+/* ---- Modal (plan 7, A2) ----------------------------------------------------- */
+.cr-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: var(--layer-modal-backdrop);
+}
+
+.cr-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--surface-raised);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
+  z-index: var(--layer-modal);
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.cr-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-16);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.cr-modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  min-width: 0;
+}
+
+.cr-modal-title {
+  margin: 0;
+  font-size: var(--text-card-size, 16px);
+  line-height: var(--text-card-line, 22px);
+  font-weight: var(--text-card-weight, 600);
+  color: var(--text);
+}
+
+.cr-modal-content {
+  padding: var(--space-16);
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* ---- Pill (plan 7, A2) ------------------------------------------------------ */
+.cr-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-16);
+  border: 1px solid var(--pill-tone);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--pill-tone);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line);
+  font-weight: var(--text-label-weight);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--motion-easing),
+    color var(--motion-fast) var(--motion-easing);
+}
+
+.cr-pill--28 {
+  height: 28px;
+}
+
+.cr-pill--36 {
+  height: 36px;
+}
+
+.cr-pill:focus-visible {
+  outline: 2px solid var(--pill-tone);
+  outline-offset: 2px;
+}
+
+.cr-pill:not(:disabled):hover {
+  background: color-mix(in srgb, var(--pill-tone) 8%, var(--bg));
+}
+
+.cr-pill--active {
+  background: color-mix(in srgb, var(--pill-tone) 15%, var(--bg));
+  color: var(--pill-tone);
+}
+
+.cr-pill:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ---- Empty State (plan 7, A2) ----------------------------------------------- */
+.cr-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  text-align: center;
+}
+
+/* A waiting state, not an empty one: the icon turns so the screen reads as
+   "in progress" rather than "nothing here". */
+@keyframes cr-empty-state-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.cr-empty-state-icon--spins svg {
+  animation: cr-empty-state-spin 1s linear infinite;
+}
+
+.cr-empty-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.cr-empty-state-title {
+  margin: 0;
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+  color: var(--text);
+}
+
+.cr-empty-state-body {
+  margin: 0;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  color: var(--text-muted);
+  max-width: 400px;
+}
+
+.cr-empty-state-action {
+  margin-top: var(--space-8);
+}
+
+/* ---- Progress Bar (plan 7, A2) ----------------------------------------------- */
+.cr-progress-bar {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: 2px;
+  background: var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.cr-progress-bar-fill {
+  height: 100%;
+  background: var(--progress-tone);
+  border-radius: var(--radius-sm);
+  transition: width var(--motion-fast) var(--motion-easing);
+}
+
+/* ---- Skeleton (plan 7, A2) --------------------------------------------------- */
+.cr-skeleton {
+  background: color-mix(in srgb, var(--surface) 50%, transparent);
+  border-radius: var(--radius-lg);
+  animation: skeleton-pulse 2s ease-in-out infinite;
+}
+
+.cr-skeleton--row {
+  border-radius: var(--radius-lg);
+}
+
+.cr-skeleton--card {
+  border-radius: var(--radius-lg);
+}
+
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-skeleton {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
+/* ---- Textarea (plan 7, A2) --------------------------------------------------- */
+.cr-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 100px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-16);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  resize: vertical;
+  transition: border-color var(--motion-fast) var(--motion-easing);
+}
+
+.cr-textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.cr-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-color: var(--accent);
+}
+
+/* Tooltip — portalled, so never clipped by a scroll container. The transform
+   centres it on the trigger and lifts it clear on the top side. */
+.cr-tooltip-trigger {
+  display: inline-flex;
+}
+
+.cr-tooltip {
+  position: fixed;
+  /* Above everything. A tooltip is transient and explains the thing you are
+     already pointing at, so it can never be the element that loses a stacking
+     fight — at 200 it rendered behind the title bar (250), its menu (300) and
+     every modal (1000/1001). */
+  z-index: var(--layer-tooltip);
+  pointer-events: none;
+  /* The box caps at this width and the text wraps inside it. It used to also
+     set `white-space: nowrap`, which meant a long label ran straight out past
+     the painted background instead of wrapping — the cap sized the box, the
+     text ignored it. */
+  max-width: 280px;
+  width: max-content;
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line);
+  font-weight: var(--text-label-weight);
+  text-align: center;
+  overflow-wrap: anywhere;
+  box-shadow: var(--shadow-popover);
+  animation: cr-tooltip-in var(--motion-fast) var(--motion-easing);
+}
+
+.cr-tooltip--top {
+  transform: translate(-50%, -100%);
+}
+
+.cr-tooltip--bottom {
+  transform: translate(-50%, 0);
+}
+
+@keyframes cr-tooltip-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-tooltip {
+    animation: none;
+  }
+}
+
+/* ---- Popover ---------------------------------------------------------------- */
+
+/* Portalled onto document.body, so it sits above everything it might be
+   anchored inside — including a modal (z-index 1001). Position comes from
+   Popover.tsx; this rule only carries the surface. */
+.cr-popover {
+  position: fixed;
+  z-index: var(--layer-popover);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+  padding: var(--space-4);
+}
+
+/* Arrowing through a menu is only usable if you can see where you are. This
+   catches every menu's own item class, so each one does not have to remember.
+
+   :focus, not :focus-visible. Opening a menu moves focus into it deliberately,
+   whether you got there by mouse or by key, so the row that will act on Enter
+   should always say so — the same thing a native menu does by highlighting its
+   first item. :focus-visible would hide the ring for the mouse case and leave
+   the menu looking inert.
+
+   Inset, because an outline-offset ring on the first or last row would be
+   clipped by the panel's own scroll box. */
+.cr-popover button:focus,
+.cr-popover [tabindex]:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The default menu row. Menus read down their left edge, so items are
+   left-aligned whatever their length. */
+.cr-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-8);
+  min-height: 32px;
+  padding: var(--space-8);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cr-popover-item:hover:not(:disabled) {
+  background: var(--surface);
+}
+
+.cr-popover-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.cr-popover-item--active {
+  background: var(--surface);
+}
+
+.cr-popover-item--danger {
+  color: var(--status-error);
+}
+
+.cr-popover-empty {
+  padding: var(--space-8);
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+/* ---- Disclosure -------------------------------------------------------------- */
+
+.cr-disclosure-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  /* Bleeds into the gutter so the hover fill reads as a row, not a chip
+     floating beside the text. */
+  margin: 0 0 0 calc(-1 * var(--space-8));
+  padding: var(--space-8);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+
+.cr-disclosure-header:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.cr-disclosure-header:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.cr-disclosure-chevron {
+  flex: none;
+  transition: transform 120ms ease-out;
+}
+
+.cr-disclosure-chevron--open {
+  transform: rotate(90deg);
+}
+
+.cr-disclosure-label {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Sentence case and not uppercase: this is a count or a summary, read as
+   ordinary text, not part of the heading. */
+.cr-disclosure-hint {
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+}
+
+.cr-disclosure-body {
+  margin-top: var(--space-16);
+}
+
+/* ---- Confirm ----------------------------------------------------------------- */
+
+.cr-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+.cr-confirm-body {
+  color: var(--text-muted);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  /* Paths and branch names come through here and must not be broken up. */
+  overflow-wrap: anywhere;
+}
+
+.cr-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+.cr-button.cr-confirm-danger {
+  background: var(--status-error);
+  color: var(--bg);
+}
+
+.cr-button.cr-confirm-danger:not(:disabled):hover {
+  background: var(--status-error);
+  filter: brightness(1.05);
+}
+
+/* ---- Unread, wherever a session is shown ------------------------------------
+   A bold title and an accent dot — the same signal as a session tab. The
+   accent wash and outline it replaced were loud once half a list was unread.
+   One rule for every surface, so unread can't drift into four meanings. */
+.sessions-row-unread .sessions-row-title,
+.session-card-unread .session-card-title,
+.cr-session-card--unread .cr-session-card-title,
+.cr-grid-tile-unread .cr-grid-tile-title {
+  font-weight: var(--text-title-weight);
+  color: var(--text);
+}
+
+.sessions-row-unread .sessions-row-title::before,
+.session-card-unread .session-card-title::before,
+.cr-session-card--unread .cr-session-card-title::before,
+.cr-grid-tile-unread .cr-grid-tile-title::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: var(--space-8);
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}

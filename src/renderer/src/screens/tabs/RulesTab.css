@@ -1,0 +1,145 @@
+/* ============================================================================
+   Rules tab (plan 2.2, milestone U7) — read-only list of CLAUDE.md/AGENTS.md
+   files from rules:list. Scoped to RulesTab.tsx only so it never collides
+   with the other tabs. Every colour comes from a theme token.
+   ========================================================================= */
+
+.rules-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-6);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.rules-tab-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.rules-tab-add-button {
+  flex: none;
+  font: inherit;
+  font-size: var(--text-caption-size);
+  font-weight: 600;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-8);
+  cursor: pointer;
+}
+
+.rules-tab-muted {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+.rules-tab-error {
+  color: var(--status-error);
+  font-size: var(--text-caption-size);
+}
+
+.rules-tab-empty {
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+  padding: var(--space-2) 0;
+}
+
+.rules-tab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.rules-tab-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-16);
+  background: var(--surface);
+  text-align: left;
+}
+
+.rules-tab-card[role='button'] {
+  cursor: pointer;
+}
+
+.rules-tab-card[role='button']:hover {
+  background: var(--surface-raised);
+}
+
+.rules-tab-card[role='button']:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
+}
+
+.rules-tab-card-missing {
+  opacity: 0.75;
+}
+
+.rules-tab-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.rules-tab-scope-badge {
+  flex-shrink: 0;
+  font-size: var(--text-caption-size);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+}
+
+.rules-tab-scope-badge-global {
+  color: var(--status-working);
+  border-color: var(--status-working);
+}
+
+.rules-tab-scope-badge-project {
+  color: var(--status-done);
+  border-color: var(--status-done);
+}
+
+.rules-tab-exists-word {
+  flex-shrink: 0;
+  font-size: var(--text-mono-size);
+  font-weight: 600;
+}
+
+.rules-tab-exists-word-yes {
+  color: var(--status-done);
+}
+
+.rules-tab-exists-word-no {
+  color: var(--status-error);
+}
+
+/* Which directory this file governs — the whole point of this tab, so it
+   reads as its own line rather than folded into the path. */
+.rules-tab-applies-to {
+  font-size: var(--text-label-size);
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.rules-tab-card-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text);
+  overflow-wrap: break-word;
+  word-break: break-all;
+}
+
+.rules-tab-card-missing .rules-tab-card-path {
+  color: var(--text-muted);
+}

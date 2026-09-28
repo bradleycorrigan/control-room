@@ -1,0 +1,833 @@
+.settings-screen {
+  padding: 16px 24px;
+  overflow-y: auto;
+  max-width: 640px;
+}
+
+.settings-screen-header {
+  margin-bottom: var(--space-6);
+}
+
+.settings-screen-title {
+  margin: 0;
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-line);
+  font-weight: var(--text-display-weight);
+}
+
+.settings-screen-caption {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+}
+
+.settings-screen h2 {
+  margin-bottom: 12px;
+}
+
+.settings-screen h3 {
+  margin: 16px 0 8px;
+
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+}
+
+.settings-follow-system {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  margin-bottom: 16px;
+}
+
+.settings-hint {
+  color: var(--text-muted);
+  margin-top: -8px;
+  margin-bottom: 16px;
+}
+
+.theme-swatch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.theme-swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-ui);
+}
+
+.theme-swatch-row:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.theme-swatch-row-selected {
+  border-width: 2px;
+}
+
+.theme-swatch-chip {
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  flex: none;
+}
+
+.theme-swatch-chip-text {
+  border-radius: var(--radius-pill);
+}
+
+.theme-swatch-dots {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.theme-swatch-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  flex: none;
+}
+
+.theme-swatch-name {
+  margin-left: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.settings-preview {
+  background: var(--color-background-soft);
+  padding: 12px;
+  border-radius: var(--radius-md);
+
+  overflow-x: auto;
+}
+
+.settings-error {
+  color: var(--status-error);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.settings-actions button {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--ev-c-gray-3);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.settings-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.session-detail {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 24px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.session-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.session-detail-header h2 {
+  flex: 1;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-detail-header button,
+.session-detail-actions button {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--ev-c-gray-3);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.session-detail-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.session-detail-terminal-msg {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--ev-c-gray-3);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+
+  margin-bottom: 12px;
+}
+
+.session-detail-terminal-msg button {
+  border: none;
+  background: var(--ev-c-gray-2);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.pane-output {
+  flex: 1;
+  min-height: 240px;
+  max-height: 50vh;
+  overflow-y: auto;
+  background: var(--term-bg);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+}
+
+.pane-output pre {
+  margin: 0;
+  font-family: var(--font-mono);
+
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--term-fg);
+}
+
+.session-detail-input {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.session-detail-input input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--ev-c-gray-3);
+  background: var(--color-background-soft);
+  color: var(--color-text);
+}
+
+.session-detail-input button {
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: var(--ev-c-gray-3);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.session-detail-input button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.diff-view {
+  margin-top: 16px;
+}
+
+.diff-view h3,
+.diff-view h4 {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+  margin: 12px 0 6px;
+}
+
+.diff-file-list {
+  margin-bottom: 8px;
+}
+
+.diff-file-list li {
+  padding: 2px 0;
+}
+
+.diff-stat {
+  opacity: 0.6;
+}
+
+.diff-status {
+  display: inline-block;
+  min-width: 60px;
+
+  opacity: 0.8;
+}
+
+.diff-status-added {
+  color: var(--status-done);
+}
+
+.diff-status-deleted {
+  color: var(--status-error);
+}
+
+.diff-status-renamed,
+.diff-status-modified {
+  color: var(--status-attention);
+}
+
+.diff-patch {
+  background: var(--term-bg);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  font-family: var(--font-mono);
+
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.diff-line {
+  white-space: pre;
+}
+
+.diff-add {
+  background: color-mix(in srgb, var(--status-done) 12%, transparent);
+  color: var(--status-done);
+}
+
+.diff-remove {
+  background: color-mix(in srgb, var(--status-error) 12%, transparent);
+  color: var(--status-error);
+}
+
+.diff-hunk {
+  color: var(--status-working);
+}
+
+/* ============================================================================
+   Project detail (plan 2.2)
+   ========================================================================= */
+
+.project-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Room under the last thing on the page — on the last child, because this is a
+   flex scroll container and Chromium drops its end padding. Scrolling used to
+   stop with a card flush against the window edge, which reads as content cut
+   off rather than as the end of the list. */
+.project-detail > :last-child {
+  margin-bottom: var(--space-48);
+}
+
+.project-detail-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* Plan 5 spacing fix #3 — 32px between the top bar and the first control
+     below it, everywhere it occurs. */
+  padding: var(--space-32) var(--space-32) var(--space-16);
+}
+
+.project-detail-back {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--text-card-size);
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  /* Plan 5 spacing fix #2 — 16px between the back control and the title
+     (folder glyph + name) that follows it, using the plan-3 design-system
+     token (see session-detail.css for why not --space-4). */
+  margin-right: var(--space-16);
+}
+
+.project-detail-back:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.project-detail-folder {
+  font-size: var(--text-title-size);
+}
+
+.project-detail-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.project-detail-title h2 {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.project-detail-path-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.project-detail-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--motion-fast) var(--motion-easing);
+  /* A long path truncates at the end rather than running past the title
+     column — the <bdi> keeps it isolated so this never reorders it. */
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.project-detail-path:hover {
+  color: var(--text-muted);
+}
+
+.project-detail-path:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Reveal-in-Finder only earns its place once you're already looking at the
+   path — same rule as the project row's trailing actions. */
+.project-detail-path-row .cr-icon-button {
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--motion-easing);
+}
+
+.project-detail-path-row:hover .cr-icon-button,
+.project-detail-path-row:focus-within .cr-icon-button {
+  opacity: 1;
+}
+
+.project-detail-body {
+  padding: var(--space-6) var(--space-32);
+}
+
+.tab-placeholder {
+  color: var(--text-faint);
+
+  padding: var(--space-8) 0;
+}
+
+/* ============================================================================
+   Overview tab (plan 3, section 2.3) — mission box, ACTIVE grid, WORKTREES,
+   Recent | CLI history. All spacing/type from the plan-3 token scale.
+   ========================================================================= */
+
+.overview-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-32);
+  max-width: 1100px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.cr-mission-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-24);
+}
+
+.cr-mission-box-textarea {
+  resize: vertical;
+  min-height: 96px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-body-weight);
+}
+
+.cr-mission-box-textarea:focus {
+  outline: none;
+}
+
+.cr-mission-box-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cr-mission-box-textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.cr-mission-box-branch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: var(--space-8);
+}
+
+.cr-mission-box-branch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.cr-mission-box-branch-hint {
+  font-size: var(--text-caption-size);
+  color: var(--text-faint);
+}
+
+.cr-mission-box-branch-row input {
+  flex: 1;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+}
+
+.cr-mission-box-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-16);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-16);
+}
+
+.cr-mission-box-empty {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 8px 16px;
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  cursor: pointer;
+}
+
+.cr-mission-box-empty:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.cr-mission-box-submit {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 8px 20px;
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  cursor: pointer;
+}
+
+.cr-mission-box-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.overview-section-header {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-16) 0;
+}
+
+.overview-section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-16);
+}
+
+.overview-section-header-row .overview-section-header {
+  margin-bottom: 0;
+}
+
+.overview-worktrees-actions {
+  margin-bottom: var(--space-12);
+}
+
+/* Active sessions + worktrees grids share the plan-1.7 card-grid recipe. */
+
+.cr-worktree-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-16);
+}
+
+.cr-worktree-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  background: var(--surface);
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: var(--space-24);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+  transition: background 120ms ease-out;
+}
+
+.cr-worktree-card:hover {
+  background: var(--surface-raised);
+}
+
+.cr-worktree-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* .cr-session-card--new lives in session-card.css, next to the rule it
+   modifies. Here it lost the cascade to `.cr-session-card { border: none }`
+   the moment the card moved to its own file — same specificity, later import —
+   and the tile silently went back to looking like a real session. */
+.cr-worktree-card--new {
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+  min-height: 96px;
+}
+
+.cr-worktree-card--new:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.cr-worktree-card-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.cr-worktree-card-branch {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.cr-worktree-card-actions {
+  display: flex;
+  gap: var(--space-8);
+  margin-top: auto;
+  padding-top: var(--space-8);
+}
+
+.cr-worktree-card-actions button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  cursor: pointer;
+}
+
+.cr-worktree-card-actions button:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+/* Plan 4 Part 7.2 — worktree settings, inside its own collapsible OVERVIEW
+   section. Field layout matches .cr-mission-box-branch's label+input idiom;
+   actions/errors reuse SettingsScreen's .settings-actions/.settings-error. */
+.cr-worktree-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  max-width: 480px;
+}
+
+.cr-worktree-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+/* Only the textarea is still a bare element here — everything else on this
+   panel is an Input, a SegmentedControl or a Button from the design system. */
+.cr-worktree-settings-field textarea {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+}
+
+.cr-worktree-settings-field textarea {
+  resize: vertical;
+  font-family: var(--font-mono);
+}
+
+.cr-worktree-settings-field textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cr-worktree-settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.recent-session-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.recent-session-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  padding: var(--space-8) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  font-size: var(--text-body-size);
+}
+
+.recent-session-branch {
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+}
+
+.recent-session-row-clickable {
+  cursor: pointer;
+}
+
+.recent-session-row-clickable:hover {
+  background: var(--surface-raised);
+}
+
+.recent-session-title {
+  color: var(--text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-session-time {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.recent-session-archived {
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1px 6px;
+  font-size: var(--text-caption-size);
+  text-transform: uppercase;
+}
+
+.cli-history-count {
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cli-history-actions {
+  display: flex;
+  gap: var(--space-8);
+  flex-shrink: 0;
+}
+
+/* The branch name appears beside the choice, because it only means anything
+   when a worktree is being made. It used to be a details drawer labelled
+   "Name this session's branch", which implied every session got a branch —
+   on this screen they did, on the New session sheet they did not. */
+.cr-mission-box-worktree {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  margin: var(--space-16) 0;
+}
+
+.cr-mission-box-worktree .cr-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Tucked up under the HISTORY header row, which sits on its own baseline. */
+.history-panel-caption {
+  margin: calc(-1 * var(--space-8)) 0 var(--space-16) 0;
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+}
+
+/* The state caption follows a control, not a header, so it does not want the
+   negative top margin above — that pulled it tight against the switcher while
+   the caption above it had room, and the two read as unrelated spacing. */
+.history-panel-caption--state {
+  margin: var(--space-8) 0 var(--space-16) 0;
+}
+
+/* The state switcher sits above the list it filters. */
+.history-state-row {
+  display: flex;
+  margin: var(--space-16) 0 0;
+}
+
+/* Reserves the row's action column so titles do not shift between states
+   where an action exists and states where it does not. */
+.recent-session-actions {
+  display: inline-flex;
+  justify-content: flex-end;
+  min-width: 88px;
+}

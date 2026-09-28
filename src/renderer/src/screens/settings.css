@@ -1,0 +1,13 @@
+
+.settings-gpu-row {
+  align-items: flex-start;
+}
+
+.settings-note {
+  display: block;
+  max-width: 420px;
+  margin-top: var(--space-4);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  font-weight: 400;
+}

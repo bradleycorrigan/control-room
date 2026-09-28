@@ -1,0 +1,624 @@
+/* Token contract (plan 2, section 1.2). Every colour in the app comes from
+   one of these custom properties — a hex literal in a component is a bug.
+   Defaults on :root are the "tokyo-night" theme (also the fallback if
+   data-theme is ever unset); every theme redefines the full colour set under
+   :root[data-theme="<id>"] below, generated from theme/themes.ts by
+   ThemeProvider at runtime (see theme/ThemeProvider.tsx) so there is exactly
+   one source of truth for the hex values themselves. */
+
+:root {
+  /* Colour tokens — placeholder defaults, immediately overwritten by
+     ThemeProvider on mount and on every theme change. Kept here so the page
+     never flashes unstyled before React attaches. */
+  --bg: #1a1b26;
+  --bg-sunken: #16161e;
+  --surface: #24283b;
+  --surface-raised: #292e42;
+  --border: #363c58;
+  --border-strong: #4a5178;
+  --text: #c0caf5;
+  --text-muted: #9aa5ce;
+  --text-faint: #565f89;
+  --accent: #7aa2f7;
+  --accent-fg: #1a1b26;
+  --accent-soft: #7aa2f724;
+
+  --status-working: #7dcfff;
+  --status-attention: #e0af68;
+  --status-done: #9ece6a;
+  --status-idle: #565f89;
+  --status-error: #f7768e;
+
+  --term-bg: #1a1b26;
+  --term-fg: #c0caf5;
+  --term-ansi-0: #15161e;
+  --term-ansi-1: #f7768e;
+  --term-ansi-2: #9ece6a;
+  --term-ansi-3: #e0af68;
+  --term-ansi-4: #7aa2f7;
+  --term-ansi-5: #bb9af7;
+  --term-ansi-6: #7dcfff;
+  --term-ansi-7: #a9b1d6;
+  --term-ansi-8: #414868;
+  --term-ansi-9: #f7768e;
+  --term-ansi-10: #9ece6a;
+  --term-ansi-11: #e0af68;
+  --term-ansi-12: #7aa2f7;
+  --term-ansi-13: #bb9af7;
+  --term-ansi-14: #7dcfff;
+  --term-ansi-15: #c0caf5;
+  --term-cursor-fg: #1a1b26;
+  --term-selection: #7aa2f74d;
+
+  /* Non-colour tokens. */
+  /* Corner radii. Three steps that mean something, not seven that drifted:
+     6px for anything nested inside a control, 10px for controls and the
+     cards and tiles they sit on, and the two larger values for a full sheet.
+     Controls used to sit at 6px next to icon tiles at 10px, so a button and
+     the tile beside it were visibly different shapes for no reason. */
+  --radius-sm: 6px; /* a row inside a menu, a segment inside a control */
+  --radius-md: 10px; /* buttons, inputs, icon buttons, segmented controls */
+  --radius-row: 10px; /* a list row — same family as the controls on it */
+  --radius-lg: 10px; /* cards, popovers */
+  --radius-icon-tile: 10px;
+  --radius-xl: 12px; /* large panels */
+  --radius-2xl: 16px; /* modals and sheets */
+  --radius-pill: 999px;
+
+  /* Legacy spacing scale — DEPRECATED. Use pixel-named scale below. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+
+  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  /* ==========================================================================
+     Stacking layers. A bare z-index in a stylesheet is a bug — it is a number
+     with no idea what else is on screen, and picking one means guessing. That
+     guess has already been wrong twice: the tooltip rendered behind the title
+     bar until someone jumped it to 2000, and toasts sat at 100 under a title
+     bar at 250, so every "session deleted" note appeared behind the chrome.
+
+     Add a layer here, in order, rather than inventing a number at the call
+     site. The gaps are deliberate — room to slot something between two
+     layers without renumbering. ============================================= */
+  --layer-raised: 5; /* lifts off the flow inside a panel: resize handles, scroll pills */
+  --layer-sticky: 20; /* sticky section headers */
+  --layer-overlay: 100; /* a backdrop that dims one region, not the window */
+  --layer-overlay-content: 110; /* what that backdrop is there to reveal */
+  --layer-chrome: 200; /* the title bar — deliberately above a region overlay */
+  --layer-modal-backdrop: 300; /* dims the whole window */
+  --layer-modal: 310;
+  --layer-popover: 400; /* anchored menus — must clear a modal it opens inside */
+  --layer-toast: 500; /* reports on everything above, so it sits above them */
+  --layer-tooltip: 600; /* transient, explains what you are already pointing at */
+
+  /* Electron is offline — no Google Fonts. System stacks only. */
+  --font-ui: -apple-system, 'SF Pro Text', system-ui, sans-serif;
+  /* Menlo first, deliberately. Claude Code's banner is drawn with quadrant block
+     glyphs (U+259B/259C/259D) and SF Mono is not installed on stock macOS —
+     CTFontCreateWithName("SFMono-Regular") resolves to Helvetica here — so
+     `ui-monospace` left Chromium doing per-glyph fallback and the banner came
+     apart. Checked with CoreText: Menlo has all six of the blocks Claude Code
+     uses; Monaco, Andale Mono and Courier New are each missing the quadrants.
+     Menlo ships with every macOS, so this is a safe first choice. */
+  --font-mono: Menlo, ui-monospace, 'SF Mono', 'JetBrains Mono', monospace;
+
+  /* ==========================================================================
+     Design-system tokens (plan 3, Part 1). Named by their pixel value, not a
+     step index. Section 1.1 — the 8pt grid (4px legal only inside a control).
+     Section 1.3 — type roles. ================================================ */
+  --space-4: 4px; /* inside a control (icon to label) */
+  --space-8: 8px; /* between tightly-related items */
+  --space-12: 12px; /* label-to-value spacing */
+  --space-16: 16px; /* default gap inside a container; compact container padding */
+  --space-24: 24px; /* default container padding; gap between cards */
+  --space-32: 32px; /* gap between sections within a screen */
+  --space-48: 48px; /* gap between major regions; screen top padding */
+  --space-64: 64px; /* page gutter at wide widths */
+
+  --text-card-size: 16px;
+  --text-card-line: 22px;
+  --text-card-weight: 600;
+
+  /* Section 1.5 — responsive page gutters. */
+  --gutter-wide: 64px; /* >=1200px */
+  --gutter-medium: 32px; /* 840-1199px */
+  --gutter-narrow: 20px; /* <840px, never less */
+
+  /* Section 1.7 — page composition. */
+  --content-max-width: 1100px;
+  --card-padding: 24px;
+  --card-gap: 16px;
+
+  /* Section 1.3 — type roles. Nothing sets a size directly; every piece of
+     text picks one of these six. */
+  --text-display-size: 28px;
+  --text-display-line: 34px;
+  --text-display-weight: 600;
+
+  --text-title-size: 20px;
+  --text-title-line: 26px;
+  --text-title-weight: 600;
+
+  --text-body-size: 14px;
+  --text-body-line: 20px;
+  --text-body-weight: 400;
+
+  --text-label-size: 13px;
+  --text-label-line: 18px;
+  --text-label-weight: 500;
+
+  --text-caption-size: 12px;
+  --text-caption-line: 16px;
+  --text-caption-weight: 400;
+
+  --text-mono-size: 12px;
+  --text-mono-line: 18px;
+  --text-mono-weight: 400;
+
+  --text-meta-size: 11px;
+  --text-meta-line: 16px;
+  --text-meta-weight: 400;
+
+  --text-micro-size: 10px;
+  --text-micro-line: 14px;
+  --text-micro-weight: 500;
+
+  /* Text color for meta and micro — always muted (machine-generated values) */
+  --text-meta-color: var(--text-muted);
+  --text-micro-color: var(--text-muted);
+
+  /* Large numeric callouts — context-window modal's usage % and stat cards. */
+  --text-stat-size: 24px;
+  --text-stat-line: 28px;
+  --text-stat-weight: 600;
+
+  /* Section 1.9 — motion. */
+  --motion-fast: 120ms;
+  --motion-medium: 200ms;
+  --motion-easing: ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fast: 0ms;
+    --motion-medium: 0ms;
+  }
+}
+
+/* Switching themes must be instant (plan 1.4) — never add a `transition` on
+   `color`, `background`, `background-color`, `border-color` or `fill`
+   anywhere in the app, or the whole window smears when data-theme changes.
+   Motion (plan 1.1 #7) is for transform/opacity on state changes only. */
+
+/* ============================================================================
+   GENERATED — do not hand-edit below this line.
+   Source of truth is theme/themes.ts (hex values, including the contrast-fix
+   nudges contrast-check.ts verifies). Regenerate with:
+     npm run generate-tokens-css
+   ========================================================================= */
+/* generated:themes:start */
+:root[data-theme='tokyo-night'] {
+  --bg: #0c0c11;
+  --bg-sunken: #070709;
+  --surface: #1a1b26;
+  --surface-raised: #24283b;
+  --border: #2e303f;
+  --border-strong: #484c60;
+  --text: #c0caf5;
+  --text-muted: #9aa5ce;
+  --text-faint: #565f89;
+  --accent: #7aa2f7;
+  --accent-fg: #1a1b26;
+  --accent-soft: #7aa2f724;
+
+  --status-working: #7dcfff;
+  --status-attention: #e0af68;
+  --status-done: #9ece6a;
+  --status-idle: #5e6896;
+  --status-error: #f7768e;
+
+  --term-bg: #0c0c11;
+  --term-fg: #c0caf5;
+  --term-cursor-fg: #0c0c11;
+  --term-selection: #7aa2f74d;
+  --term-ansi-0: #15161e;
+  --term-ansi-1: #f7768e;
+  --term-ansi-2: #9ece6a;
+  --term-ansi-3: #e0af68;
+  --term-ansi-4: #7aa2f7;
+  --term-ansi-5: #bb9af7;
+  --term-ansi-6: #7dcfff;
+  --term-ansi-7: #a9b1d6;
+  --term-ansi-8: #414868;
+  --term-ansi-9: #f7768e;
+  --term-ansi-10: #9ece6a;
+  --term-ansi-11: #e0af68;
+  --term-ansi-12: #7aa2f7;
+  --term-ansi-13: #bb9af7;
+  --term-ansi-14: #7dcfff;
+  --term-ansi-15: #c0caf5;
+}
+
+:root[data-theme='catppuccin-mocha'] {
+  --bg: #0e0e15;
+  --bg-sunken: #08080c;
+  --surface: #1e1e2e;
+  --surface-raised: #313244;
+  --border: #333446;
+  --border-strong: #4f5265;
+  --text: #cdd6f4;
+  --text-muted: #a6adc8;
+  --text-faint: #6c7086;
+  --accent: #cba6f7;
+  --accent-fg: #1e1e2e;
+  --accent-soft: #cba6f724;
+
+  --status-working: #89dceb;
+  --status-attention: #f9e2af;
+  --status-done: #a6e3a1;
+  --status-idle: #6c7086;
+  --status-error: #f38ba8;
+
+  --term-bg: #0e0e15;
+  --term-fg: #cdd6f4;
+  --term-cursor-fg: #0e0e15;
+  --term-selection: #cba6f74d;
+  --term-ansi-0: #45475a;
+  --term-ansi-1: #f38ba8;
+  --term-ansi-2: #a6e3a1;
+  --term-ansi-3: #f9e2af;
+  --term-ansi-4: #89b4fa;
+  --term-ansi-5: #f5c2e7;
+  --term-ansi-6: #94e2d5;
+  --term-ansi-7: #bac2de;
+  --term-ansi-8: #585b70;
+  --term-ansi-9: #f38ba8;
+  --term-ansi-10: #a6e3a1;
+  --term-ansi-11: #f9e2af;
+  --term-ansi-12: #89b4fa;
+  --term-ansi-13: #f5c2e7;
+  --term-ansi-14: #94e2d5;
+  --term-ansi-15: #a6adc8;
+}
+
+:root[data-theme='nord'] {
+  --bg: #15171d;
+  --bg-sunken: #0c0d10;
+  --surface: #2e3440;
+  --surface-raised: #3b4252;
+  --border: #424854;
+  --border-strong: #5e646f;
+  --text: #d8dee9;
+  --text-muted: #8793a9;
+  --text-faint: #434c5e;
+  --accent: #88c0d0;
+  --accent-fg: #2e3440;
+  --accent-soft: #88c0d024;
+
+  --status-working: #81a1c1;
+  --status-attention: #ebcb8b;
+  --status-done: #a3be8c;
+  --status-idle: #75829c;
+  --status-error: #c26871;
+
+  --term-bg: #15171d;
+  --term-fg: #d8dee9;
+  --term-cursor-fg: #15171d;
+  --term-selection: #88c0d04d;
+  --term-ansi-0: #3b4252;
+  --term-ansi-1: #bf616a;
+  --term-ansi-2: #a3be8c;
+  --term-ansi-3: #ebcb8b;
+  --term-ansi-4: #81a1c1;
+  --term-ansi-5: #b48ead;
+  --term-ansi-6: #88c0d0;
+  --term-ansi-7: #e5e9f0;
+  --term-ansi-8: #4c566a;
+  --term-ansi-9: #bf616a;
+  --term-ansi-10: #a3be8c;
+  --term-ansi-11: #ebcb8b;
+  --term-ansi-12: #81a1c1;
+  --term-ansi-13: #b48ead;
+  --term-ansi-14: #8fbcbb;
+  --term-ansi-15: #eceff4;
+}
+
+:root[data-theme='dracula'] {
+  --bg: #121318;
+  --bg-sunken: #0a0a0d;
+  --surface: #282a36;
+  --surface-raised: #44475a;
+  --border: #41434d;
+  --border-strong: #62646b;
+  --text: #f8f8f2;
+  --text-muted: #8995ba;
+  --text-faint: #797a7a;
+  --accent: #bd93f9;
+  --accent-fg: #282a36;
+  --accent-soft: #bd93f924;
+
+  --status-working: #8be9fd;
+  --status-attention: #ffb86c;
+  --status-done: #50fa7b;
+  --status-idle: #6878a8;
+  --status-error: #ff5555;
+
+  --term-bg: #121318;
+  --term-fg: #f8f8f2;
+  --term-cursor-fg: #121318;
+  --term-selection: #bd93f94d;
+  --term-ansi-0: #21222c;
+  --term-ansi-1: #ff5555;
+  --term-ansi-2: #50fa7b;
+  --term-ansi-3: #f1fa8c;
+  --term-ansi-4: #bd93f9;
+  --term-ansi-5: #ff79c6;
+  --term-ansi-6: #8be9fd;
+  --term-ansi-7: #f8f8f2;
+  --term-ansi-8: #6272a4;
+  --term-ansi-9: #ff6e6e;
+  --term-ansi-10: #69ff94;
+  --term-ansi-11: #ffffa5;
+  --term-ansi-12: #d6acff;
+  --term-ansi-13: #ff92df;
+  --term-ansi-14: #a4ffff;
+  --term-ansi-15: #ffffff;
+}
+
+:root[data-theme='one-dark-pro'] {
+  --bg: #121417;
+  --bg-sunken: #0a0b0d;
+  --surface: #282c34;
+  --surface-raised: #21252b;
+  --border: #383c45;
+  --border-strong: #4d525b;
+  --text: #abb2bf;
+  --text-muted: #6e7786;
+  --text-faint: #575b63;
+  --accent: #61afef;
+  --accent-fg: #282c34;
+  --accent-soft: #61afef24;
+
+  --status-working: #56b6c2;
+  --status-attention: #e5c07b;
+  --status-done: #98c379;
+  --status-idle: #6e7786;
+  --status-error: #e06c75;
+
+  --term-bg: #121417;
+  --term-fg: #abb2bf;
+  --term-cursor-fg: #121417;
+  --term-selection: #61afef4d;
+  --term-ansi-0: #282c34;
+  --term-ansi-1: #e06c75;
+  --term-ansi-2: #98c379;
+  --term-ansi-3: #e5c07b;
+  --term-ansi-4: #61afef;
+  --term-ansi-5: #c678dd;
+  --term-ansi-6: #56b6c2;
+  --term-ansi-7: #abb2bf;
+  --term-ansi-8: #5c6370;
+  --term-ansi-9: #e06c75;
+  --term-ansi-10: #98c379;
+  --term-ansi-11: #e5c07b;
+  --term-ansi-12: #61afef;
+  --term-ansi-13: #c678dd;
+  --term-ansi-14: #56b6c2;
+  --term-ansi-15: #ffffff;
+}
+
+:root[data-theme='ayu-mirage'] {
+  --bg: #0e1016;
+  --bg-sunken: #08090c;
+  --surface: #1f2430;
+  --surface-raised: #232834;
+  --border: #343842;
+  --border-strong: #4f535a;
+  --text: #cbccc6;
+  --text-muted: #6a7684;
+  --text-faint: #636565;
+  --accent: #ffcc66;
+  --accent-fg: #1f2430;
+  --accent-soft: #ffcc6624;
+
+  --status-working: #5ccfe6;
+  --status-attention: #ffa759;
+  --status-done: #bae67e;
+  --status-idle: #65717e;
+  --status-error: #ff3333;
+
+  --term-bg: #0e1016;
+  --term-fg: #cbccc6;
+  --term-cursor-fg: #0e1016;
+  --term-selection: #ffcc664d;
+  --term-ansi-0: #232834;
+  --term-ansi-1: #ff3333;
+  --term-ansi-2: #bae67e;
+  --term-ansi-3: #ffcc66;
+  --term-ansi-4: #5ccfe6;
+  --term-ansi-5: #d4bfff;
+  --term-ansi-6: #95e6cb;
+  --term-ansi-7: #cbccc6;
+  --term-ansi-8: #5c6773;
+  --term-ansi-9: #ff6565;
+  --term-ansi-10: #d5ff80;
+  --term-ansi-11: #ffe6b3;
+  --term-ansi-12: #73d0ff;
+  --term-ansi-13: #e6b3ff;
+  --term-ansi-14: #95e6cb;
+  --term-ansi-15: #ffffff;
+}
+
+:root[data-theme='night-owl'] {
+  --bg: #000a12;
+  --bg-sunken: #00060a;
+  --surface: #011627;
+  --surface-raised: #0b2942;
+  --border: #1b2e3f;
+  --border-strong: #3d4e5e;
+  --text: #d6deeb;
+  --text-muted: #637777;
+  --text-faint: #606974;
+  --accent: #82aaff;
+  --accent-fg: #011627;
+  --accent-soft: #82aaff24;
+
+  --status-working: #7fdbca;
+  --status-attention: #ffcb8b;
+  --status-done: #addb67;
+  --status-idle: #637777;
+  --status-error: #ef5350;
+
+  --term-bg: #000a12;
+  --term-fg: #d6deeb;
+  --term-cursor-fg: #000a12;
+  --term-selection: #82aaff4d;
+  --term-ansi-0: #011627;
+  --term-ansi-1: #ef5350;
+  --term-ansi-2: #addb67;
+  --term-ansi-3: #ffcb8b;
+  --term-ansi-4: #82aaff;
+  --term-ansi-5: #c792ea;
+  --term-ansi-6: #7fdbca;
+  --term-ansi-7: #d6deeb;
+  --term-ansi-8: #637777;
+  --term-ansi-9: #ff5874;
+  --term-ansi-10: #addb67;
+  --term-ansi-11: #ffcb8b;
+  --term-ansi-12: #82aaff;
+  --term-ansi-13: #c792ea;
+  --term-ansi-14: #7fdbca;
+  --term-ansi-15: #ffffff;
+}
+
+:root[data-theme='gruvbox-dark'] {
+  --bg: #121212;
+  --bg-sunken: #0a0a0a;
+  --surface: #282828;
+  --surface-raised: #3c3836;
+  --border: #3f3d39;
+  --border-strong: #5f5a4f;
+  --text: #ebdbb2;
+  --text-muted: #a89984;
+  --text-faint: #928374;
+  --accent: #fabd2f;
+  --accent-fg: #282828;
+  --accent-soft: #fabd2f24;
+
+  --status-working: #83a598;
+  --status-attention: #fabd2f;
+  --status-done: #b8bb26;
+  --status-idle: #928374;
+  --status-error: #fb4934;
+
+  --term-bg: #121212;
+  --term-fg: #ebdbb2;
+  --term-cursor-fg: #121212;
+  --term-selection: #fabd2f4d;
+  --term-ansi-0: #282828;
+  --term-ansi-1: #cc241d;
+  --term-ansi-2: #98971a;
+  --term-ansi-3: #d79921;
+  --term-ansi-4: #458588;
+  --term-ansi-5: #b16286;
+  --term-ansi-6: #689d6a;
+  --term-ansi-7: #a89984;
+  --term-ansi-8: #928374;
+  --term-ansi-9: #fb4934;
+  --term-ansi-10: #b8bb26;
+  --term-ansi-11: #fabd2f;
+  --term-ansi-12: #83a598;
+  --term-ansi-13: #d3869b;
+  --term-ansi-14: #8ec07c;
+  --term-ansi-15: #ebdbb2;
+}
+
+:root[data-theme='github-light'] {
+  --bg: #ffffff;
+  --bg-sunken: #f3f4f5;
+  --surface: #f6f8fa;
+  --surface-raised: #eaeef2;
+  --border: #d0d7de;
+  --border-strong: #8c959f;
+  --text: #1f2328;
+  --text-muted: #59636e;
+  --text-faint: #8c959f;
+  --accent: #0969da;
+  --accent-fg: #ffffff;
+  --accent-soft: #0969da24;
+
+  --status-working: #0969da;
+  --status-attention: #9a6700;
+  --status-done: #1a7f37;
+  --status-idle: #656d76;
+  --status-error: #cf222e;
+
+  --term-bg: #ffffff;
+  --term-fg: #1f2328;
+  --term-cursor-fg: #ffffff;
+  --term-selection: #0969da4d;
+  --term-ansi-0: #24292f;
+  --term-ansi-1: #cf222e;
+  --term-ansi-2: #116329;
+  --term-ansi-3: #4d2d00;
+  --term-ansi-4: #0969da;
+  --term-ansi-5: #8250df;
+  --term-ansi-6: #1b7c83;
+  --term-ansi-7: #6e7781;
+  --term-ansi-8: #57606a;
+  --term-ansi-9: #a40e26;
+  --term-ansi-10: #1a7f37;
+  --term-ansi-11: #633c01;
+  --term-ansi-12: #218bff;
+  --term-ansi-13: #a475f9;
+  --term-ansi-14: #3192aa;
+  --term-ansi-15: #8c959f;
+}
+
+:root[data-theme='solarized-light'] {
+  --bg: #fdf6e3;
+  --bg-sunken: #efe8d6;
+  --surface: #f1ecdc;
+  --surface-raised: #f2edde;
+  --border: #dcdace;
+  --border-strong: #c3c6bd;
+  --text: #586e75;
+  --text-muted: #657b83;
+  --text-faint: #93a1a1;
+  --accent: #268bd2;
+  --accent-fg: #fdf6e3;
+  --accent-soft: #268bd224;
+
+  --status-working: #269189;
+  --status-attention: #a17a00;
+  --status-done: #738500;
+  --status-idle: #788989;
+  --status-error: #dc322f;
+
+  --term-bg: #fdf6e3;
+  --term-fg: #586e75;
+  --term-cursor-fg: #fdf6e3;
+  --term-selection: #268bd24d;
+  --term-ansi-0: #073642;
+  --term-ansi-1: #dc322f;
+  --term-ansi-2: #859900;
+  --term-ansi-3: #b58900;
+  --term-ansi-4: #268bd2;
+  --term-ansi-5: #d33682;
+  --term-ansi-6: #2aa198;
+  --term-ansi-7: #eee8d5;
+  --term-ansi-8: #002b36;
+  --term-ansi-9: #cb4b16;
+  --term-ansi-10: #586e75;
+  --term-ansi-11: #657b83;
+  --term-ansi-12: #839496;
+  --term-ansi-13: #6c71c4;
+  --term-ansi-14: #93a1a1;
+  --term-ansi-15: #fdf6e3;
+}
+/* generated:themes:end */

@@ -1,0 +1,2787 @@
+/* Backlog screen (BacklogScreen.tsx) — the same language as the Sessions
+   list: a page title, quiet filter tabs, and rows that are surface cards. */
+
+.backlog {
+  height: 100%;
+  overflow-y: auto;
+  padding: var(--space-32) var(--space-24) var(--space-48);
+}
+
+.backlog-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-16);
+  margin-bottom: var(--space-12);
+}
+
+.backlog-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.backlog-title {
+  margin: 0;
+  font-size: var(--text-display-size);
+  line-height: var(--text-display-line);
+  font-weight: var(--text-display-weight);
+  color: var(--text);
+}
+
+.backlog-caption {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.backlog-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+  margin-bottom: var(--space-16);
+}
+
+.backlog-filter-tabs,
+.backlog-filter-menus {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* Cycle / Group: a label and the current choice, opening a menu. */
+.backlog-menu-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 32px;
+  padding: 0 var(--space-12);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+}
+
+.backlog-menu-button:hover,
+.backlog-menu-button[aria-expanded='true'] {
+  background: var(--surface);
+}
+
+.backlog-menu-label {
+  color: var(--text-muted);
+}
+
+.backlog-menu {
+  min-width: 220px;
+}
+
+.backlog-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.backlog-view-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.backlog-view-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.backlog-view-option--selected {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.backlog-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 30px;
+  padding: 0 var(--space-12);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+}
+
+.backlog-filter:hover {
+  color: var(--text);
+}
+
+.backlog-filter--selected {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.backlog-filter-count,
+.backlog-group-count {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.backlog-refresh--spinning svg {
+  animation: backlog-spin 900ms linear infinite;
+}
+
+@keyframes backlog-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backlog-refresh--spinning svg {
+    animation: none;
+  }
+}
+
+/* Search: quiet until used, "/" to jump in. */
+.backlog-search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 32px;
+  width: 220px;
+  padding: 0 var(--space-8) 0 var(--space-12);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-muted);
+  margin-right: var(--space-8);
+}
+
+.backlog-search:focus-within {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.backlog-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+}
+
+.backlog-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.backlog kbd,
+.backlog-menu kbd {
+  padding: 0 5px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  line-height: 16px;
+  color: var(--text-muted);
+}
+
+/* ---- Groups: a container per group, rows inside it (as on Sessions) ---- */
+
+.backlog-group {
+  margin-bottom: var(--space-24);
+  border-radius: var(--radius-lg);
+  transition: box-shadow var(--motion-fast) var(--motion-easing);
+}
+
+.backlog-group--over .backlog-rows {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.backlog-group-title {
+  position: sticky;
+  top: 0;
+  z-index: var(--layer-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  padding: var(--space-8) var(--space-4);
+  background: var(--bg);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  color: var(--text);
+}
+
+.backlog-group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backlog-group-hint {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.backlog-rows {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.backlog-empty-lane {
+  margin: 0;
+  padding: var(--space-12) var(--space-16);
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+.backlog-group--over .backlog-empty-lane {
+  color: var(--text);
+}
+
+/* ---- A ticket row: one dense line, Linear-style ---- */
+
+.backlog-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: 44px;
+  padding: var(--space-8) var(--space-16);
+  color: var(--text-muted);
+  cursor: default;
+  outline: none;
+}
+
+.backlog-row + .backlog-row {
+  box-shadow: inset 0 1px 0 var(--border);
+}
+
+.backlog-row:hover,
+.backlog-row:focus-visible {
+  background: var(--surface-raised);
+}
+
+.backlog-row:focus-visible {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.backlog-row--selected {
+  background: var(--accent-soft);
+}
+
+.backlog-row--selected:hover {
+  background: var(--surface-raised);
+}
+
+/* A ticket that belongs to a session: an accent edge on the left, and the
+   session's own status chip. */
+.backlog-row--in-session::before,
+.backlog-card--in-session::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
+
+.backlog-row-key {
+  flex: none;
+  min-width: 92px;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.backlog-row-summary {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body-size);
+  font-weight: var(--text-label-weight);
+  color: var(--text);
+}
+
+.backlog-row-meta {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+.backlog-row-meta .backlog-pills {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  justify-content: flex-end;
+}
+
+.backlog-row-end {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.backlog-row-slack {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.backlog-row-updated {
+  min-width: 28px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.backlog-icon-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.backlog-icon-link:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.backlog-session-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 var(--space-8);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.backlog-session-chip:hover {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.backlog-session-chip-more {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Glyphs ---- */
+
+.backlog-glyph {
+  flex: none;
+  display: block;
+}
+
+.backlog-glyph--backlog,
+.backlog-glyph--todo,
+.backlog-glyph--cancelled,
+.backlog-priority--bars {
+  color: var(--text-muted);
+}
+
+.backlog-glyph--progress,
+.backlog-glyph--review {
+  color: var(--status-working);
+}
+
+.backlog-glyph--blocked,
+.backlog-priority--urgent {
+  color: var(--status-attention);
+}
+
+.backlog-glyph--done {
+  color: var(--status-done);
+}
+
+.backlog-epic-mark {
+  flex: none;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 2px;
+  border-radius: 1.5px;
+  background: var(--accent);
+  transform: rotate(45deg);
+}
+
+.backlog-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--avatar-tone) 30%, var(--surface));
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.backlog-avatar--none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-muted);
+  opacity: 0.6;
+}
+
+.backlog-person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text);
+}
+
+/* ---- Row menu ---- */
+
+.backlog-menu-anchor {
+  position: fixed;
+  width: 0;
+  height: 0;
+}
+
+.backlog-context-menu {
+  min-width: 240px;
+}
+
+.backlog-menu-heading {
+  padding: var(--space-4) var(--space-8);
+  font-size: var(--text-meta-size);
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.backlog-menu-separator {
+  height: 1px;
+  margin: var(--space-4) 0;
+  background: var(--border);
+}
+
+.backlog-menu-item-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+/* ---- Connect Jira ---- */
+
+.backlog-setup {
+  max-width: 480px;
+  margin: var(--space-48) auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.backlog-setup-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.backlog-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  font-size: var(--text-label-size);
+  color: var(--text);
+}
+
+.backlog-link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.backlog-note {
+  margin: 0;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.backlog-error {
+  margin: 0;
+  font-size: var(--text-caption-size);
+  color: var(--status-error);
+}
+
+/* ---- Board ---- */
+
+.backlog--board {
+  display: flex;
+  flex-direction: column;
+}
+
+.backlog-board-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+}
+
+.backlog-board {
+  display: flex;
+  gap: var(--space-12);
+  overflow-x: auto;
+  padding-bottom: var(--space-8);
+}
+
+.backlog-column {
+  flex: 1 0 208px;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-height: 120px;
+  padding: var(--space-8);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+  transition: box-shadow var(--motion-fast) var(--motion-easing);
+}
+
+/* Where a dragged card will land. */
+.backlog-column--over {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: var(--accent-soft);
+}
+
+.backlog-column-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  padding: var(--space-4);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  color: var(--text);
+}
+
+.backlog-column-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.backlog-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-12);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+  cursor: grab;
+  outline: none;
+}
+
+.backlog-card:hover,
+.backlog-card:focus-visible {
+  background: var(--surface-raised);
+}
+
+.backlog-card:focus-visible,
+.backlog-card--selected {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.backlog-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: 20px;
+}
+
+.backlog-card-top .backlog-row-key {
+  min-width: 0;
+}
+
+.backlog-card-spacer {
+  flex: 1;
+}
+
+.backlog-card-top .backlog-icon-link {
+  width: 22px;
+  height: 22px;
+}
+
+.backlog-card-summary {
+  font-size: var(--text-label-size);
+  line-height: 1.4;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.backlog-card .backlog-session-chip {
+  align-self: flex-start;
+}
+
+.backlog-lane > .backlog-group-title {
+  position: static;
+}
+
+/* ---- Ticket detail panel ---- */
+
+.backlog-drawer {
+  position: fixed;
+  /* Below the 56px title bar (app-shell.css), which sits on a higher layer
+     and hid the panel's own header row — key, Slack, Jira, close. */
+  top: 56px;
+  right: 0;
+  bottom: 0;
+  z-index: var(--layer-overlay-content);
+  width: var(--backlog-panel-width);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-24);
+  background: var(--bg);
+  box-shadow:
+    -1px 0 0 var(--border),
+    var(--shadow-popover);
+}
+
+.backlog-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.backlog-drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.backlog-drawer-summary {
+  margin: 0;
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+  color: var(--text);
+  cursor: text;
+  border-radius: var(--radius-sm);
+}
+
+.backlog-drawer-summary:hover {
+  background: var(--surface);
+}
+
+.backlog-drawer-summary-form {
+  display: flex;
+  gap: var(--space-8);
+}
+
+.backlog-drawer-summary-form input {
+  flex: 1;
+}
+
+.backlog-drawer-fields {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  align-items: center;
+  gap: var(--space-12) var(--space-16);
+  margin: 0;
+}
+
+.backlog-drawer-fields dt {
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.backlog-drawer-fields dd {
+  margin: 0;
+  font-size: var(--text-label-size);
+  color: var(--text);
+}
+
+.backlog-drawer-inline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.backlog-select {
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+}
+
+.backlog-drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--border);
+}
+
+.backlog-drawer-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.backlog-drawer-section-head h3 {
+  margin: 0;
+  font-size: var(--text-caption-size);
+  font-weight: var(--text-title-weight);
+  color: var(--text-muted);
+}
+
+.backlog-drawer-text {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-label-size);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.backlog-drawer-textarea {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+}
+
+.backlog-drawer-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+.backlog-comment {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-12);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.backlog-comment-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.backlog-comment-head strong {
+  color: var(--text);
+  font-weight: var(--text-label-weight);
+}
+
+/* ---- Pills: every value on a ticket is contained ---- */
+
+.backlog-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) 6px;
+  min-width: 0;
+}
+
+.backlog-pill {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 220px;
+  height: 22px;
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.backlog-pill svg {
+  flex: none;
+}
+
+.backlog-pill--accent,
+.backlog-pill--status {
+  color: var(--text);
+}
+
+.backlog-pill--link {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.backlog-pill--link:hover {
+  background: var(--accent-soft);
+}
+
+/* ---- Panel ---- */
+
+.backlog {
+  --backlog-panel-width: min(520px, 100vw);
+}
+
+/* Peek: the list stays usable beside the panel, like Linear's. */
+.backlog--peek {
+  padding-right: calc(var(--backlog-panel-width) + var(--space-24));
+}
+
+.backlog--peek .backlog-row-meta .backlog-pills {
+  display: none;
+}
+
+.backlog-drawer-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.backlog-drawer-key {
+  margin: 0 var(--space-4);
+  padding: 2px var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  cursor: copy;
+}
+
+.backlog-drawer-key:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.backlog-drawer-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.backlog-drawer-field > svg,
+.backlog-drawer-field > .backlog-epic-mark,
+.backlog-drawer-field-blank {
+  flex: none;
+  width: 14px;
+}
+
+.backlog-drawer-field > .backlog-epic-mark {
+  width: 7px;
+  margin: 0 3.5px;
+}
+
+.backlog-drawer-field-note {
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+}
+
+.backlog-drawer-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.backlog-drawer-session {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.backlog-drawer-session .backlog-session-chip {
+  height: 28px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.backlog-session-chip-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.backlog-session-chip-status {
+  color: var(--text-muted);
+}
+
+.backlog-drawer-session-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.backlog-select--inline {
+  width: auto;
+  flex: 1;
+  max-width: 280px;
+}
+
+.backlog-drawer-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-16);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.backlog-drawer-buttons {
+  align-items: center;
+}
+
+.backlog-drawer-buttons .backlog-note {
+  margin-right: auto;
+}
+
+.backlog-note code {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+}
+
+/* ---- Jira wiki text ---- */
+
+.backlog-wiki {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  font-size: var(--text-body-size);
+  line-height: 1.55;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.backlog-wiki p,
+.backlog-wiki ul,
+.backlog-wiki ol,
+.backlog-wiki pre,
+.backlog-wiki blockquote {
+  margin: 0;
+}
+
+.backlog-wiki ul,
+.backlog-wiki ol {
+  padding-left: var(--space-24);
+}
+
+.backlog-wiki ul {
+  list-style: disc;
+}
+
+.backlog-wiki ol {
+  list-style: decimal;
+}
+
+.backlog-wiki li::marker {
+  color: var(--text-muted);
+}
+
+.backlog-wiki-h {
+  font-weight: 600;
+  margin-top: var(--space-4) !important;
+}
+
+.backlog-wiki-h1 {
+  font-size: var(--text-card-size);
+}
+
+.backlog-wiki code,
+.backlog-wiki pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.backlog-wiki code {
+  padding: 1px 4px;
+}
+
+.backlog-wiki pre {
+  padding: var(--space-12);
+  white-space: pre-wrap;
+}
+
+.backlog-comment .backlog-wiki code,
+.backlog-comment .backlog-wiki pre {
+  background: var(--bg);
+}
+
+.backlog-wiki blockquote {
+  padding-left: var(--space-12);
+  box-shadow: inset 2px 0 0 var(--border);
+  color: var(--text-muted);
+}
+
+.backlog-wiki hr {
+  width: 100%;
+  border: none;
+  height: 1px;
+  background: var(--border);
+}
+
+.backlog-wiki-table {
+  overflow-x: auto;
+}
+
+.backlog-wiki table {
+  border-collapse: collapse;
+  font-size: var(--text-caption-size);
+}
+
+.backlog-wiki th,
+.backlog-wiki td {
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.backlog-wiki-mention,
+.backlog-wiki-attachment {
+  color: var(--accent);
+}
+
+.backlog-wiki .backlog-link {
+  text-decoration: none;
+}
+
+.backlog-wiki .backlog-link:hover {
+  text-decoration: underline;
+}
+
+/* ---- Cycle progress ---- */
+
+.backlog-cycle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.backlog-cycle-name {
+  color: var(--text);
+  font-weight: var(--text-label-weight);
+}
+
+.backlog-cycle-bar {
+  width: 96px;
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+
+.backlog-link--quiet {
+  color: var(--text-muted);
+  font-size: inherit;
+}
+
+.backlog-link--quiet:hover {
+  color: var(--text);
+}
+
+/* ---- Saved views ---- */
+
+.backlog-filter-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 var(--space-4);
+  background: var(--border);
+}
+
+.backlog-view-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-pill);
+}
+
+.backlog-view-tab--selected .backlog-filter {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.backlog-view-tab-remove {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  box-shadow: 0 0 0 1px var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.backlog-view-tab:hover .backlog-view-tab-remove,
+.backlog-view-tab-remove:focus-visible {
+  display: inline-flex;
+}
+
+.backlog-filter--add {
+  gap: var(--space-4);
+}
+
+.backlog-save-view {
+  width: 260px;
+  padding: var(--space-8);
+}
+
+.backlog-save-view .backlog-note {
+  margin-top: var(--space-8);
+}
+
+/* ---- Pickers ---- */
+
+.backlog-picker {
+  min-width: 240px;
+}
+
+.backlog-picker-input {
+  width: 100%;
+  height: 32px;
+  margin-bottom: var(--space-4);
+  padding: 0 var(--space-8);
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  outline: none;
+}
+
+/* ---- Selection ---- */
+
+.backlog-row--picked,
+.backlog-row--picked:hover {
+  background: var(--accent-soft);
+}
+
+.backlog-card--picked {
+  box-shadow: 0 0 0 2px var(--accent);
+  background: var(--accent-soft);
+}
+
+.backlog-row-check {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1.5px var(--text-muted);
+}
+
+.backlog-row-check--on {
+  background: var(--accent);
+  box-shadow: none;
+  color: var(--bg);
+}
+
+.backlog-bulk {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-24);
+  z-index: var(--layer-overlay-content);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-16);
+  border-radius: var(--radius-xl);
+  background: var(--surface-raised);
+  box-shadow:
+    0 0 0 1px var(--border),
+    var(--shadow-popover);
+}
+
+.backlog-bulk-count {
+  margin-right: var(--space-8);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.backlog-bulk kbd {
+  margin-left: var(--space-4);
+}
+
+/* Nothing in the bar squashes: when it runs out of width it scrolls. */
+.backlog-bulk {
+  overflow-x: auto;
+}
+
+.backlog-bulk > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ---- Columns editor ---- */
+
+.backlog-columns-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.backlog-columns-grid {
+  display: flex;
+  gap: var(--space-12);
+  overflow-x: auto;
+  padding-bottom: var(--space-8);
+}
+
+.backlog-columns-col {
+  flex: 1 0 150px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-height: 240px;
+  padding: var(--space-8);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: inset 0 3px 0 var(--column-tone, var(--border));
+}
+
+.backlog-columns-col--hidden {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.backlog-columns-col--over {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: var(--accent-soft);
+}
+
+.backlog-columns-head {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+}
+
+.backlog-columns-hidden-title {
+  padding: 0 var(--space-4);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  color: var(--text-muted);
+}
+
+.backlog-columns-name {
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+}
+
+.backlog-columns-name:hover,
+.backlog-columns-name:focus {
+  background: var(--bg);
+  outline: none;
+}
+
+.backlog-columns-tools {
+  display: flex;
+  gap: 2px;
+}
+
+.backlog-columns-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--border);
+  font-size: var(--text-caption-size);
+  color: var(--text);
+  cursor: grab;
+}
+
+.backlog-columns-add {
+  flex: 0 0 120px;
+  align-self: flex-start;
+  height: 40px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+}
+
+.backlog-columns-add:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.backlog-columns-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+/* ---- New ticket ---- */
+
+.backlog-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.backlog-create-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-12);
+}
+
+.backlog-create-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-24);
+}
+
+.backlog-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-label-size);
+  color: var(--text);
+}
+
+.backlog-check input {
+  accent-color: var(--accent);
+}
+
+/* ---- Panel: inline edits and the PR nudge ---- */
+
+.backlog-inline-input {
+  height: 26px;
+  min-width: 0;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  outline: none;
+}
+
+.backlog-inline-input:focus {
+  border-color: var(--accent);
+}
+
+.backlog-inline-input--label {
+  width: 110px;
+  border-style: dashed;
+  background: transparent;
+}
+
+.backlog-pill--removable {
+  gap: 2px;
+  padding-right: 3px;
+  color: var(--text);
+}
+
+.backlog-pill--removable button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.backlog-pill--removable button:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+/* One quiet line, like the rest of the panel: the PR, then what to do about it. */
+.backlog-nudge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4) var(--space-12);
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+}
+
+.backlog-nudge .backlog-link {
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.backlog-nudge > .backlog-link:not(.backlog-link--quiet) {
+  margin-left: calc(var(--space-8) * -1 + var(--space-4));
+  color: var(--text);
+}
+
+/* ---- Sub-groups: a header row inside the group's container ---- */
+
+.backlog-group-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: calc(-1 * var(--space-4));
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.backlog-group-toggle:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.backlog-subgroup + .backlog-subgroup {
+  box-shadow: inset 0 1px 0 var(--border);
+}
+
+.backlog-subgroup-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0;
+  padding: var(--space-8) var(--space-16);
+  background: color-mix(in srgb, var(--surface-raised) 55%, transparent);
+  font-size: var(--text-caption-size);
+  font-weight: var(--text-label-weight);
+  color: var(--text);
+}
+
+.backlog-subgroup-title + .backlog-row {
+  box-shadow: none;
+}
+
+.backlog-subgroup--over {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* ---- Values that edit in place ---- */
+
+.backlog-edit {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.backlog-edit:not(.backlog-pill) {
+  padding: 3px;
+  margin: -3px;
+}
+
+.backlog-edit:hover,
+.backlog-edit:focus-visible {
+  background: var(--surface);
+  outline: none;
+}
+
+.backlog-edit.backlog-pill:hover,
+.backlog-edit.backlog-pill:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--text-muted);
+  background: transparent;
+}
+
+.backlog-edit.backlog-pill {
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+}
+
+.backlog-pill-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Start session: its own slot at the end of the row, so it covers nothing. */
+.backlog-row-start {
+  flex: none;
+  display: inline-flex;
+  width: 28px;
+  justify-content: center;
+}
+
+.backlog-row-start .backlog-icon-link {
+  opacity: 0;
+}
+
+.backlog-row:hover .backlog-row-start .backlog-icon-link,
+.backlog-row:focus-within .backlog-row-start .backlog-icon-link {
+  opacity: 1;
+}
+
+.backlog-row .backlog-row-end .backlog-icon-link {
+  width: 24px;
+  height: 24px;
+}
+
+.backlog-group-order {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: var(--text-meta-size);
+  font-weight: 600;
+}
+
+/* =====================================================================
+   Tidy-up: one header line, one filter bar, a flatter list (Linear-ish).
+   ===================================================================== */
+
+.backlog-header {
+  align-items: center;
+  margin-bottom: var(--space-16);
+}
+
+.backlog-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-24);
+  min-width: 0;
+}
+
+.backlog-title {
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+}
+
+.backlog-cycle {
+  margin-top: 0;
+}
+
+.backlog-loading {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.backlog-loading svg {
+  animation: backlog-spin 900ms linear infinite;
+}
+
+.backlog-filters {
+  padding-bottom: var(--space-12);
+  margin-bottom: var(--space-8);
+  box-shadow: inset 0 -1px 0 var(--border);
+  /* Stays on one line as the row narrows — the search box collapses
+     instead of the whole row wrapping. */
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.backlog-filter-tabs {
+  /* Never shrinks or clips — the search box collapses instead, see the
+     ResizeObserver in BacklogScreen. */
+  flex-shrink: 0;
+}
+
+.backlog-search-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  /* The single source of truth for the search box's full width — read by
+     BacklogScreen's collapse threshold, so the two can never drift apart. */
+  --search-width: 260px;
+}
+
+.backlog-search--floating {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  width: var(--search-width);
+  z-index: var(--layer-raised);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-popover);
+}
+
+.backlog-search {
+  width: 200px;
+  height: 30px;
+  margin-right: var(--space-4);
+}
+
+.backlog-menu-button {
+  height: 30px;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.backlog-menu-button:hover,
+.backlog-menu-button[aria-expanded='true'] {
+  color: var(--text);
+}
+
+.backlog-menu-button--active {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
+.backlog-menu-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--bg);
+  font-size: var(--text-meta-size);
+  font-weight: 600;
+}
+
+.backlog-menu-heading--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.backlog-filter-menu {
+  min-width: 260px;
+}
+
+/* A cycle row in the Filter menu: the radio fills the row, "Plan" sits at
+   the end — the way into planning that works with the sidebar hidden. */
+.backlog-menu-cycle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.backlog-menu-cycle-row .backlog-menu-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.backlog-check-box {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1.5px var(--text-muted);
+}
+
+.backlog-check-box--on {
+  background: var(--accent);
+  box-shadow: none;
+  color: var(--bg);
+}
+
+.backlog-hidden-note {
+  margin: var(--space-16) 0 0;
+  padding: 0 var(--space-16);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+/* ---- The list: flat rows on the page, groups as header bars ---- */
+
+.backlog-group {
+  margin-bottom: var(--space-4);
+}
+
+.backlog-rows {
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.backlog-group-title {
+  margin-top: var(--space-8);
+  padding: 6px var(--space-12);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  font-size: var(--text-label-size);
+}
+
+.backlog-group-title--toggle {
+  cursor: pointer;
+  user-select: none;
+}
+
+.backlog-group-title--toggle:hover {
+  background: var(--surface-raised);
+}
+
+.backlog-subgroup-title {
+  padding: 6px var(--space-12) 6px 40px;
+  background: transparent;
+  color: var(--text-muted);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.backlog-subgroup-title .backlog-group-name {
+  color: var(--text);
+}
+
+.backlog-subgroup + .backlog-subgroup {
+  box-shadow: none;
+}
+
+.backlog-row {
+  min-height: 38px;
+  padding: 4px var(--space-12);
+  gap: var(--space-12);
+  border-radius: var(--radius-sm);
+}
+
+.backlog-row + .backlog-row {
+  box-shadow: none;
+}
+
+.backlog-row {
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.backlog-subgroup .backlog-row {
+  padding-left: 40px;
+}
+
+.backlog-row:focus-visible {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.backlog-row-key {
+  min-width: 84px;
+  font-size: var(--text-meta-size);
+}
+
+.backlog-row-summary {
+  font-size: var(--text-label-size);
+}
+
+.backlog-row .backlog-pill,
+.backlog-row .backlog-session-chip {
+  height: 20px;
+  font-size: var(--text-meta-size);
+}
+
+.backlog-pill--type {
+  box-shadow: none;
+  padding: 0 var(--space-4);
+}
+
+.backlog-row--in-session::before {
+  top: 6px;
+  bottom: 6px;
+}
+
+.backlog-group--over .backlog-group-title,
+.backlog-subgroup--over .backlog-subgroup-title {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.backlog-group--over .backlog-rows,
+.backlog-subgroup--over {
+  box-shadow: none;
+  background: var(--accent-soft);
+}
+
+.backlog-row[draggable='true'] {
+  cursor: grab;
+}
+
+.backlog-row[draggable='true']:active {
+  cursor: grabbing;
+}
+
+.backlog-empty-lane {
+  padding: 10px var(--space-12) 10px 40px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  margin: 4px 0;
+}
+
+/* ---- Board: quieter columns ---- */
+
+.backlog-column {
+  background: transparent;
+  padding: 0;
+}
+
+.backlog-column-title {
+  padding: 6px var(--space-8);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.backlog-card {
+  padding: 10px var(--space-12);
+}
+
+.backlog-lane + .backlog-lane {
+  margin-top: var(--space-8);
+}
+
+/* Board swimlanes: the lane's header sits clear of its columns. */
+.backlog-board-lanes {
+  gap: var(--space-16);
+}
+
+.backlog-lane > .backlog-group-title {
+  margin: 0 0 var(--space-8);
+  line-height: var(--text-label-line);
+}
+
+.backlog-lane + .backlog-lane {
+  margin-top: 0;
+}
+
+/* One row of column headers above the swimlanes, pinned while you scroll. */
+.backlog-board-heads {
+  position: sticky;
+  top: 0;
+  z-index: var(--layer-sticky);
+  padding: var(--space-4) 0;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.backlog-board-heads .backlog-column-title {
+  flex: 1 0 208px;
+  max-width: 340px;
+  margin: 0;
+}
+
+.backlog-lane .backlog-column {
+  min-height: 56px;
+}
+
+/* The session chip says a ticket is in a session; the edge said it twice. */
+.backlog-row--in-session::before,
+.backlog-card--in-session::before {
+  display: none;
+}
+
+.backlog-pr--open {
+  color: var(--status-done);
+}
+
+.backlog-pr--merged {
+  color: var(--accent);
+}
+
+.backlog-pr--draft,
+.backlog-branch {
+  color: var(--text-muted);
+}
+
+/* Panel header: nothing wraps; the type pill gives way first. */
+.backlog-drawer-header-actions,
+.backlog-drawer-header-actions button,
+.backlog-drawer-key {
+  flex: none;
+  white-space: nowrap;
+}
+
+.backlog-drawer-header-actions .cr-button {
+  gap: var(--space-8);
+}
+
+.backlog-drawer-nav {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.backlog-drawer-nav .backlog-pill {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Selects: our own chevron, set in from the edge (the native one hugged it). */
+.backlog-select {
+  appearance: none;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 52%,
+    calc(100% - 13px) 52%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.backlog-select:hover {
+  border-color: var(--border-strong);
+}
+
+.backlog-slack-add {
+  position: relative;
+}
+
+.backlog-slack-add > svg:last-child {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  padding: 1px;
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+/* Bulk bar: readable, and over the list rather than under the panel. */
+.backlog-bulk {
+  max-width: calc(100vw - 48px);
+  background: var(--surface-raised);
+  box-shadow:
+    0 0 0 1px var(--border-strong),
+    var(--shadow-popover);
+}
+
+.backlog--peek .backlog-bulk {
+  left: calc((100vw - var(--backlog-panel-width)) / 2);
+  max-width: calc(100vw - var(--backlog-panel-width) - 48px);
+}
+
+.backlog-bulk .cr-button {
+  color: var(--text);
+  gap: var(--space-8);
+}
+
+.backlog-bulk .cr-button:hover {
+  background: var(--surface);
+}
+
+.backlog-bulk kbd {
+  color: var(--text-muted);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.backlog-bulk-count {
+  color: var(--accent);
+}
+
+/* Long lists scroll inside the picker, under its search box, and the picker
+   never runs off the window whatever loads into it after it opens. */
+.backlog-picker {
+  max-width: min(560px, calc(100vw - 32px));
+}
+
+.backlog-picker-list {
+  max-height: min(360px, 50vh);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.backlog-picker-list .backlog-menu-item-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The ticket's pull requests, from Jira. */
+.backlog-ticket-prs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.backlog-ticket-pr {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  padding: var(--space-8) var(--space-12);
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.backlog-ticket-pr:hover {
+  background: var(--surface-raised);
+}
+
+.backlog-ticket-pr-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backlog-ticket-pr-state {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+.backlog-pr--closed {
+  color: var(--text-muted);
+}
+
+/* Board: a selected card's outline sits inside the card, so the board's
+   scroll area can't cut it off. */
+.backlog-card:focus-visible,
+.backlog-card--selected {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.backlog-card--picked {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* A column the status filter hides: still there to drop into. */
+.backlog-column--filtered .backlog-column-title {
+  opacity: 0.7;
+}
+
+.backlog-column-note {
+  margin: 0;
+  padding: var(--space-12);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+/* Status sub-groups under an epic: quiet sub-headings, not bars — a hairline
+   above and a meta-size label keep them read as headers, not ticket rows,
+   while staying quieter than the epic group title above them. */
+.backlog-subgroup-title {
+  padding: var(--space-4) var(--space-12) var(--space-4) 40px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--border) 55%, transparent);
+  font-size: var(--text-meta-size);
+  font-weight: var(--text-label-weight);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.backlog-subgroup-title .backlog-group-name {
+  color: var(--text-muted);
+}
+
+.backlog-subgroup + .backlog-subgroup {
+  margin-top: var(--space-8);
+}
+
+.backlog-filter-people {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Sidebar ----
+   The Sessions rail's own parts do the work (.sidebar-column, .projects-rail,
+   .projects-rail-item …, in styles.css). These are only the extras a
+   Backlog sidebar needs: several sections, a progress line, drop targets. */
+
+.backlog-layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.backlog-layout > .backlog {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Several short lists, not one that fills the rail. */
+.backlog-rail-items {
+  flex: none;
+}
+
+.backlog-rail-section {
+  padding-top: var(--space-24);
+}
+
+/* Epic and cycle names read from the start (the Sessions rail truncates
+   project paths from the left). */
+.backlog-rail-label {
+  direction: ltr;
+}
+
+.backlog-rail-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.backlog-sidebar-item--tall {
+  height: auto;
+  min-height: 32px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+.backlog-sidebar-icon {
+  flex: none;
+  display: inline-flex;
+  width: 16px;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.backlog-sidebar-item--over {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: var(--accent-soft);
+}
+
+.backlog-sidebar-bar {
+  display: block;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.backlog-sidebar-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--status-done);
+}
+
+.backlog-cycle--compact {
+  gap: var(--space-8);
+  margin: 0;
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+}
+
+.backlog-cycle--compact .backlog-cycle-bar {
+  width: 56px;
+}
+
+.backlog-sidebar-more .backlog-rail-label {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+.backlog-epic-mark--none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-muted);
+}
+
+/* Saved views look like the rail's rows. */
+.projects-rail .backlog-filter-divider {
+  width: auto;
+  height: 1px;
+  margin: var(--space-4) var(--space-8);
+}
+
+.projects-rail .backlog-view-tab {
+  width: 100%;
+}
+
+.projects-rail .backlog-view-tab .backlog-filter,
+.projects-rail .backlog-filter--add {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  justify-content: flex-start;
+  border-radius: var(--radius-md);
+  font-size: var(--text-body-size);
+  color: var(--text);
+}
+
+.projects-rail .backlog-filter--add {
+  color: var(--text-muted);
+}
+
+.projects-rail .backlog-view-tab--selected .backlog-filter {
+  background: var(--accent-soft);
+}
+
+.projects-rail .backlog-filter:hover {
+  background: var(--surface-raised);
+}
+
+.projects-rail .backlog-view-tab-remove {
+  top: 50%;
+  right: var(--space-8);
+  transform: translateY(-50%);
+}
+
+/* Views rows carry .backlog-filter for the checks; the rail's look wins. */
+.projects-rail .projects-rail-item.backlog-filter--selected {
+  background: var(--accent-soft);
+}
+
+/* The epic picked in the sidebar, shown in the filter bar too. */
+.backlog-active-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 var(--space-4) 0 var(--space-12);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: var(--text-label-size);
+}
+
+.backlog-active-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.backlog-active-chip button:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* The bulk bar centres over the list, between sidebar and panel. */
+.backlog-bulk {
+  left: calc(var(--backlog-sidebar-width) + (100vw - var(--backlog-sidebar-width)) / 2);
+}
+
+.backlog--peek .backlog-bulk {
+  left: calc(
+    var(--backlog-sidebar-width) +
+      (100vw - var(--backlog-sidebar-width) - var(--backlog-panel-width)) / 2
+  );
+}
+
+/* Filter bar: search on the left, filters and layout on the right. */
+.backlog-filter-tabs:empty {
+  display: none;
+}
+
+.backlog-filter-menus {
+  /* Grows to fill the row (so the search slot's auto margin can push
+     Filter/Display/the view toggle to the right), but never shrinks or
+     clips its own contents — see .backlog-filter-tabs. */
+  flex: 1 0 auto;
+}
+
+.backlog-filter-menus .backlog-search-slot {
+  /* The slot, not the search box inside it, is the flex item — an auto
+     margin on the box itself doesn't push Filter/Display/the view toggle
+     to the right. */
+  margin-right: auto;
+}
+
+.backlog-filter-menus .backlog-search {
+  width: var(--search-width);
+}
+
+/* With the panel open the list is narrow: the bar fits it, and drops its
+   key hints to make room. */
+.backlog--peek .backlog-bulk {
+  max-width: calc(100vw - var(--backlog-sidebar-width) - var(--backlog-panel-width) - 32px);
+  overflow-x: auto;
+}
+
+.backlog--peek .backlog-bulk kbd {
+  display: none;
+}
+
+/* Active filters: every one visible and one click from gone. It sits just
+   under the tabs and menus, above the list it narrows. */
+.backlog-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  margin: 0 0 var(--space-16);
+  padding-top: var(--space-12);
+}
+
+.backlog-filter-bar .backlog-active-chip {
+  height: 26px;
+}
+
+.backlog-filter-bar .backlog-link--quiet {
+  margin-left: var(--space-4);
+}
+
+/* ---- Sub-tasks: a quiet count on the row, indented rows under it, and a
+   plain list + add form in the ticket panel. ---- */
+
+.backlog-subtask-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: var(--text-meta-size);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.backlog-subtask-count:hover {
+  color: var(--text);
+}
+
+.backlog-subtask-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: 32px;
+  padding: var(--space-4) var(--space-16) var(--space-4) 44px;
+  color: var(--text-muted);
+  cursor: default;
+  box-shadow: inset 0 1px 0 var(--border);
+}
+
+.backlog-subtask-row:hover,
+.backlog-subtask-row:focus-visible {
+  background: var(--surface-raised);
+  outline: none;
+}
+
+.backlog-subtask-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body-size);
+}
+
+.backlog-drawer-subtask {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: var(--space-4) 0;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.backlog-drawer-subtask:hover .backlog-drawer-subtask-summary {
+  text-decoration: underline;
+}
+
+.backlog-drawer-subtask-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body-size);
+}
+
+/* A Blocked by / Blocking row: the ticket, and a remove that shows on
+   hover or keyboard focus. */
+.backlog-drawer-block {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.backlog-drawer-block .backlog-drawer-subtask {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.backlog-drawer-block-remove {
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.backlog-drawer-block:hover .backlog-drawer-block-remove,
+.backlog-drawer-block:focus-within .backlog-drawer-block-remove {
+  opacity: 1;
+}
+
+/* ---- Cycle planning: sidebar hover action ---- */
+
+.backlog-sidebar-item-wrap {
+  position: relative;
+  display: flex;
+}
+
+.backlog-sidebar-item-wrap .backlog-sidebar-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.backlog-sidebar-item-wrap--plannable .backlog-sidebar-item-plan {
+  position: absolute;
+  top: 50%;
+  right: var(--space-8);
+  transform: translateY(-50%);
+  opacity: 0;
+}
+
+.backlog-sidebar-item-wrap--plannable:hover .backlog-sidebar-item-plan,
+.backlog-sidebar-item-wrap--plannable:focus-within .backlog-sidebar-item-plan {
+  opacity: 1;
+}
+
+/* ---- Carry-over banner ---- */
+
+.backlog-carryover {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin: var(--space-16) var(--space-24) 0;
+  padding: var(--space-8) var(--space-8) var(--space-8) var(--space-12);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+}
+
+.backlog-carryover > svg {
+  flex: none;
+  color: var(--status-attention);
+}
+
+.backlog-carryover > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.backlog-carryover-action {
+  flex: none;
+  border: none;
+  background: transparent;
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  cursor: pointer;
+}
+
+.backlog-carryover-action:hover {
+  background: var(--accent-soft);
+}
+
+/* ---- Cycle planning modal ---- */
+
+.cycle-plan {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  max-height: 70vh;
+}
+
+.cycle-plan-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-16);
+  min-height: 0;
+}
+
+.cycle-plan-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.cycle-plan-column--over {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: var(--accent-soft);
+}
+
+.cycle-plan-column-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-16);
+  border-bottom: 1px solid var(--border);
+}
+
+.cycle-plan-column-header h3 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cycle-plan-column-count {
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cycle-plan-column-list {
+  flex: 1;
+  min-height: 120px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--space-8);
+}
+
+.cycle-plan-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  border-radius: var(--radius-row);
+  cursor: grab;
+}
+
+.cycle-plan-row:hover {
+  background: var(--surface-raised);
+}
+
+.cycle-plan-row-key {
+  flex: none;
+  min-width: 76px;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.cycle-plan-row-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body-size);
+  color: var(--text);
+}
+
+.cycle-plan-row-estimate {
+  flex: none;
+  min-width: 28px;
+  text-align: right;
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cycle-plan-row-cycle {
+  flex: none;
+  max-width: 110px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-meta-size);
+}
+
+.cycle-plan-row-move {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.cycle-plan-row-move:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.cycle-plan-capacity {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-16);
+}
+
+.cycle-plan-capacity-title {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  color: var(--text-muted);
+}
+
+.cycle-plan-capacity-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-4) 0;
+}
+
+.cycle-plan-capacity-name {
+  flex: none;
+  width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body-size);
+  color: var(--text);
+}
+
+.cycle-plan-capacity-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  overflow: hidden;
+}
+
+.cycle-plan-capacity-fill {
+  display: block;
+  height: 100%;
+  background: var(--status-done);
+}
+
+.cycle-plan-capacity-fill--over {
+  display: block;
+  height: 100%;
+  background: var(--status-attention);
+}
+
+.cycle-plan-capacity-numbers {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 110px;
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cycle-plan-capacity-input {
+  width: 40px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-meta-size);
+  text-align: right;
+}
+
+.cycle-plan-capacity-note {
+  margin: var(--space-8) 0 0;
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+}

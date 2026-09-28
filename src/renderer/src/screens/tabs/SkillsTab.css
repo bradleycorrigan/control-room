@@ -1,0 +1,186 @@
+/* ============================================================================
+   Skills tab (plan 2.2, milestone U7) — read-only list of skills from
+   skills:list. Scoped to SkillsTab.tsx only so it never collides with the
+   other tabs. Every colour comes from a theme token.
+   ========================================================================= */
+
+.skills-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-6);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.skills-tab-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.skills-tab-filters {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skills-tab-new-button {
+  flex: none;
+  font: inherit;
+  font-size: var(--text-caption-size);
+  font-weight: 600;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-8);
+  cursor: pointer;
+}
+
+.skills-tab-pill {
+  font: inherit;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.skills-tab-pill:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.skills-tab-pill:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
+}
+
+.skills-tab-pill-active {
+  color: var(--text);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.skills-tab-muted {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+.skills-tab-error {
+  color: var(--status-error);
+  font-size: var(--text-caption-size);
+}
+
+.skills-tab-empty {
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+  padding: var(--space-2) 0;
+}
+
+.skills-tab-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.skills-tab-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-16);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.skills-tab-card:hover {
+  background: var(--surface-raised);
+}
+
+.skills-tab-card:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
+}
+
+.skills-tab-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.skills-tab-card-name {
+  font-weight: 600;
+  font-size: var(--text-label-size);
+  color: var(--text);
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.skills-tab-scope-badge {
+  flex-shrink: 0;
+  font-size: var(--text-caption-size);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+}
+
+.skills-tab-scope-badge-global {
+  color: var(--status-working);
+  border-color: var(--status-working);
+}
+
+.skills-tab-scope-badge-project {
+  color: var(--status-done);
+  border-color: var(--status-done);
+}
+
+.skills-tab-card-description {
+  margin: 0;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  overflow-wrap: break-word;
+  /* Plan 3, 1.7: descriptions clamp to two lines so every card in the grid
+     is the same height regardless of frontmatter length ("is it beautiful
+     yet" checklist #6). */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.skills-tab-card-filecount {
+  font-size: var(--text-mono-size);
+  color: var(--text-faint);
+}
+
+.skills-tab-card-unopenable {
+  cursor: default;
+}
+
+.skills-tab-card-unopenable:hover {
+  background: var(--surface);
+}
+
+/* The folder a skill lives in, for the ones that cannot be opened from here.
+   It is a path, so it gets the mono face, one line, and an ellipsis rather
+   than word-break: break-all — breaking mid-segment made three ragged lines
+   out of a directory name and buried the card's own heading. No direction: rtl
+   to keep the tail: with no inner LTR element the segments render reversed,
+   which is how this line first read "claude/skills./~". */
+.skills-tab-card-location {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

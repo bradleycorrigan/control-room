@@ -1,0 +1,548 @@
+/* HomeScreen — the landing composer (plan 7, stage B1). */
+
+.home-screen {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  justify-content: center;
+  /* Not `stretch`: that pinned the column to exactly the viewport height and
+     let its content spill out of its own box, so any padding on it sat above
+     the spill rather than below the last card. Sizing to content is what makes
+     the end-of-scroll space below actually appear. */
+  align-items: flex-start;
+  padding: 0 var(--space-24);
+}
+
+/* The breathing room at the end of the scroll goes on the content, not on
+   the scroll container: Chromium drops a scroll container's end padding when
+   it lays its children out as flex, so `padding-bottom` here did nothing and
+   the last card sat flush against the window edge. */
+.home-screen > * {
+  padding-bottom: var(--space-48);
+}
+
+.home-composer {
+  width: 100%;
+  max-width: 720px;
+  margin-top: max(12vh, 96px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.home-composer-card {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  padding: var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  transition:
+    border-color var(--motion-fast) var(--motion-easing),
+    box-shadow var(--motion-fast) var(--motion-easing);
+}
+
+.home-composer-card:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Drag-and-drop from Finder — the whole card is the drop target. */
+.home-composer-card--drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+/* The Textarea primitive ships its own border/background/focus-ring for use
+   as a standalone field — the composer card already draws all three at the
+   card level, so the field itself sits flush and transparent inside it. */
+.home-composer-input.cr-textarea {
+  min-height: unset;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: var(--space-8) var(--space-8) 0;
+  font-size: var(--text-card-size);
+  line-height: var(--text-card-line);
+  resize: none;
+  overflow-y: auto;
+}
+
+.home-composer-input.cr-textarea:focus-visible {
+  outline: none;
+  border-color: transparent;
+}
+
+/* Attachment chips — appear under the textarea once at least one file is
+   attached (picker, drag-drop or a pasted image), above the toolbar row. */
+.home-composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding: 0 var(--space-8);
+}
+
+.home-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 28px;
+  max-width: 260px;
+  padding: 0 var(--space-4) 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.home-attachment-chip--error {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+
+.home-attachment-chip--pending {
+  color: var(--text-muted);
+}
+
+.home-attachment-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-label-size);
+}
+
+.home-attachment-chip-spinner {
+  animation: home-attachment-spin 0.8s linear infinite;
+}
+
+@keyframes home-attachment-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-attachment-chip-spinner {
+    animation: none;
+  }
+}
+
+.home-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+}
+
+.home-composer-toggles {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+/* Only an anchor now — the menus themselves are portalled by Popover, which
+   positions them from this element's rect. */
+.home-composer-menu {
+  display: inline-flex;
+}
+
+/* Sizing only; .cr-popover carries the surface and the positioning. */
+.home-composer-popover {
+  /* Wide enough for a real project name. At 140px the names wrapped onto two
+     lines and each row ended up a different height. */
+  min-width: 240px;
+  max-width: 340px;
+  gap: 2px;
+}
+
+.home-composer-popover-item {
+  display: flex;
+  align-items: center;
+  /* Was space-between, which pinned the icon left and shoved the label to the
+     right edge — so a short name looked right-aligned and a long one wrapped.
+     A menu reads down its left edge. */
+  justify-content: flex-start;
+  gap: var(--space-8);
+  min-height: 32px;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line);
+  padding: var(--space-8) var(--space-8);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-composer-popover-item svg {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.home-composer-popover-back {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-sm);
+  text-align: left;
+  cursor: pointer;
+  margin-bottom: var(--space-4);
+}
+
+.home-composer-popover-back:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.home-composer-popover-item:hover {
+  background: var(--border);
+}
+
+.home-composer-popover-item--active {
+  color: var(--accent);
+}
+
+.home-composer-popover-heading {
+  font-family: var(--font-ui);
+  font-size: var(--text-micro-size);
+  font-weight: var(--text-micro-weight);
+  color: var(--text-muted);
+  padding: var(--space-4) var(--space-8) 0;
+}
+
+.home-composer-popover-heading:first-child {
+  padding-top: 0;
+}
+
+.home-composer-popover-empty {
+  padding: var(--space-8);
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+/* The project and where the session runs inside it read as one line. The
+   worktree half only appears once a project is picked — without a repo there
+   is no worktree to make. */
+/* Wraps rather than crushes. In the New session modal this row has less width
+   than on the Home page, and squeezing it is what broke the labels. Since the
+   branch field's slot is held in both modes, the wrap point is the same
+   whichever mode you are in — toggling never reflows the row. */
+.home-composer-chips {
+  margin-top: var(--space-24);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+}
+
+.home-add-project-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 28px;
+  padding: 0 var(--space-12);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+}
+
+.home-add-project-pill:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.home-project-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 28px;
+  padding: 0 var(--space-8) 0 0;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Truncated, never wrapped. A project called data-infrastructure turned the
+   chip into two lines and pushed everything beside it out of shape. */
+.home-project-chip-name {
+  font-size: var(--text-label-size);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-composer-error {
+  margin-top: var(--space-16);
+  color: var(--status-error);
+  font-size: var(--text-caption-size);
+  text-align: center;
+}
+
+.home-composer-notice {
+  margin-top: var(--space-16);
+  color: var(--status-done);
+  font-size: var(--text-caption-size);
+  text-align: center;
+}
+
+.home-view-all {
+  margin-top: var(--space-32);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  cursor: pointer;
+}
+
+.home-view-all:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+/* Sheet variant — the same composer inside a modal. The page variant centres
+   itself in the viewport with a large top offset; in a sheet the modal already
+   handles placement, so it must not add any of its own. */
+.home-screen--sheet {
+  min-height: 0;
+  padding: 0;
+  display: block;
+}
+
+.home-screen--sheet .home-composer {
+  margin: 0;
+  max-width: none;
+}
+
+/* One line per project, truncated rather than wrapped, so every row is the
+   same height and the list scans. */
+.home-composer-popover-item > span,
+.home-composer-popover-item > .home-composer-popover-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-composer-popover-item svg {
+  flex-shrink: 0;
+}
+
+
+/* Sits below the composer on the landing page. Home was a composer and a
+   screenful of nothing; this is the one thing you always want on arrival. */
+.home-recent {
+  /* Wider than the composer above it: at the composer's 720px the cards
+     squeezed two to a row and clipped their titles while the window sat
+     empty either side. Centred on the composer, it can overflow its column
+     evenly, up to 1120px (three cards a row) or the window less its gutters. */
+  width: min(1120px, calc(100vw - 2 * var(--space-24)));
+  align-self: center;
+  margin-top: var(--space-48);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.home-recent-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-12);
+}
+
+/* Quiet until chosen, like the Sessions screen's filters. */
+.home-recent-filters {
+  display: flex;
+  gap: var(--space-8);
+  margin-right: auto;
+}
+
+.home-recent-filters .cr-pill {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.home-recent-filters .cr-pill--active {
+  border-color: var(--pill-tone);
+}
+
+/* Its page-level top margin (under the composer) would drop it below the row. */
+.home-recent-header .home-view-all {
+  margin-top: 0;
+}
+
+.home-recent-empty {
+  margin: 0;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.home-recent-title {
+  margin: 0;
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.home-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.home-recent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  width: 100%;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-recent-row:hover {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.home-recent-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* The name takes the room; the project name is context, not the subject. */
+.home-recent-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-recent-project {
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+  flex: none;
+}
+
+/* Fixed column for the status so the names line up. Without it every row
+   starts at a different x and the list reads as ragged. */
+.home-recent-row .status-badge {
+  flex: 0 0 auto;
+  min-width: 128px;
+}
+
+/* Sits with the project chip and the checkout switcher, so the three things
+   that decide where a session runs are on one line. The empty slot keeps the
+   row's width identical in the other mode — see HomeScreen.tsx. */
+.home-branch-field,
+.home-branch-input-slot {
+  width: 260px;
+  flex: none;
+}
+
+.home-branch-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.home-branch-input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The slot matches the field's height as well as its width. Holding only the
+   width still let the row change height by 2px on every toggle — the same
+   jitter, in the other axis. */
+.home-branch-input-slot {
+  height: 36px;
+}
+
+/* On a branch: the branch picker, shaped like the field it sits in place of. */
+.home-branch-button {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 36px;
+  padding: 0 var(--space-12);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.home-branch-button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.home-branch-button > svg {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.home-branch-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+}
+
+.home-branch-button--invalid {
+  border-color: var(--status-error);
+}
+
+.home-branch-button--invalid > svg:last-child {
+  color: var(--status-error);
+}
+
+.home-branch-spin {
+  animation: home-branch-spin 900ms linear infinite;
+}
+
+@keyframes home-branch-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

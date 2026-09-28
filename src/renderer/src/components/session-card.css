@@ -1,0 +1,130 @@
+/* The session card, shared by the project page's Active board and Home's
+   recent sessions.
+
+   It lived in project-detail.css, which Home does not load — so the moment a
+   second surface used the card it came out unstyled. Styles travel with the
+   component they belong to. */
+
+.cr-active-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-16);
+}
+
+.cr-session-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  background: var(--surface);
+  border: none;
+  border-radius: var(--radius-lg);
+  padding: var(--space-24);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  font-family: inherit;
+}
+
+.cr-session-card:hover {
+  background: var(--surface-raised);
+}
+
+/* Not a session — an invitation to make one. A filled card the same colour as
+   its neighbours read as a session you could open, so this is an outline: no
+   fill, a dashed edge, and quiet text. It has to sit after the base rule,
+   which sets `border: none`, or it loses the cascade to it. */
+.cr-session-card--new {
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  min-height: 96px;
+}
+
+.cr-session-card--new:hover {
+  background: var(--surface);
+  border-color: var(--text-faint);
+  color: var(--text);
+}
+
+.cr-session-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cr-session-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+/* Visible without hovering, same as the project list's pin mark — a pinned
+   session otherwise looked identical to any other until you opened its menu. */
+.cr-session-card-pinned {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.cr-session-card-title {
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  /* Medium when read; unread goes bold (primitives.css). */
+  font-weight: var(--text-label-weight);
+  /* Two lines before an ellipsis: a card has the room, and one line cut
+     most real session names off mid-word. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.cr-session-card-branch {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cr-session-card-branch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The card is itself a button that opens the session, so the menu cannot live
+   inside it — it sits over the top-right corner instead. */
+.cr-session-card-wrap {
+  position: relative;
+  display: flex;
+}
+
+.cr-session-card-wrap .cr-session-card {
+  flex: 1;
+  min-width: 0;
+}
+
+.cr-session-card-menu {
+  position: absolute;
+  top: var(--space-8);
+  right: var(--space-8);
+  opacity: 0;
+}
+
+.cr-session-card-wrap:hover .cr-session-card-menu,
+.cr-session-card-wrap:focus-within .cr-session-card-menu {
+  opacity: 1;
+}
+
+.cr-session-card-menu-list {
+  min-width: 200px;
+}

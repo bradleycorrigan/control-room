@@ -1,0 +1,26 @@
+appId: io.goodstack.controlroom
+productName: Control Room
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+npmRebuild: false
+# Re-signs the packaged app under its own bundle id — see scripts/after-pack.mjs.
+# Without it the signature is identified as "Electron" and macOS drops every
+# notification the app posts.
+afterPack: scripts/after-pack.mjs
+# node-pty is the one native module in this app (CLAUDE.md) — it must ship
+# unpacked from asar so its .node binary can be dlopen'd at runtime, same as
+# Xirp ships it (app.asar.unpacked/node_modules/node-pty).
+asarUnpack:
+  - node_modules/node-pty/**/*
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dir
+      arch: [arm64]
+  icon: resources/icon.png
+  hardenedRuntime: false
+  identity: null

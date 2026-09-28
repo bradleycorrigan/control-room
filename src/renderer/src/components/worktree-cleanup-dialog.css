@@ -1,0 +1,106 @@
+/* WorktreeCleanupDialog — plan 7 step 2. Quiet, list-first: a row reads
+   as text with a checkbox, not a card fighting for attention. */
+
+.wt-cleanup-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-body-size);
+}
+
+.wt-cleanup-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.wt-cleanup-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-8) var(--space-8);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.wt-cleanup-row:hover {
+  background: var(--bg-sunken);
+}
+
+.wt-cleanup-row--disabled {
+  cursor: default;
+}
+
+.wt-cleanup-row--disabled:hover {
+  background: none;
+}
+
+.wt-cleanup-row input[type='checkbox'] {
+  flex: none;
+}
+
+.wt-cleanup-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wt-cleanup-row-branch {
+  font-family: var(--font-mono);
+  font-size: var(--text-body-size);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wt-cleanup-row-path {
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wt-cleanup-row-status {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.wt-cleanup-row-tag {
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.wt-cleanup-row-tag--merged {
+  color: var(--status-done);
+}
+
+.wt-cleanup-row-blocked {
+  font-size: var(--text-caption-size);
+  color: var(--status-attention);
+}
+
+.wt-cleanup-checkbox {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-body-size);
+  color: var(--text);
+}
+
+.wt-cleanup-destructive.cr-button {
+  background: var(--status-error);
+  color: var(--bg);
+}
+
+.wt-cleanup-destructive.cr-button:not(:disabled):hover {
+  background: var(--status-error);
+  filter: brightness(1.05);
+}
