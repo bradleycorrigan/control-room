@@ -250,9 +250,11 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
           timedOut = true
           resolve()
           // The interaction checks drive the whole app and have outgrown two
-          // minutes; the gate caps each run at six.
+          // minutes. A healthy run is ~3.5; a machine busy scanning every
+          // process it starts (an endpoint-security agent) ran the same
+          // checks past 8 and got cut off with nothing failed, so 15.
         },
-        /-interactions$/.test(screen) ? 480_000 : 120_000
+        /-interactions$/.test(screen) ? 900_000 : 120_000
       )
       // Resolved by the ready handler below (not just the timeout) — clear
       // the timer so it can't fire later, against a different combo, once

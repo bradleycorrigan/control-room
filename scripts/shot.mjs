@@ -96,7 +96,7 @@ const child = spawn(electronBin, [mainEntry], {
 })
 
 // Generous on purpose: screenshot.ts's own safety net waits up to 120s per
-// screen (480s for a "-interactions" run) before it gives up on a screen and
+// screen (900s for a "-interactions" run) before it gives up on a screen and
 // captures anyway, then still has to tear down ptys and tmux control
 // sessions before it can exit. This timer used to fire well inside that
 // window — 30s plus 5s per combination — so a normal, successful run that
@@ -105,7 +105,7 @@ const child = spawn(electronBin, [mainEntry], {
 // hung process, not the thing that decides pass or fail — that's the child's
 // own exit code, from screenshot.ts, which knows whether each screen and
 // image actually came out right.
-const perComboMs = combinations.some((c) => /-interactions$/.test(c.screen)) ? 480_000 : 120_000
+const perComboMs = combinations.some((c) => /-interactions$/.test(c.screen)) ? 900_000 : 120_000
 const timeoutMs = 30_000 + combinations.length * (perComboMs + 5_000)
 const killTimer = setTimeout(() => {
   console.error(`shot: timed out waiting for ${combinations.length} capture(s), killing`)

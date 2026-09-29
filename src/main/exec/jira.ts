@@ -594,6 +594,7 @@ export function disconnectJira(): void {
   boardCache = null
   myAccountId = null
   linksCache.clear()
+  rmSync(linksCachePath(), { force: true })
 }
 
 // ---------------------------------------------------------------------------
@@ -603,8 +604,36 @@ let boardCache: { at: number; value: JiraBoardData } | null = null
 const BOARD_TTL_MS = 60_000
 let myAccountId: string | null = null
 // Remote links cost one request per ticket, so they're kept per ticket and
-// only asked again when the ticket's `updated` moves.
-const linksCache = new Map<string, { updated: string; links: JiraLink[] }>()
+// only asked again when the ticket's `updated` moves, or after LINKS_TTL_MS:
+// Zapier adding a Slack link doesn't move `updated`. They're kept on disk
+// too, so the first board after a restart isn't one request per ticket.
+type CachedLinks = { updated: string; links: JiraLink[]; at: number }
+const LINKS_TTL_MS = 6 * 60 * 60 * 1000
+const linksCachePath = (): string => join(app.getPath('userData'), 'jira-remote-links.json')
+const linksCache = new Map<string, CachedLinks>()
+let linksCacheLoaded = false
+function loadLinksCache(): void {
+  if (linksCacheLoaded) return
+  linksCacheLoaded = true
+  try {
+    const saved = JSON.parse(readFileSync(linksCachePath(), 'utf8')) as Record<string, CachedLinks>
+    const now = Date.now()
+    for (const [key, entry] of Object.entries(saved)) {
+      if (entry && Array.isArray(entry.links) && now - entry.at < LINKS_TTL_MS) {
+        linksCache.set(key, entry)
+      }
+    }
+  } catch {
+    /* none saved yet, or unreadable: start empty */
+  }
+}
+function saveLinksCache(): void {
+  try {
+    writeFileSync(linksCachePath(), JSON.stringify(Object.fromEntries(linksCache)))
+  } catch (err) {
+    log.warn('jira: could not save the remote links cache', { error: String(err) })
+  }
+}
 
 async function me(conn: Conn): Promise<string | null> {
   if (myAccountId) return myAccountId
@@ -614,8 +643,11 @@ async function me(conn: Conn): Promise<string | null> {
 }
 
 async function linksFor(conn: Conn, key: string, updated: string): Promise<JiraLink[]> {
+  loadLinksCache()
   const cached = linksCache.get(key)
-  if (cached && cached.updated === updated) return cached.links
+  if (cached && cached.updated === updated && Date.now() - cached.at < LINKS_TTL_MS) {
+    return cached.links
+  }
   try {
     const raw = await callJson<Array<{ object?: { url?: string; title?: string } }>>(
       conn,
@@ -624,7 +656,7 @@ async function linksFor(conn: Conn, key: string, updated: string): Promise<JiraL
     const links = raw
       .map((l) => ({ url: l.object?.url ?? '', title: (l.object?.title ?? '').trim() }))
       .filter((l) => /^https:\/\//.test(l.url))
-    linksCache.set(key, { updated, links })
+    linksCache.set(key, { updated, links, at: Date.now() })
     return links
   } catch {
     return cached?.links ?? []
@@ -675,11 +707,16 @@ async function searchParentedKeys(
   return out
 }
 
-async function searchIssues(conn: Conn, jql: string, max = 300): Promise<RawIssue[]> {
+async function searchIssues(
+  conn: Conn,
+  jql: string,
+  max = 300,
+  fields = ISSUE_FIELDS
+): Promise<RawIssue[]> {
   const out: RawIssue[] = []
   let nextPageToken: string | undefined
   while (out.length < max) {
-    const q = new URLSearchParams({ jql, fields: ISSUE_FIELDS, maxResults: '100' })
+    const q = new URLSearchParams({ jql, fields, maxResults: '100' })
     if (nextPageToken) q.set('nextPageToken', nextPageToken)
     const body = await callJson<{ issues?: RawIssue[]; nextPageToken?: string; isLast?: boolean }>(
       conn,
@@ -783,45 +820,16 @@ export async function loadBoard(refresh = false): Promise<JiraResult<JiraBoardDa
   const projectList = config.projects.map((p) => `"${p}"`).join(', ')
 
   return attempt(async () => {
-    const accountId = await me(conn)
-    const raws = await searchIssues(
-      conn,
-      `project in (${projectList}) AND (statusCategory != Done OR sprint in openSprints()) ORDER BY updated DESC`
-    )
-    const links = await mapLimit(raws, 8, (r) =>
-      linksFor(conn, r.key, (r.fields as { updated?: string }).updated ?? '')
-    )
-    const issues = raws.map((r, i) => parseIssue(conn.site, r, accountId, links[i]))
-    // Sub-tasks come back from the same search (their own project, own
-    // status): give each parent the keys of its children, and never show a
-    // sub-task as a row of its own.
-    for (const issue of issues) {
-      issue.subtasks = issues
-        .filter((c) => c.isSubtask && c.parent?.key === issue.key)
-        .map((c) => c.key)
-    }
-    // The board search is `statusCategory != Done OR sprint in openSprints()`
-    // — a Done sub-task whose parent isn't in an open sprint doesn't match it
-    // and drops off the parent's list even though the parent is right here.
-    // A second, key-only search for every sub-task of these parents fills
-    // the gap without changing the main query.
-    const parentKeys = [...new Set(issues.filter((i) => !i.isSubtask).map((i) => i.key))]
-    if (parentKeys.length > 0) {
+    // How long each step took, logged once the board is in, so a slow load
+    // says where the time went.
+    const started = Date.now()
+    const timings: Record<string, number> = {}
+    const timed = async <T>(step: string, run: () => Promise<T>): Promise<T> => {
+      const t = Date.now()
       try {
-        const children = await searchParentedKeys(
-          conn,
-          `parent in (${parentKeys.map((k) => `"${k}"`).join(', ')})`
-        )
-        const known = new Set(issues.map((i) => i.key))
-        for (const { key, parentKey } of children) {
-          if (known.has(key)) continue
-          const issue = issues.find((i) => i.key === parentKey)
-          if (issue && !issue.subtasks?.includes(key)) {
-            issue.subtasks = [...(issue.subtasks ?? []), key]
-          }
-        }
-      } catch {
-        // Best-effort: the board still works with the count it already has.
+        return await run()
+      } finally {
+        timings[step] = Date.now() - t
       }
     }
 
@@ -835,34 +843,171 @@ export async function loadBoard(refresh = false): Promise<JiraResult<JiraBoardDa
         return new Set()
       }
     }
-    const [openPrs, anyPrs] = await Promise.all([
-      keysWhere(`project in (${projectList}) AND development[pullrequests].open > 0`),
-      keysWhere(`project in (${projectList}) AND development[pullrequests].all > 0`)
+
+    // Everything that doesn't need the ticket search starts now, beside it,
+    // rather than one after another once it's back.
+    const accountIdP = timed('me', () => me(conn))
+    const rawsP = timed('search', () =>
+      searchIssues(
+        conn,
+        `project in (${projectList}) AND (statusCategory != Done OR sprint in openSprints()) ORDER BY updated DESC`
+      )
+    )
+    const prsP = timed('pullRequests', () =>
+      Promise.all([
+        keysWhere(`project in (${projectList}) AND development[pullrequests].open > 0`),
+        keysWhere(`project in (${projectList}) AND development[pullrequests].all > 0`)
+      ])
+    )
+    // Columns: every status the projects' workflows use, not only the ones
+    // tickets happen to be in today — an empty column is still a drop target.
+    const statusListsP = timed('statuses', () =>
+      mapLimit(config.projects, 4, async (p) => {
+        try {
+          const byType = await callJson<
+            Array<{
+              statuses?: Array<{ id?: string; name: string; statusCategory?: { key?: string } }>
+            }>
+          >(conn, `/rest/api/3/project/${encodeURIComponent(p)}/statuses`)
+          return byType.flatMap((t) =>
+            (t.statuses ?? []).map((s) => ({
+              id: s.id ?? '',
+              name: s.name,
+              category: s.statusCategory?.key ?? 'new'
+            }))
+          )
+        } catch {
+          return []
+        }
+      })
+    )
+    // Each project's own boards, for its cycles.
+    const projectBoardsP = timed('boards', () =>
+      mapLimit(config.projects, 4, async (p) => {
+        try {
+          const boards = await callJson<{ values?: Array<{ id: number }> }>(
+            conn,
+            `/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(p)}&maxResults=20`
+          )
+          return (boards.values ?? []).map((b) => b.id)
+        } catch {
+          /* a project with no board (or no Software licence) just has no cycles */
+          return []
+        }
+      })
+    )
+    // Epics: open ones in the projects, for Set parent. A ticket's epic can
+    // live in another project (DSD tickets sit under TEAMDATA epics). Only
+    // the name is used, so only the name is asked for: this fetched every
+    // field of up to 200 epics, descriptions and links included.
+    const epicsP = timed('epics', () =>
+      searchIssues(
+        conn,
+        `project in (${projectList}) AND issuetype = Epic AND statusCategory != Done ORDER BY updated DESC`,
+        200,
+        'summary'
+      )
+    )
+    // Priorities come back highest first.
+    const prioritiesP = timed('priorities', async () => {
+      try {
+        const list = await callJson<Array<{ name?: string }>>(conn, '/rest/api/3/priority')
+        const names = list.map((p) => p.name).filter((n): n is string => Boolean(n))
+        return names.length ? names : DEFAULT_PRIORITIES
+      } catch {
+        return DEFAULT_PRIORITIES
+      }
+    })
+
+    const raws = await rawsP
+    // Parents, straight from the search, for the sub-task search below.
+    const parentKeys = [
+      ...new Set(
+        raws
+          .filter((r) => !(r.fields as { issuetype?: { subtask?: boolean } }).issuetype?.subtask)
+          .map((r) => r.key)
+      )
+    ]
+    const boardIdsFromTickets = new Set<number>()
+    for (const r of raws) {
+      const list = (r.fields as Record<string, unknown>)[SPRINT_FIELD] as Array<{
+        boardId?: number
+      }> | null
+      for (const s of list ?? []) if (s.boardId) boardIdsFromTickets.add(s.boardId)
+    }
+
+    const [accountId, links, children, sprintLists] = await Promise.all([
+      accountIdP,
+      timed('remoteLinks', () =>
+        mapLimit(raws, 8, (r) =>
+          linksFor(conn, r.key, (r.fields as { updated?: string }).updated ?? '')
+        )
+      ),
+      // The board search is `statusCategory != Done OR sprint in openSprints()`
+      // — a Done sub-task whose parent isn't in an open sprint doesn't match
+      // it and drops off the parent's list even though the parent is right
+      // here. A second, key-only search for every sub-task of these parents
+      // fills the gap without changing the main query.
+      timed('subtasks', async () => {
+        if (parentKeys.length === 0) return []
+        try {
+          return await searchParentedKeys(
+            conn,
+            `parent in (${parentKeys.map((k) => `"${k}"`).join(', ')})`
+          )
+        } catch {
+          // Best-effort: the board still works with the count it already has.
+          return []
+        }
+      }),
+      // Cycles: the boards the tickets' sprints come from, plus each
+      // project's own boards, asked for their active and upcoming sprints.
+      timed('sprints', async () => {
+        const boardIds = new Set([...boardIdsFromTickets, ...(await projectBoardsP).flat()])
+        return mapLimit([...boardIds], 4, async (id) => {
+          try {
+            const body = await callJson<{ values?: JiraSprint[] }>(
+              conn,
+              `/rest/agile/1.0/board/${id}/sprint?state=active,future&maxResults=50`
+            )
+            return (body.values ?? []).map((s) => ({
+              id: s.id,
+              name: s.name,
+              state: s.state,
+              startDate: s.startDate,
+              endDate: s.endDate
+            }))
+          } catch {
+            return []
+          }
+        })
+      })
     ])
+
+    const issues = raws.map((r, i) => parseIssue(conn.site, r, accountId, links[i]))
+    // Sub-tasks come back from the same search (their own project, own
+    // status): give each parent the keys of its children, and never show a
+    // sub-task as a row of its own.
+    for (const issue of issues) {
+      issue.subtasks = issues
+        .filter((c) => c.isSubtask && c.parent?.key === issue.key)
+        .map((c) => c.key)
+    }
+    const known = new Set(issues.map((i) => i.key))
+    for (const { key, parentKey } of children) {
+      if (known.has(key)) continue
+      const issue = issues.find((i) => i.key === parentKey)
+      if (issue && !issue.subtasks?.includes(key)) {
+        issue.subtasks = [...(issue.subtasks ?? []), key]
+      }
+    }
+
+    const [openPrs, anyPrs] = await prsP
     for (const issue of issues) {
       issue.pullRequests = openPrs.has(issue.key) ? 'open' : anyPrs.has(issue.key) ? 'merged' : null
     }
 
-    // Columns: every status the projects' workflows use, not only the ones
-    // tickets happen to be in today — an empty column is still a drop target.
-    const statusLists = await mapLimit(config.projects, 4, async (p) => {
-      try {
-        const byType = await callJson<
-          Array<{
-            statuses?: Array<{ id?: string; name: string; statusCategory?: { key?: string } }>
-          }>
-        >(conn, `/rest/api/3/project/${encodeURIComponent(p)}/statuses`)
-        return byType.flatMap((t) =>
-          (t.statuses ?? []).map((s) => ({
-            id: s.id ?? '',
-            name: s.name,
-            category: s.statusCategory?.key ?? 'new'
-          }))
-        )
-      } catch {
-        return []
-      }
-    })
+    const statusLists = await statusListsP
     const projectStatuses: Record<string, string[]> = {}
     config.projects.forEach((p, i) => {
       const names = [...new Set(statusLists[i].map((s) => s.name))]
@@ -874,68 +1019,15 @@ export async function loadBoard(refresh = false): Promise<JiraResult<JiraBoardDa
       ...issues.map((i) => ({ name: i.status, category: i.statusCategory }))
     ])
 
-    // Cycles: the boards the tickets' sprints come from, plus each project's
-    // own boards, asked for their active and upcoming sprints.
-    const boardIds = new Set<number>()
-    for (const r of raws) {
-      const list = (r.fields as Record<string, unknown>)[SPRINT_FIELD] as Array<{
-        boardId?: number
-      }> | null
-      for (const s of list ?? []) if (s.boardId) boardIds.add(s.boardId)
-    }
-    await mapLimit(config.projects, 4, async (p) => {
-      try {
-        const boards = await callJson<{ values?: Array<{ id: number }> }>(
-          conn,
-          `/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(p)}&maxResults=20`
-        )
-        for (const b of boards.values ?? []) boardIds.add(b.id)
-      } catch {
-        /* a project with no board (or no Software licence) just has no cycles */
-      }
-    })
-    const sprintLists = await mapLimit([...boardIds], 4, async (id) => {
-      try {
-        const body = await callJson<{ values?: JiraSprint[] }>(
-          conn,
-          `/rest/agile/1.0/board/${id}/sprint?state=active,future&maxResults=50`
-        )
-        return (body.values ?? []).map((s) => ({
-          id: s.id,
-          name: s.name,
-          state: s.state,
-          startDate: s.startDate,
-          endDate: s.endDate
-        }))
-      } catch {
-        return []
-      }
-    })
     const sprints = [...new Map(sprintLists.flat().map((s) => [s.id, s])).values()].sort(
       (a, b) => (a.state === 'active' ? 0 : 1) - (b.state === 'active' ? 0 : 1) || a.id - b.id
     )
 
-    // Epics: open ones in the projects, for Set parent. A ticket's epic can
-    // live in another project (DSD tickets sit under TEAMDATA epics).
-    const epicRaws = await searchIssues(
-      conn,
-      `project in (${projectList}) AND issuetype = Epic AND statusCategory != Done ORDER BY updated DESC`,
-      200
-    )
-    const epics = epicRaws.map((r) => ({
+    const epics = (await epicsP).map((r) => ({
       key: r.key,
       summary: ((r.fields as { summary?: string }).summary ?? r.key).trim()
     }))
-
-    // Priorities come back highest first.
-    let priorities = DEFAULT_PRIORITIES
-    try {
-      const list = await callJson<Array<{ name?: string }>>(conn, '/rest/api/3/priority')
-      const names = list.map((p) => p.name).filter((n): n is string => Boolean(n))
-      if (names.length) priorities = names
-    } catch {
-      /* keep the defaults */
-    }
+    const priorities = await prioritiesP
 
     // Columns: the board the current cycle runs on — the one most of the
     // tickets in an active sprint belong to — as its owner set it up in Jira.
@@ -955,33 +1047,35 @@ export async function loadBoard(refresh = false): Promise<JiraResult<JiraBoardDa
     let columns: JiraColumn[] | null = null
     let columnsFrom: string | null = null
     if (cycleBoard) {
-      try {
-        const cfg = await callJson<{
-          name?: string
-          columnConfig?: { columns?: Array<{ name: string; statuses?: Array<{ id: string }> }> }
-        }>(conn, `/rest/agile/1.0/board/${cycleBoard}/configuration`)
-        // Statuses outside the projects' own lists (another project's) still
-        // need names; one call has them all.
-        const missing = (cfg.columnConfig?.columns ?? []).some((c) =>
-          (c.statuses ?? []).some((st) => !statusNameById.has(st.id))
-        )
-        if (missing) {
-          const all = await callJson<Array<{ id: string; name: string }>>(
-            conn,
-            '/rest/api/3/status'
+      await timed('columns', async () => {
+        try {
+          const cfg = await callJson<{
+            name?: string
+            columnConfig?: { columns?: Array<{ name: string; statuses?: Array<{ id: string }> }> }
+          }>(conn, `/rest/agile/1.0/board/${cycleBoard}/configuration`)
+          // Statuses outside the projects' own lists (another project's)
+          // still need names; one call has them all.
+          const missing = (cfg.columnConfig?.columns ?? []).some((c) =>
+            (c.statuses ?? []).some((st) => !statusNameById.has(st.id))
           )
-          for (const st of all) if (!statusNameById.has(st.id)) statusNameById.set(st.id, st.name)
+          if (missing) {
+            const all = await callJson<Array<{ id: string; name: string }>>(
+              conn,
+              '/rest/api/3/status'
+            )
+            for (const st of all) if (!statusNameById.has(st.id)) statusNameById.set(st.id, st.name)
+          }
+          columns = (cfg.columnConfig?.columns ?? []).map((c) => ({
+            name: c.name,
+            statuses: (c.statuses ?? [])
+              .map((st) => statusNameById.get(st.id))
+              .filter((n): n is string => Boolean(n))
+          }))
+          columnsFrom = cfg.name ?? null
+        } catch {
+          /* no board config — one column per status */
         }
-        columns = (cfg.columnConfig?.columns ?? []).map((c) => ({
-          name: c.name,
-          statuses: (c.statuses ?? [])
-            .map((st) => statusNameById.get(st.id))
-            .filter((n): n is string => Boolean(n))
-        }))
-        columnsFrom = cfg.name ?? null
-      } catch {
-        /* no board config — one column per status */
-      }
+      })
     }
 
     const value: JiraBoardData = {
@@ -995,7 +1089,13 @@ export async function loadBoard(refresh = false): Promise<JiraResult<JiraBoardDa
       projectStatuses,
       labels: [...new Set(issues.flatMap((i) => i.labels))].sort()
     }
+    log.info('jira: board loaded', {
+      ms: Date.now() - started,
+      tickets: issues.length,
+      steps: timings
+    })
     boardCache = { at: Date.now(), value }
+    saveLinksCache()
     return value
   })
 }
