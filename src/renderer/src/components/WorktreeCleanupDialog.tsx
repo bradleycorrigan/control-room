@@ -7,6 +7,8 @@ import {
 } from '../api-projects'
 import { formatHomePath } from '../lib/format-path'
 import { useHomeDir } from '../state/useHomeDir'
+import { relativeTime } from '../lib/format-time'
+import { PickCheck } from './selection'
 import './worktree-cleanup-dialog.css'
 
 interface Props {
@@ -25,6 +27,14 @@ function blockedReason(w: WorktreeCleanupCandidate): string | null {
   if (w.hasLiveSession) return 'a live session is using it'
   if (w.dirty) return 'has uncommitted changes'
   return null
+}
+
+/** No commit for this long reads as abandoned (the "Select untouched" button). */
+const UNTOUCHED_DAYS = 14
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function isUntouched(w: WorktreeCleanupCandidate, now = Date.now()): boolean {
+  return w.lastCommitAt !== null && now - w.lastCommitAt >= UNTOUCHED_DAYS * DAY_MS
 }
 
 function statusLabel(w: WorktreeCleanupCandidate): string {
@@ -59,7 +69,15 @@ export default function WorktreeCleanupDialog({
     listWorktreesForCleanup(projectId)
       .then((list) => {
         if (cancelled) return
-        setCandidates(list)
+        // Oldest commit first: the abandoned ones are what you're here for.
+        // A folder that's already gone goes first of all.
+        setCandidates(
+          [...list].sort(
+            (a, b) =>
+              Number(b.missing) - Number(a.missing) ||
+              (a.lastCommitAt ?? Infinity) - (b.lastCommitAt ?? Infinity)
+          )
+        )
         setSelected(new Set(list.filter((w) => w.preselect).map((w) => w.path)))
       })
       .catch(() => {
@@ -83,6 +101,10 @@ export default function WorktreeCleanupDialog({
   }
 
   const selectedCount = selected.size
+  // Untouched for two weeks or more, and nothing stops it being removed.
+  const untouched = candidates.filter((w) => isUntouched(w) && blockedReason(w) === null)
+  const selectUntouched = (): void =>
+    setSelected((prev) => new Set([...prev, ...untouched.map((w) => w.path)]))
 
   const handleRemove = async (): Promise<void> => {
     const confirmed = await confirm({
@@ -161,16 +183,16 @@ export default function WorktreeCleanupDialog({
               const reason = blockedReason(w)
               const disabled = reason !== null
               return (
-                <label
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={selected.has(w.path)}
                   key={w.path}
                   className={`wt-cleanup-row${disabled ? ' wt-cleanup-row--disabled' : ''}`}
+                  disabled={disabled}
+                  onClick={() => toggle(w.path)}
                 >
-                  <input
-                    type="checkbox"
-                    checked={selected.has(w.path)}
-                    disabled={disabled}
-                    onChange={() => toggle(w.path)}
-                  />
+                  <PickCheck on={selected.has(w.path)} />
                   <div className="wt-cleanup-row-main">
                     <div className="wt-cleanup-row-branch">
                       <bdi>{w.branch ?? 'detached'}</bdi>
@@ -178,6 +200,14 @@ export default function WorktreeCleanupDialog({
                     <div className="wt-cleanup-row-path" title={w.path}>
                       <bdi>{formatHomePath(w.path, homeDir)}</bdi>
                     </div>
+                    {w.lastCommitAt !== null && (
+                      <div
+                        className={`wt-cleanup-row-age${isUntouched(w) ? ' wt-cleanup-row-age--old' : ''}`}
+                        title={new Date(w.lastCommitAt).toLocaleString()}
+                      >
+                        Last commit {relativeTime(w.lastCommitAt)}
+                      </div>
+                    )}
                   </div>
                   <div className="wt-cleanup-row-status">
                     {w.missing ? (
@@ -202,13 +232,21 @@ export default function WorktreeCleanupDialog({
                       </Row>
                     )}
                   </div>
-                </label>
+                </button>
               )
             })}
           </div>
         )}
 
         {error && <p className="settings-error">{error}</p>}
+
+        {untouched.length > 0 && (
+          <Row justify="flex-start">
+            <Button variant="outlined" size="compact" onClick={selectUntouched}>
+              Select {untouched.length} untouched for {UNTOUCHED_DAYS}+ days
+            </Button>
+          </Row>
+        )}
 
         {candidates.length > 0 && (
           <label className="wt-cleanup-checkbox">

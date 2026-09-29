@@ -22,6 +22,8 @@ export interface WorktreeCleanupCandidate {
   hasLiveSession: boolean
   /** The worktree's folder is already gone on disk (git reports it prunable). */
   missing: boolean
+  /** When its latest commit was made (epoch ms), or null when git can't say. */
+  lastCommitAt: number | null
   preselect: boolean
 }
 

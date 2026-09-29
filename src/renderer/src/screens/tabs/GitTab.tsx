@@ -10,6 +10,7 @@ import {
 } from '../../api'
 import { Icon, Input, Popover } from '../../components/primitives'
 import './GitTab.css'
+import { relativeTime } from '../../lib/format-time'
 
 /** One checkout this tab can be pointed at, beyond the project's own. */
 export interface GitWorktreeChoice {
@@ -27,17 +28,6 @@ interface Props {
 }
 
 const LOG_PAGE_SIZE = 30
-
-function relativeTime(ts: number): string {
-  const seconds = Math.round((Date.now() - ts) / 1000)
-  if (seconds < 60) return `${seconds}s ago`
-  const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.round(hours / 24)
-  return `${days}d ago`
-}
 
 // Single-letter git status codes -> a short human word. Status is always a
 // word, never colour alone (CLAUDE.md non-negotiable).

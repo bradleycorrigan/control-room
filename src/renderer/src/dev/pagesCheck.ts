@@ -2340,9 +2340,15 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       'the worktree a live session is using is disabled, not offered for removal',
       Boolean(liveRow) &&
         liveRow!.classList.contains('wt-cleanup-row--disabled') &&
-        (liveRow!.querySelector('input[type="checkbox"]') as HTMLInputElement | null)?.disabled ===
-          true,
+        (liveRow as HTMLButtonElement).disabled === true,
       liveRow?.textContent ?? 'fixture/working row not found'
+    )
+    await check(
+      'each worktree says when it was last committed to, so abandoned ones stand out',
+      rows.some((r) =>
+        /Last commit .+ ago/.test(r.querySelector('.wt-cleanup-row-age')?.textContent ?? '')
+      ),
+      rows.map((r) => r.querySelector('.wt-cleanup-row-age')?.textContent ?? 'no age').join(' | ')
     )
 
     await click(byText('.cr-modal button', 'Cancel'))

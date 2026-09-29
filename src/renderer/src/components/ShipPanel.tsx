@@ -221,7 +221,11 @@ export default function ShipPanel({
               <>
                 <div className="ship-panel-commits">
                   {commits.length === 0 ? (
-                    <p className="ship-panel-muted">No commits yet on {branch}.</p>
+                    <p className="ship-panel-muted">
+                      {session.record?.detached
+                        ? `No commits yet. This session started from ${branch} and isn't on a branch of its own yet.`
+                        : `No commits yet on ${branch}.`}
+                    </p>
                   ) : (
                     commits.map((c) => (
                       <div key={c.sha} className="ship-panel-commit">

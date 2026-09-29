@@ -35,6 +35,33 @@ hit as known-and-non-blocking — do not re-investigate that finding, it is not 
 
 Commit at the end of every milestone attempt, passing or not — see Verification rule below.
 
+## Branches: every change, however small
+
+The repo is public on GitHub (`bradleycorrigan/control-room`), so `main` only ever holds work
+that passed the gate.
+
+1. Start every piece of work on a new branch cut from an up-to-date `main`:
+   `git switch -c <short-descriptive-name>`. Never commit straight onto `main`.
+2. Commit on the branch. Leave out `release/` and `*.tsbuildinfo`: both are build output and
+   gitignored.
+3. Merge into `main` only once `npm run gate` prints PASS on the branch. Fast-forward
+   (`git merge --ff-only`), then delete the branch.
+4. Before anything goes to GitHub, check the diff for secrets and real company details (Jira
+   site, Slack links, internal hostnames). Use example values instead.
+
+Pushing: local history and GitHub's don't match (six old local commits hold a 166 MB build that
+GitHub rejects), so a plain `git push` is refused. Push a snapshot of `main` on top of GitHub's
+current tip, which is an ordinary fast-forward:
+
+```bash
+git ls-remote origin main                                     # GitHub's tip
+git commit-tree "main^{tree}" -p <tip> -m "<what changed>"    # prints the new commit
+git push origin "<new commit>:refs/heads/main"
+```
+
+Write the commit out in full. In zsh, `"$c:refs/..."` reads `:r` as a filename modifier and
+mangles the target.
+
 ## Verification rule — the one that has cost us most
 
 **A check runs against the real app, or it is reported unrunnable.** Do not build a private

@@ -391,6 +391,13 @@ export async function pruneWorktrees(repoPath: string): Promise<boolean> {
   return res.code === 0
 }
 
+/** When the worktree's latest commit was made, in epoch ms; null when git can't say. */
+export async function lastCommitTime(worktreePath: string): Promise<number | null> {
+  const res = await run('git', ['-C', worktreePath, 'log', '-1', '--format=%ct'])
+  const seconds = Number(res.stdout.trim())
+  return res.code === 0 && Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null
+}
+
 export async function hasUncommittedChanges(worktreePath: string): Promise<boolean> {
   const res = await run('git', ['-C', worktreePath, 'status', '--porcelain'])
   return res.code === 0 && res.stdout.trim().length > 0

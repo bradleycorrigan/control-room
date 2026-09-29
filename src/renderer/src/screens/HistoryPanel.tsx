@@ -3,22 +3,11 @@ import type { SessionRecord } from '../../../main/store/types'
 import type { CliHistoryEntry } from '../../../main/exec/transcripts'
 import { SegmentedControl, Button } from '../components/primitives'
 import { archiveSession, listCliHistory, resumeCliSession, resumeSession } from '../api'
+import { relativeTime } from '../lib/format-time'
 
 // Plan 3, Part 4 — Recent (this app's own sessions) and CLI (transcripts
 // written by Claude Code sessions started outside the app) history, both
 // read-only from disk, behind one Recent | CLI segmented control.
-
-function relativeTime(ts: number): string {
-  const seconds = Math.round((Date.now() - ts) / 1000)
-  if (seconds < 5) return 'just now'
-  if (seconds < 60) return `${seconds}s ago`
-  const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.round(hours / 24)
-  return `${days}d ago`
-}
 
 // 'done' is the user's own verdict: they are finished with this session. It
 // is not the transient `done` status the agent's Stop hook sets, which decays

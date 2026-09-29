@@ -8,6 +8,7 @@ import {
   mergedBranches,
   prStatesForBranches,
   hasUncommittedChanges,
+  lastCommitTime,
   removeWorktreeClean,
   deleteLocalBranch,
   pruneWorktrees
@@ -87,7 +88,10 @@ export function registerProjectsIpc(): void {
         const branch = w.branch?.replace(/^refs\/heads\//, '') ?? null
         const isMerged = branch ? merged.has(branch) : false
         const prState = branch ? (prStates.get(branch) ?? null) : null
-        const dirty = await hasUncommittedChanges(w.path)
+        const [dirty, lastCommitAt] = await Promise.all([
+          hasUncommittedChanges(w.path),
+          w.prunable ? Promise.resolve(null) : lastCommitTime(w.path)
+        ])
         // A "live session" is one with a real tmux pane or background agent
         // still running, not merely a SessionRecord that once pointed here —
         // a stopped session's worktree is exactly the kind of thing this
@@ -109,6 +113,7 @@ export function registerProjectsIpc(): void {
           dirty,
           hasLiveSession,
           missing,
+          lastCommitAt,
           preselect: safe
         }
       })

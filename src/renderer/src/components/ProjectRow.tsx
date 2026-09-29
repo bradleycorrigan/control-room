@@ -2,18 +2,7 @@ import { Card, Icon, IconTile, Meta, MetaItem, IconButton } from './primitives'
 import type { Project } from '../../../main/store/types'
 import { formatHomePath } from '../lib/format-path'
 import { useHomeDir } from '../state/useHomeDir'
-
-function relativeTime(ts: number | null): string {
-  if (ts === null) return 'never'
-  const seconds = Math.round((Date.now() - ts) / 1000)
-  if (seconds < 60) return `${seconds}s ago`
-  const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.round(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  const days = Math.round(hours / 24)
-  return `${days}d ago`
-}
+import { relativeTime } from '../lib/format-time'
 
 interface Props {
   project: Project
