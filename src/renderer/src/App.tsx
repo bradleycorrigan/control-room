@@ -2016,6 +2016,8 @@ function App(): React.JSX.Element {
               onSelectProject={handleSelectRailProject}
               onProjectsChanged={refreshProjects}
               onNewSession={() => setShowNewSessionForm(true)}
+              onOpenSession={openSessionFrom}
+              openSessionKey={openSessionKey}
             />
             <div
               className="sidebar-resize-handle"

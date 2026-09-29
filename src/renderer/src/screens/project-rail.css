@@ -139,6 +139,106 @@
   transform-origin: center;
 }
 
+/* A project opens to list its sessions. The disclosure sits in a slot of its
+   own, the same width on every row, so the names line up. */
+.projects-rail-row {
+  display: flex;
+  align-items: center;
+}
+
+.projects-rail-row > .projects-rail-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.projects-rail-disclosure-slot {
+  flex: none;
+  display: inline-flex;
+  width: var(--space-16);
+}
+
+.projects-rail-disclosure {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-16);
+  height: var(--space-16);
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.projects-rail-disclosure:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.projects-rail-disclosure:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.projects-rail-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 var(--space-4);
+  /* Under the project's name: past the disclosure slot and the folder icon. */
+  padding-left: var(--space-24);
+}
+
+.projects-rail-session {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--space-8);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--motion-easing);
+}
+
+.projects-rail-session:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.projects-rail-session--open,
+.projects-rail-session--open:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.projects-rail-session > :first-child {
+  flex: none;
+}
+
+.projects-rail-session-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Status is always a colour and a word: the dot, and this. */
+.projects-rail-session-status {
+  flex: none;
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+  white-space: nowrap;
+}
+
 /* Footer: "New session" button with rail gutters */
 .projects-rail-footer {
   flex: 0 0 auto;

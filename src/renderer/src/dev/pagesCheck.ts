@@ -1906,6 +1906,36 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     )
   }
 
+  // The sidebar's projects open to list their sessions, and a session opens
+  // from there.
+  {
+    await ctx.goTo('sessions')
+    await wait(600)
+    const project = (): HTMLElement | null => $('[data-rail-project="fixture-project"]')
+    await click(project()?.querySelector('.projects-rail-disclosure'))
+    const item = (): HTMLElement | undefined =>
+      $$<HTMLElement>('[data-rail-project="fixture-project"] .projects-rail-session').find((b) =>
+        /Working session/.test(b.textContent ?? '')
+      )
+    await check(
+      'a project in the sidebar opens to list its sessions, each with a status word',
+      await until(() =>
+        Boolean(item()?.querySelector('.projects-rail-session-status')?.textContent)
+      ),
+      project()?.textContent?.slice(0, 160) ?? 'no fixture-project in the sidebar'
+    )
+    await click(item())
+    await check(
+      'a session opens from under its project',
+      await until(() =>
+        /Working session/.test($('.session-detail-breadcrumb-title')?.textContent ?? '')
+      ),
+      $('.session-detail-breadcrumb-title')?.textContent ?? 'no session open'
+    )
+    await click(project()?.querySelector('.projects-rail-disclosure'))
+    await check('and the project closes again', !item())
+  }
+
   // Ship panel (plan 7 step 3). No CR_SHIP_FIXTURE from the gate's
   // shot:fixture env, so this only drives what works without the network:
   // the panel opens, shows real commits, defaults the PR title, and the

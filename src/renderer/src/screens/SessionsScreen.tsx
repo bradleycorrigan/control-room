@@ -35,6 +35,7 @@ import {
 } from '../api'
 import { useStoredState } from '../state/useStoredState'
 import { resolveSessionProjectId } from '../state/useSessions'
+import { sessionTitle } from '../lib/session-title'
 import './sessions-list.css'
 
 interface Props {
@@ -239,10 +240,6 @@ function sentenceCase(word: string): string {
 function matchesStatus(session: LiveSession, filter: StatusFilterId | null): boolean {
   if (!filter) return true
   return STATUS_FILTERS.find((f) => f.id === filter)!.statuses.includes(session.status)
-}
-
-function sessionTitle(session: LiveSession): string {
-  return session.record?.title ?? session.agentName ?? session.cwd
 }
 
 interface ProjectGroup {
