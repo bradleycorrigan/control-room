@@ -1882,6 +1882,15 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         Boolean(byText('.cr-selection-bar button', 'Open in tabs')),
       bar()?.textContent ?? `no bar (${a.error ?? ''} ${b.error ?? ''})`
     )
+    {
+      const cap = bar()?.querySelector('kbd')
+      const style = cap ? getComputedStyle(cap) : null
+      await check(
+        "the Sessions bar's key caps get the shared style, and nothing in it spills",
+        style?.paddingLeft === '5px' && style?.lineHeight === '16px' && spills(bar()).length === 0,
+        `padding ${style?.paddingLeft}, line ${style?.lineHeight}, spills: ${spills(bar()).join(', ')}`
+      )
+    }
     await key('Backspace')
     await until(() => Boolean(byText('.cr-modal button', 'Delete 2 sessions')), 3000)
     await check(
