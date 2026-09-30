@@ -1315,6 +1315,37 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     Boolean(header) && parseFloat(getComputedStyle(header!).borderTopLeftRadius) > 0
   )
   await check('the header has Close tab (×)', Boolean($('[aria-label="Close tab (⌘W)"]')))
+  {
+    // A real double-click: the second press carries clickCount 2.
+    const title = $('.session-detail-breadcrumb-title')
+    const before = title?.textContent ?? ''
+    if (title) {
+      title.scrollIntoView({ block: 'center' })
+      const r = title.getBoundingClientRect()
+      const at = {
+        x: Math.round(r.left + Math.min(r.width / 2, 40)),
+        y: Math.round(r.top + r.height / 2)
+      }
+      await input({ type: 'mouseMove', ...at })
+      for (const clickCount of [1, 2]) {
+        await input({ type: 'mouseDown', ...at, button: 'left', clickCount })
+        await input({ type: 'mouseUp', ...at, button: 'left', clickCount })
+      }
+      await wait(300)
+    }
+    const field = $<HTMLInputElement>('.session-detail-header input')
+    await check(
+      "double-clicking the session's title renames it in place",
+      Boolean(field) && field!.value === before,
+      field ? `field holds "${field.value}", title was "${before}"` : 'no rename field'
+    )
+    await key('Escape')
+    await check(
+      'Escape leaves the title as it was',
+      !$('.session-detail-header input') &&
+        $('.session-detail-breadcrumb-title')?.textContent === before
+    )
+  }
   await check(
     'the header folder opens the IDE and is a single tile',
     Boolean($('.session-detail-folder')) &&

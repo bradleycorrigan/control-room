@@ -354,3 +354,16 @@
 .session-detail-header .cr-icon-button {
   padding: 0;
 }
+
+/* Double-click renames: the title reads as editable on hover. */
+.session-detail-breadcrumb-title--renamable {
+  /* Padding for the hover fill, taken back out so the text doesn't move. */
+  margin: 0 calc(-1 * var(--space-4));
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  cursor: text;
+}
+
+.session-detail-breadcrumb-title--renamable:hover {
+  background: var(--surface-raised);
+}

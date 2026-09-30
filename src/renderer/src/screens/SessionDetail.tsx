@@ -633,7 +633,19 @@ export default function SessionDetail({
                 </button>
               </form>
             ) : (
-              <span className="session-detail-breadcrumb-title">{title}</span>
+              // Double-click renames in place, as a tab's title does. The
+              // menu's Rename stays for anyone who looks there first.
+              <span
+                className={
+                  session.record
+                    ? 'session-detail-breadcrumb-title session-detail-breadcrumb-title--renamable'
+                    : 'session-detail-breadcrumb-title'
+                }
+                title={session.record ? 'Double-click to rename' : undefined}
+                onDoubleClick={session.record ? startRename : undefined}
+              >
+                {title}
+              </span>
             )}
           </div>
           <div className="session-detail-status-row">
