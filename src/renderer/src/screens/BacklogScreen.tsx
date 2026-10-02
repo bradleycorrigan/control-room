@@ -2662,13 +2662,13 @@ function BoardColumn({
               data-nav-item=""
               {...ticketHandlers(issue, p)}
             >
-              <PickCheck
-                on={p.selected.includes(issue.key)}
-                label={`Select ${issue.key}`}
-                className={`backlog-card-pick${p.selected.length ? ' backlog-card-pick--shown' : ''}`}
-                onToggle={() => p.onSelect(issue.key, 'toggle')}
-              />
               <div className="backlog-card-top">
+                <PickCheck
+                  on={p.selected.includes(issue.key)}
+                  label={`Select ${issue.key}`}
+                  className={`backlog-card-pick${p.selected.length ? ' backlog-card-pick--shown' : ''}`}
+                  onToggle={() => p.onSelect(issue.key, 'toggle')}
+                />
                 <Editable
                   label={`Priority: ${issue.priority ?? 'none'}`}
                   onEdit={p.selected.length ? undefined : (a) => p.onEdit('priority', issue, a)}

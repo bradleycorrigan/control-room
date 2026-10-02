@@ -1245,11 +1245,6 @@
   opacity: 1;
 }
 
-.backlog-card-pick {
-  position: absolute;
-  top: var(--space-8);
-  right: var(--space-8);
-}
 
 .backlog-row--picked,
 .backlog-row--picked:hover {

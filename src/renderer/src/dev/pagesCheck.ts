@@ -1104,6 +1104,28 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     'on the board, a filtered-out column stays as a drop target',
     Boolean($('.backlog-column--filtered[data-status="Done/Not doing"]'))
   )
+  {
+    // A card's pick check sits in its top row, clear of the assignee.
+    const overlapping = $$<HTMLElement>('.backlog-card').filter((card) => {
+      const pick = card.querySelector('.backlog-card-pick')?.getBoundingClientRect()
+      const avatar = card
+        .querySelector('.backlog-card-top .cr-avatar, .backlog-card-top [class*="avatar"]')
+        ?.getBoundingClientRect()
+      if (!pick || !avatar) return false
+      return (
+        pick.left < avatar.right &&
+        avatar.left < pick.right &&
+        pick.top < avatar.bottom &&
+        avatar.top < pick.bottom
+      )
+    })
+    await check(
+      "a board card's pick check never covers its assignee",
+      $$('.backlog-card .backlog-card-pick').length > 0 && overlapping.length === 0,
+      overlapping.map((c) => c.dataset.issue).join(', ') ||
+        `${$$('.backlog-card .backlog-card-pick').length} checks`
+    )
+  }
   await click($('.backlog-menu-button[aria-label^="Filter"]'))
   await click(byText('.backlog-filter-menu button', 'Clear filters'))
   await key('Escape')
