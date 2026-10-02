@@ -113,6 +113,16 @@ for (const [dirName, branch] of Object.entries(worktreeBranches)) {
   git(['worktree', 'add', '-q', '-b', `fixture/${branch}`, wtPath, 'main'], repoPath)
 }
 
+// One commit on the ready session's branch, so its Ship button shows. That
+// session is the one with an open pull request (CR_PR_FIXTURE), so the gate
+// can open Ship on a branch whose PR already exists.
+{
+  const wtPath = join(worktreeRoot, 'feature-ready')
+  writeFileSync(join(wtPath, 'READY.md'), 'Ready for review.\n')
+  git(['add', '-A'], wtPath)
+  git(['commit', '-q', '-m', 'Ready for review'], wtPath)
+}
+
 // Real work on one worktree, so the diff overlay has something to show. Every
 // worktree used to be a clean checkout of main, which meant "View diff" opened
 // on "No changes" and there was no way to look at the diff in the real app at

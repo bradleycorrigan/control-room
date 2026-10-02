@@ -107,9 +107,9 @@ console.log('gate: interactions...')
       cwd: root,
       encoding: 'utf8',
       // Never let a stuck run hang the gate. A normal pages run is ~3.5
-      // minutes, but a loaded machine has taken past 8, and a cap that trips
-      // on a slow-but-healthy run is a false failure. Just above the app's
-      // own 15-minute limit (dev/screenshot.ts), so that one reports first.
+      // minutes; a cap that trips on a slow-but-healthy run is a false
+      // failure. Just above the app's own 15-minute limit
+      // (dev/screenshot.ts), so that one reports first.
       timeout: 960_000
     })
     // A timeout kills npm but not the Electron it started; left running, that

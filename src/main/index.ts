@@ -40,6 +40,15 @@ app.setPath(
     : join(app.getPath('appData'), isDevBuild ? 'Control Room Dev' : 'Control Room')
 )
 
+// Same reason as backgroundThrottling below: a check run behind other windows
+// must keep its pace. Chromium also slows a renderer it thinks is hidden or
+// covered, separately from the per-window setting.
+if (isScreenshotMode) {
+  app.commandLine.appendSwitch('disable-background-timer-throttling')
+  app.commandLine.appendSwitch('disable-renderer-backgrounding')
+  app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+}
+
 function createWindow(): BrowserWindow {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
@@ -58,7 +67,12 @@ function createWindow(): BrowserWindow {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      // The gate's checks pace themselves with timers. Chromium throttles
+      // those in a window you can't see (down to about one a minute), so a
+      // gate run left behind other windows stalled for minutes at a time
+      // and ran out of time with nothing failed. Screenshot/check runs only.
+      ...(isScreenshotMode ? { backgroundThrottling: false } : {})
     }
   })
 

@@ -19,6 +19,10 @@ export function getSessionHandoffNote(id: string): Promise<HandoffNoteResult | n
 export interface ShipInfo {
   /** Null: no worktree to diff against (investigate mode). */
   git: HandoffGitSummary | null
+  /** The branch the session is on now; null before a detached one makes one. */
+  branch?: string | null
+  /** Commits origin doesn't have yet; null when that can't be told. */
+  unpushed?: number | null
 }
 
 /** Commits + diffstat since the base branch — whether Ship has anything to show. */
@@ -40,4 +44,14 @@ export function shipPullRequest(
   draft: boolean
 ): Promise<ShipResult> {
   return window.api.invoke<ShipResult>('sessions:ship', id, title, body, draft)
+}
+
+/** Pushes the session's branch: new commits for its open pull request. */
+export function pushSessionBranch(id: string): Promise<ShipResult> {
+  return window.api.invoke<ShipResult>('sessions:push', id)
+}
+
+/** Takes a draft pull request out of draft. */
+export function markPullRequestReady(id: string, prNumber: number): Promise<ShipResult> {
+  return window.api.invoke<ShipResult>('sessions:prReady', id, prNumber)
 }

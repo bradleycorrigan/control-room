@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
-import { getShipInfo, shipPullRequest, getSessionHandoffNote, type ShipInfo } from '../api-sessions'
+import {
+  getShipInfo,
+  shipPullRequest,
+  getSessionHandoffNote,
+  pushSessionBranch,
+  markPullRequestReady,
+  type ShipInfo
+} from '../api-sessions'
 import {
   getSessionPullRequest,
   getSessionTicketLinks,
@@ -133,11 +140,45 @@ export default function ShipPanel({
     const result = await shipPullRequest(recordId, title, body, draft)
     setShipping(false)
     if (!result.ok || !result.pr) {
+      // GitHub already has one for this branch: show that one, and what you
+      // can do with it, rather than an error.
+      if (/already exists/i.test(result.error ?? '')) {
+        const found = await getSessionPullRequest(recordId)
+        if (found) {
+          setExistingPr(found)
+          pushToast?.('This branch already has a pull request.')
+          return
+        }
+      }
       setShipError(result.error ?? 'Could not open the pull request.')
       return
     }
     setExistingPr(result.pr)
     pushToast?.('Pull request opened.')
+  }
+
+  // With a pull request already open: push new commits to it, take it out
+  // of draft.
+  const [prAction, setPrAction] = useState<'push' | 'ready' | null>(null)
+  const [prActionError, setPrActionError] = useState<string | null>(null)
+  const pushToPr = async (): Promise<void> => {
+    setPrAction('push')
+    setPrActionError(null)
+    const result = await pushSessionBranch(recordId)
+    setPrAction(null)
+    if (!result.ok) return setPrActionError(result.error ?? 'Could not push.')
+    setInfo((cur) => (cur ? { ...cur, unpushed: 0 } : cur))
+    pushToast?.('Pushed to the pull request.')
+  }
+  const markReady = async (): Promise<void> => {
+    if (!existingPr) return
+    setPrAction('ready')
+    setPrActionError(null)
+    const result = await markPullRequestReady(recordId, existingPr.number)
+    setPrAction(null)
+    if (!result.ok) return setPrActionError(result.error ?? 'Could not mark it ready.')
+    setExistingPr({ ...existingPr, isDraft: false })
+    pushToast?.('Marked ready for review.')
   }
 
   const projectKey = ticketKey?.split('-')[0] ?? null
@@ -274,6 +315,42 @@ export default function ShipPanel({
                           ? 'Open'
                           : (prStateLabel[existingPr.state] ?? existingPr.state)}
                     </span>
+                  </div>
+                )}
+                {openPr && (
+                  <div className="ship-panel-pr-actions">
+                    {(info?.unpushed ?? 0) > 0 && (
+                      <Button
+                        size="compact"
+                        onClick={() => void pushToPr()}
+                        disabled={prAction !== null}
+                      >
+                        {prAction === 'push'
+                          ? 'Pushing…'
+                          : `Push ${info!.unpushed} new commit${info!.unpushed === 1 ? '' : 's'}`}
+                      </Button>
+                    )}
+                    {openPr.isDraft && (
+                      <Button
+                        variant="outlined"
+                        size="compact"
+                        onClick={() => void markReady()}
+                        disabled={prAction !== null}
+                      >
+                        {prAction === 'ready' ? 'Marking ready…' : 'Mark ready for review'}
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="compact"
+                      onClick={() => void openExternal(openPr.url)}
+                    >
+                      Open on GitHub
+                    </Button>
+                    {info?.unpushed === 0 && !openPr.isDraft && (
+                      <span className="ship-panel-muted">Up to date with your latest commit.</span>
+                    )}
+                    {prActionError && <p className="ship-panel-error">{prActionError}</p>}
                   </div>
                 )}
                 {!openPr && (

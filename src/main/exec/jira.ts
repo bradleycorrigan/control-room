@@ -816,6 +816,18 @@ export async function loadBoard(refresh = false): Promise<JiraResult<JiraBoardDa
   if (!refresh && boardCache && Date.now() - boardCache.at < BOARD_TTL_MS) {
     return { ok: true, value: boardCache.value }
   }
+  // Two parts of the app asking at once (the Backlog and a ticket panel over
+  // a session) share one load rather than each going to Jira.
+  if (boardLoading) return boardLoading
+  boardLoading = loadBoardFresh(conn).finally(() => {
+    boardLoading = null
+  })
+  return boardLoading
+}
+
+let boardLoading: Promise<JiraResult<JiraBoardData>> | null = null
+
+async function loadBoardFresh(conn: Conn): Promise<JiraResult<JiraBoardData>> {
   const config = readConfig()!
   const projectList = config.projects.map((p) => `"${p}"`).join(', ')
 

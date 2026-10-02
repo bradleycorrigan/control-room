@@ -38,12 +38,8 @@ export async function pushAndCreatePr(
     }
   }
 
-  const pushRes = await run('git', ['-C', worktreePath, 'push', '-u', 'origin', branch], {
-    timeoutMs: 120_000
-  })
-  if (pushRes.code !== 0) {
-    return { ok: false, error: pushRes.stderr.trim() || 'git push failed' }
-  }
+  const pushed = await pushBranch(worktreePath, branch)
+  if (!pushed.ok) return pushed
 
   const args = ['pr', 'create', '--title', title, '--body', body, '--head', branch]
   if (draft) args.push('--draft')
@@ -67,4 +63,50 @@ export async function pushAndCreatePr(
       isDraft: draft
     }
   }
+}
+
+const isFixture = (): boolean => !app.isPackaged && Boolean(process.env.CR_SHIP_FIXTURE)
+
+/** `git push -u origin <branch>`: a new branch, or new commits for its open pull request. */
+export async function pushBranch(worktreePath: string, branch: string): Promise<ShipResult> {
+  if (isFixture()) return { ok: true }
+  const res = await run('git', ['-C', worktreePath, 'push', '-u', 'origin', branch], {
+    timeoutMs: 120_000
+  })
+  return res.code === 0
+    ? { ok: true }
+    : { ok: false, error: res.stderr.trim() || 'git push failed' }
+}
+
+/** `gh pr ready <number>`: a draft pull request, ready for review. */
+export async function markReadyForReview(
+  worktreePath: string,
+  prNumber: number
+): Promise<ShipResult> {
+  if (isFixture()) return { ok: true }
+  const res = await run('gh', ['pr', 'ready', String(prNumber)], {
+    cwd: worktreePath,
+    timeoutMs: 60_000
+  })
+  return res.code === 0
+    ? { ok: true }
+    : { ok: false, error: res.stderr.trim() || 'gh pr ready failed' }
+}
+
+/**
+ * Commits on the branch that origin doesn't have yet. Null when that can't be
+ * told (never pushed, or no such branch on origin): then there's nothing to
+ * compare with, and the panel offers no push.
+ */
+export async function unpushedCount(worktreePath: string, branch: string): Promise<number | null> {
+  if (isFixture()) return Number(process.env.CR_SHIP_UNPUSHED ?? 0)
+  const res = await run('git', [
+    '-C',
+    worktreePath,
+    'rev-list',
+    '--count',
+    `origin/${branch}..HEAD`
+  ])
+  const n = Number(res.stdout.trim())
+  return res.code === 0 && Number.isFinite(n) ? n : null
 }

@@ -250,9 +250,9 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
           timedOut = true
           resolve()
           // The interaction checks drive the whole app and have outgrown two
-          // minutes. A healthy run is ~3.5; a machine busy scanning every
-          // process it starts (an endpoint-security agent) ran the same
-          // checks past 8 and got cut off with nothing failed, so 15.
+          // minutes; a healthy run is ~3.5. Runs used to stall for minutes
+          // when this window sat behind others, because Chromium throttles
+          // a hidden window's timers (fixed in index.ts); 15 is headroom.
         },
         /-interactions$/.test(screen) ? 900_000 : 120_000
       )

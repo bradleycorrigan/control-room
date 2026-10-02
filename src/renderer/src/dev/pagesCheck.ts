@@ -1838,7 +1838,9 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     await check(
       'the planning view shows ticket titles in full',
       $$('.cycle-plan-row-summary').length > 0 && cut.length === 0,
-      cut.map((t) => t.textContent).join(' | ') || 'no rows'
+      cut.length
+        ? `cut off: ${cut.map((t) => t.textContent).join(' | ')}`
+        : `${$$('.cycle-plan-row-summary').length} titles, none cut off`
     )
     const modal = $('.cr-modal')?.getBoundingClientRect()
     await check(
@@ -2044,6 +2046,24 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     )
     await click(project()?.querySelector('.projects-rail-disclosure'))
     await check('and the project closes again', !item())
+  }
+
+  // Ship on a branch whose pull request is already open: the PR and what to
+  // do with it, not a form that fails with "already exists".
+  {
+    await openSessionByTitle('Ready session')
+    await click($('[aria-label="Ship"]'))
+    await until(() => Boolean($('.ship-panel')), 3000)
+    await until(() => !/Checking for an existing/.test($('.ship-panel')?.textContent ?? ''), 5000)
+    await check(
+      'Ship on a branch with an open pull request offers what to do with it, not a new one',
+      Boolean($('.ship-panel-pr-existing')) &&
+        Boolean(byText('.ship-panel-pr-actions button', 'Open on GitHub')) &&
+        !$('.ship-panel-pr-form'),
+      $('.ship-panel')?.textContent?.slice(0, 200) ?? 'no Ship panel'
+    )
+    await click(byText('.ship-panel button', 'Close'))
+    await until(() => !$('.ship-panel'), 2000)
   }
 
   // Ship panel (plan 7 step 3). No CR_SHIP_FIXTURE from the gate's

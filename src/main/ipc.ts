@@ -116,6 +116,7 @@ import {
 } from './exec/jira'
 import { triggerImmediateTick } from './engine/poller'
 import { pullRequestFor } from './exec/pullRequests'
+import { currentBranch } from './engine/sessionBranch'
 import type { JiraCreateInput, BacklogPrefs } from './exec/jira'
 import {
   createSession,
@@ -647,7 +648,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('sessions:pullRequest', async (_evt, id: string) => {
     const record = getState().sessions.find((s) => s.id === id)
     if (!record || record.investigation || record.deletedAt) return null
-    return pullRequestFor(record.id, record.worktreePath, record.branch)
+    // The branch it's on now: a detached session's work isn't on `main`.
+    const branch = await currentBranch(record)
+    return branch ? pullRequestFor(record.id, record.worktreePath, branch) : null
   })
 
   // ⌘W with no session tab to close falls back to what it always did.

@@ -168,3 +168,17 @@
   color: var(--status-error);
   font-size: var(--text-caption-size);
 }
+
+/* With a pull request already open: what you can do with it now. */
+.ship-panel-pr-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: var(--space-12);
+}
+
+.ship-panel-pr-actions .ship-panel-error {
+  flex-basis: 100%;
+  margin: 0;
+}
