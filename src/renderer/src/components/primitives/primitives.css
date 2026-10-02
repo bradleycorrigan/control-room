@@ -395,6 +395,8 @@
   border-radius: var(--radius-2xl);
   box-shadow: 0 20px 25px rgba(0, 0, 0, 0.15);
   z-index: var(--layer-modal);
+  /* A dialog's width is what it asks for, never more than the window has. */
+  max-width: calc(100vw - var(--space-48));
   max-height: 90vh;
   overflow-y: auto;
   display: flex;

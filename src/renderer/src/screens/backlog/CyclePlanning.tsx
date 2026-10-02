@@ -92,32 +92,39 @@ export function CyclePlanning({
         e.dataTransfer.effectAllowed = 'move'
       }}
     >
-      <StatusGlyph name={issue.status} category={issue.statusCategory} size={10} />
-      <span className="cycle-plan-row-key">{issue.key}</span>
-      <span className="cycle-plan-row-summary" title={issue.summary}>
-        {issue.summary}
-      </span>
-      {issue.priority && <PriorityGlyph priority={issue.priority} />}
-      <span className="cycle-plan-row-estimate">{issue.estimate ?? '-'}</span>
-      <Avatar name={issue.assignee} size={18} />
-      {sprints.length > 1 && (
-        <select
-          aria-label={`Cycle for ${issue.key}`}
-          className="cycle-plan-row-cycle"
-          value={issue.sprint ? String(issue.sprint.id) : '__backlog'}
-          onChange={(e) => {
-            const value = e.target.value
-            onMove(issue, value === '__backlog' ? null : Number(value))
-          }}
-        >
-          {sprints.map((sp) => (
-            <option key={sp.id} value={String(sp.id)}>
-              {sp.name}
-            </option>
-          ))}
-          <option value="__backlog">Backlog</option>
-        </select>
-      )}
+      {/* Two lines: the title gets the full width (and a second line), and
+          everything else sits under it. On one line, beside key, priority,
+          estimate, assignee and cycle, the title was nearly always cut off. */}
+      <div className="cycle-plan-row-main">
+        <span className="cycle-plan-row-summary" title={issue.summary}>
+          {issue.summary}
+        </span>
+        <div className="cycle-plan-row-meta">
+          <StatusGlyph name={issue.status} category={issue.statusCategory} size={10} />
+          <span className="cycle-plan-row-key">{issue.key}</span>
+          {issue.priority && <PriorityGlyph priority={issue.priority} />}
+          <span className="cycle-plan-row-estimate">{issue.estimate ?? '-'}</span>
+          <Avatar name={issue.assignee} size={18} />
+          {sprints.length > 1 && (
+            <select
+              aria-label={`Cycle for ${issue.key}`}
+              className="cycle-plan-row-cycle"
+              value={issue.sprint ? String(issue.sprint.id) : '__backlog'}
+              onChange={(e) => {
+                const value = e.target.value
+                onMove(issue, value === '__backlog' ? null : Number(value))
+              }}
+            >
+              {sprints.map((sp) => (
+                <option key={sp.id} value={String(sp.id)}>
+                  {sp.name}
+                </option>
+              ))}
+              <option value="__backlog">Backlog</option>
+            </select>
+          )}
+        </div>
+      </div>
       {side === 'backlog' ? (
         <button
           type="button"
@@ -141,7 +148,7 @@ export function CyclePlanning({
   )
 
   return (
-    <Modal title={`Plan ${sprint.name}`} icon="LayoutList" width={920} onClose={onClose}>
+    <Modal title={`Plan ${sprint.name}`} icon="LayoutList" width={1120} onClose={onClose}>
       <div className="cycle-plan">
         <div className="cycle-plan-columns">
           <div

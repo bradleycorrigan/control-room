@@ -368,6 +368,8 @@ function App(): React.JSX.Element {
   // Sessions all land here.
   // A ticket to open on Backlog, from a session's header pill.
   const [openTicket, setOpenTicket] = useState<string | null>(null)
+  // A ticket opened from a session: its panel, over the session.
+  const [peekTicket, setPeekTicket] = useState<string | null>(null)
   const clearOpenTicket = useCallback(() => setOpenTicket(null), [])
 
   const goToSessionsList = useCallback(() => {
@@ -2176,11 +2178,30 @@ function App(): React.JSX.Element {
                     onDeleted={refreshSessions}
                     onSessionUpdated={refreshSessions}
                     pushToast={pushToast}
-                    onOpenTicket={(key) => {
+                    // Opens over the session, so you stay in it; the panel's
+                    // "Open on Backlog" carries on there.
+                    onOpenTicket={setPeekTicket}
+                  />
+                )}
+                {openSession && peekTicket && (
+                  <BacklogScreen
+                    panelOnly
+                    sessions={sessions}
+                    pushToast={pushToast}
+                    onOpenSession={openSessionByKey}
+                    openTicket={peekTicket}
+                    onPanelClose={() => setPeekTicket(null)}
+                    onExpand={(key) => {
+                      setPeekTicket(null)
                       setOpenTicket(key)
                       setOpenSessionKey(null)
                       setGridView(false)
                       setView('backlog')
+                    }}
+                    onStartSession={(seed) => {
+                      setPeekTicket(null)
+                      setComposerSeed(seed)
+                      setShowNewSessionForm(true)
                     }}
                   />
                 )}

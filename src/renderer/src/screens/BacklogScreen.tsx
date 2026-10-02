@@ -93,6 +93,16 @@ interface Props {
   sidebarWidth?: number
   onSidebarResizeStart?: (e: React.PointerEvent<HTMLDivElement>) => void
   onSidebarResizeReset?: () => void
+  /**
+   * Just the ticket panel, over whatever screen is showing (a session's
+   * ticket opens this way, so you stay in the session). Same board, edits
+   * and panel as the Backlog itself, without the list.
+   */
+  panelOnly?: boolean
+  /** Panel only: the panel was closed. */
+  onPanelClose?: () => void
+  /** Panel only: carry on with this ticket on the full Backlog. */
+  onExpand?: (key: string) => void
 }
 
 type Who = 'all' | 'mine' | 'unassigned'
@@ -214,7 +224,10 @@ export default function BacklogScreen({
   sidebarHidden = false,
   sidebarWidth = 260,
   onSidebarResizeStart,
-  onSidebarResizeReset
+  onSidebarResizeReset,
+  panelOnly = false,
+  onPanelClose,
+  onExpand
 }: Props): React.JSX.Element {
   const [status, setStatus] = useState<JiraStatus | null>(null)
   const [board, setBoard] = useState<JiraBoardData | null>(null)
@@ -427,6 +440,10 @@ export default function BacklogScreen({
   useEffect(() => {
     if (openTicket) onTicketOpened?.()
   }, [openTicket, onTicketOpened])
+  // Panel only: closing the panel (its X, Escape) closes the whole thing.
+  useEffect(() => {
+    if (panelOnly && takenTicket && openKey === null) onPanelClose?.()
+  }, [panelOnly, takenTicket, openKey, onPanelClose])
 
   const apply = useCallback((issue: JiraIssue) => {
     setBoard((b) =>
@@ -1277,6 +1294,8 @@ export default function BacklogScreen({
       const t = e.target as HTMLElement | null
       if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return
       if (creating || editingColumns || picker || document.querySelector('.cr-modal')) return
+      // Over another screen, the keys belong to the panel only while you're in it.
+      if (panelOnly && !t?.closest('.backlog-drawer')) return
       if (e.altKey) {
         const m = e.code.match(/^Digit([1-9])$/)
         const v = m ? prefs.views[Number(m[1]) - 1] : undefined
@@ -1328,6 +1347,7 @@ export default function BacklogScreen({
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [
+    panelOnly,
     board,
     creating,
     editingColumns,
@@ -1489,6 +1509,66 @@ export default function BacklogScreen({
     await disconnectJira()
     setStatus(await getJiraStatus())
     setBoard(null)
+  }
+
+  const drawer =
+    openIssue && board ? (
+      <IssueDrawer
+        key={openIssue.key}
+        issue={openIssue}
+        board={board}
+        sessions={sessions}
+        linkedSessions={sessionsFor(openIssue)}
+        position={{ index: order.indexOf(openIssue.key), total: order.length }}
+        onStep={panelOnly ? undefined : step}
+        onClose={() => setOpenKey(null)}
+        onExpand={panelOnly && onExpand ? () => onExpand(openIssue.key) : undefined}
+        write={write}
+        actions={actions}
+        statuses={statusesFor(openIssue)}
+        copy={copy}
+        onError={(m) => pushToast?.(m)}
+        onLink={async (recordId, key) => setLinks(await linkSessionToTicket(recordId, key))}
+        onStartSession={() => onStartSession(seedFor(openIssue))}
+        onOpenSession={onOpenSession}
+        onOpenKey={(key) => {
+          lastPicked.current = key
+          setOpenKey(key)
+        }}
+        onAddSubtask={addSubtask}
+        onAddBlock={addBlock}
+        onRemoveBlock={removeBlock}
+      />
+    ) : null
+
+  if (panelOnly) {
+    return (
+      <div className="backlog backlog--peek backlog--panel-only">
+        {confirmNode}
+        {picker && <Picker {...picker} onClose={() => setPicker(null)} />}
+        {drawer ?? (
+          // The board is still loading, or the ticket isn't on it (done, or
+          // in a project the Backlog doesn't follow).
+          <aside className="backlog-drawer" role="dialog" aria-label={openTicket ?? 'Ticket'}>
+            <div className="backlog-drawer-header">
+              <span className="backlog-drawer-key">{openTicket}</span>
+              <IconButton
+                icon="X"
+                label="Close"
+                size={28}
+                variant="ghost"
+                onClick={() => onPanelClose?.()}
+              />
+            </div>
+            <p className="backlog-note">
+              {board
+                ? `${openTicket} isn't on your Backlog.`
+                : `Loading ${openTicket ?? 'the ticket'}…`}
+            </p>
+          </aside>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -2006,33 +2086,7 @@ export default function BacklogScreen({
           />
         )}
 
-        {openIssue && board && (
-          <IssueDrawer
-            key={openIssue.key}
-            issue={openIssue}
-            board={board}
-            sessions={sessions}
-            linkedSessions={sessionsFor(openIssue)}
-            position={{ index: order.indexOf(openIssue.key), total: order.length }}
-            onStep={step}
-            onClose={() => setOpenKey(null)}
-            write={write}
-            actions={actions}
-            statuses={statusesFor(openIssue)}
-            copy={copy}
-            onError={(m) => pushToast?.(m)}
-            onLink={async (recordId, key) => setLinks(await linkSessionToTicket(recordId, key))}
-            onStartSession={() => onStartSession(seedFor(openIssue))}
-            onOpenSession={onOpenSession}
-            onOpenKey={(key) => {
-              lastPicked.current = key
-              setOpenKey(key)
-            }}
-            onAddSubtask={addSubtask}
-            onAddBlock={addBlock}
-            onRemoveBlock={removeBlock}
-          />
-        )}
+        {drawer}
       </div>
     </div>
   )
@@ -2662,13 +2716,16 @@ function BoardColumn({
               data-nav-item=""
               {...ticketHandlers(issue, p)}
             >
+              {/* In the bottom-right corner, the one spot on a card that does
+                  nothing else (priority and assignee are both click-to-edit);
+                  it takes no room until it shows. */}
+              <PickCheck
+                on={p.selected.includes(issue.key)}
+                label={`Select ${issue.key}`}
+                className={`backlog-card-pick${p.selected.length ? ' backlog-card-pick--shown' : ''}`}
+                onToggle={() => p.onSelect(issue.key, 'toggle')}
+              />
               <div className="backlog-card-top">
-                <PickCheck
-                  on={p.selected.includes(issue.key)}
-                  label={`Select ${issue.key}`}
-                  className={`backlog-card-pick${p.selected.length ? ' backlog-card-pick--shown' : ''}`}
-                  onToggle={() => p.onSelect(issue.key, 'toggle')}
-                />
                 <Editable
                   label={`Priority: ${issue.priority ?? 'none'}`}
                   onEdit={p.selected.length ? undefined : (a) => p.onEdit('priority', issue, a)}
@@ -3537,6 +3594,7 @@ function IssueDrawer({
   position,
   onStep,
   onClose,
+  onExpand,
   write,
   actions,
   statuses,
@@ -3555,8 +3613,11 @@ function IssueDrawer({
   sessions: LiveSession[]
   linkedSessions: SessionEntry[]
   position: { index: number; total: number }
-  onStep: (delta: number) => void
+  /** Left out when there's no list to step through (the panel over a session). */
+  onStep?: (delta: number) => void
   onClose: () => void
+  /** Shown as "Open on Backlog" when the panel sits over another screen. */
+  onExpand?: () => void
   write: (run: () => Promise<JiraResult<JiraIssue>>, optimistic?: JiraIssue) => Promise<boolean>
   actions: Actions
   /** The statuses this ticket's project has. */
@@ -3673,24 +3734,28 @@ function IssueDrawer({
     >
       <div className="backlog-drawer-header">
         <div className="backlog-drawer-nav">
-          <IconButton
-            icon="ChevronUp"
-            label="Previous ticket"
-            tooltip="Previous ticket (K)"
-            size={28}
-            variant="ghost"
-            disabled={position.index <= 0}
-            onClick={() => onStep(-1)}
-          />
-          <IconButton
-            icon="ChevronDown"
-            label="Next ticket"
-            tooltip="Next ticket (J)"
-            size={28}
-            variant="ghost"
-            disabled={position.index < 0 || position.index >= position.total - 1}
-            onClick={() => onStep(1)}
-          />
+          {onStep && (
+            <>
+              <IconButton
+                icon="ChevronUp"
+                label="Previous ticket"
+                tooltip="Previous ticket (K)"
+                size={28}
+                variant="ghost"
+                disabled={position.index <= 0}
+                onClick={() => onStep(-1)}
+              />
+              <IconButton
+                icon="ChevronDown"
+                label="Next ticket"
+                tooltip="Next ticket (J)"
+                size={28}
+                variant="ghost"
+                disabled={position.index < 0 || position.index >= position.total - 1}
+                onClick={() => onStep(1)}
+              />
+            </>
+          )}
           <button
             type="button"
             className="backlog-drawer-key"
@@ -3702,6 +3767,16 @@ function IssueDrawer({
           <Pill>{typeName(issue)}</Pill>
         </div>
         <div className="backlog-drawer-header-actions">
+          {onExpand && (
+            <IconButton
+              icon="PanelRight"
+              label="Open on Backlog"
+              tooltip="Open on Backlog"
+              size={28}
+              variant="ghost"
+              onClick={onExpand}
+            />
+          )}
           {slack ? (
             <Tooltip label="Open in Slack">
               <button

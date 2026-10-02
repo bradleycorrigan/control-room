@@ -1105,24 +1105,34 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     Boolean($('.backlog-column--filtered[data-status="Done/Not doing"]'))
   )
   {
-    // A card's pick check sits in its top row, clear of the assignee.
-    const overlapping = $$<HTMLElement>('.backlog-card').filter((card) => {
-      const pick = card.querySelector('.backlog-card-pick')?.getBoundingClientRect()
-      const avatar = card
-        .querySelector('.backlog-card-top .cr-avatar, .backlog-card-top [class*="avatar"]')
-        ?.getBoundingClientRect()
-      if (!pick || !avatar) return false
+    // A card's pick check sits in its bottom-right corner: it takes no room
+    // in the top row (so priority starts at the edge) and covers nothing.
+    const hit = (x: DOMRect, y: DOMRect): boolean =>
+      x.left < y.right && y.left < x.right && x.top < y.bottom && y.top < x.bottom
+    const clashes = $$<HTMLElement>('.backlog-card').filter((card) => {
+      const pick = card.querySelector('.backlog-card-pick')
+      if (!pick || pick.closest('.backlog-card-top')) return true
+      const box = pick.getBoundingClientRect()
+      // The summary's box spans the card; what must stay clear is its text,
+      // line by line.
+      const summary = card.querySelector('.backlog-card-summary')
+      const lines = summary
+        ? (() => {
+            const range = document.createRange()
+            range.selectNodeContents(summary)
+            return [...range.getClientRects()]
+          })()
+        : []
       return (
-        pick.left < avatar.right &&
-        avatar.left < pick.right &&
-        pick.top < avatar.bottom &&
-        avatar.top < pick.bottom
+        [...card.querySelectorAll('.backlog-card-top > *, .backlog-pill')].some(
+          (el) => el !== pick && hit(box, el.getBoundingClientRect())
+        ) || lines.some((line) => hit(box, line))
       )
     })
     await check(
-      "a board card's pick check never covers its assignee",
-      $$('.backlog-card .backlog-card-pick').length > 0 && overlapping.length === 0,
-      overlapping.map((c) => c.dataset.issue).join(', ') ||
+      "a board card's pick check takes no room in its top row and covers nothing",
+      $$('.backlog-card .backlog-card-pick').length > 0 && clashes.length === 0,
+      clashes.map((c) => c.dataset.issue).join(', ') ||
         `${$$('.backlog-card .backlog-card-pick').length} checks`
     )
   }
@@ -1498,10 +1508,39 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     $('.session-detail-ticket')?.textContent ?? 'no pill'
   )
   await click($('.session-detail-ticket'))
-  await wait(900)
   await check(
-    'and the pill opens that ticket on Backlog',
-    ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('DSD-101')
+    'and the pill opens that ticket over the session, without leaving it',
+    await until(
+      () =>
+        ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('DSD-101') &&
+        Boolean($('.session-detail-header')) &&
+        !$('.backlog-list')
+    ),
+    `${$('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 20) ?? 'no panel'}, session ${Boolean($('.session-detail-header'))}, list ${Boolean($('.backlog-list'))}`
+  )
+  {
+    const before = $<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]')?.value
+    const next = before === 'High' ? 'Low' : 'High'
+    setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]'), next)
+    await check(
+      'a ticket can be edited in that panel',
+      await until(
+        () => $<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]')?.value === next
+      ),
+      $<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]')?.value ?? 'no select'
+    )
+    if (before)
+      setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]'), before)
+    await wait(400)
+  }
+  await click($('.backlog-drawer [aria-label="Open on Backlog"]'))
+  await check(
+    'Open on Backlog carries on with the ticket there',
+    await until(
+      () =>
+        Boolean($('.backlog-list')) &&
+        ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('DSD-101')
+    )
   )
   await key('Escape')
   for (const id of fixtureRecords) await api.invoke('jira:link', id, null)
@@ -1790,6 +1829,24 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     await until(() => $('.cr-modal-title')?.textContent === 'Plan kestrel'),
     $('.cr-modal-title')?.textContent ?? 'no modal'
   )
+  {
+    // Titles get their own line (two, before an ellipsis), not what's left
+    // beside the key, priority, estimate, assignee and cycle.
+    const cut = $$<HTMLElement>('.cycle-plan-row-summary').filter(
+      (t) => t.scrollHeight > t.clientHeight + 1 || t.scrollWidth > t.clientWidth + 1
+    )
+    await check(
+      'the planning view shows ticket titles in full',
+      $$('.cycle-plan-row-summary').length > 0 && cut.length === 0,
+      cut.map((t) => t.textContent).join(' | ') || 'no rows'
+    )
+    const modal = $('.cr-modal')?.getBoundingClientRect()
+    await check(
+      'and the dialog fits the window',
+      Boolean(modal) && modal!.left >= 0 && modal!.right <= window.innerWidth,
+      `${Math.round(modal?.left ?? 0)} to ${Math.round(modal?.right ?? 0)} of ${window.innerWidth}`
+    )
+  }
   // DSD-103 starts assigned to "Someone Else", but the Backlog round's
   // "Assign to me" lands on it — so find its row by whoever it belongs to
   // now: it's the only ticket in kestrel, so the only capacity row.
