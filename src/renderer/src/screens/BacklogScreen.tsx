@@ -62,17 +62,17 @@ import { ColumnsEditor } from './backlog/ColumnsEditor'
 import { CreateTicket } from './backlog/CreateTicket'
 import { CyclePlanning } from './backlog/CyclePlanning'
 import { Picker, type PickerOption } from './backlog/Picker'
+import {
+  branchFor,
+  seedFor,
+  sessionsForTicket,
+  type ComposerSeed,
+  type SessionEntry
+} from './backlog/ticketSessions'
 import { PickCheck, SelectionAction, SelectionBar } from '../components/selection'
 import './backlog.css'
 
-/** What Start session hands the composer. */
-export interface ComposerSeed {
-  prompt: string
-  branch: string
-  title: string
-  /** Jira project key — the composer remembers which repo you start these in. */
-  jiraProject: string
-}
+export type { ComposerSeed } from './backlog/ticketSessions'
 
 /** What a toast can offer, beyond the dismiss it always has. */
 export interface ToastActionLike {
@@ -116,7 +116,6 @@ type CycleFilter = 'all' | 'current' | 'backlog' | `sprint:${number}`
 const cycleLabel = (s: { name: string; state: string }): string =>
   s.state === 'active' ? `Current cycle (${s.name})` : s.name
 type StatusOption = { name: string; category: string }
-type SessionEntry = { session: LiveSession; linked: boolean }
 
 /**
  * What a group stands for, so a card dropped into it can become part of it:
@@ -135,26 +134,6 @@ interface Lane {
   hint?: string
   items: JiraIssue[]
   value: LaneValue
-}
-
-function slug(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-}
-
-const branchFor = (issue: JiraIssue): string =>
-  `${issue.key.toLowerCase()}-${slug(issue.summary)}`.slice(0, 60).replace(/-$/, '')
-
-function seedFor(issue: JiraIssue): ComposerSeed {
-  const description = issue.description ? `\n\n${issue.description}` : ''
-  return {
-    prompt: `${issue.key}: ${issue.summary}${description}\n\nJira: ${issue.url}`,
-    branch: branchFor(issue),
-    title: `${issue.key} ${issue.summary}`,
-    jiraProject: issue.project
-  }
 }
 
 function ago(iso: string): string {
@@ -188,6 +167,30 @@ const LIST_RANK = (category: string): number =>
   category === 'indeterminate' ? 0 : category === 'new' ? 1 : 2
 
 const UNASSIGNED = '__unassigned'
+/** You, in Filter → Assignee: what the Mine tab picks. */
+const ME = '__me'
+
+/** Whether a ticket is one of these people's ([] is everyone). */
+const assignedTo = (i: JiraIssue, people: string[]): boolean =>
+  people.length === 0 ||
+  people.some((p) =>
+    p === ME ? i.assignedToMe : p === UNASSIGNED ? !i.assignee : i.assignee === p
+  )
+
+/** Whether a ticket is in any of these cycles ([] is every open ticket). */
+const inCycles = (i: JiraIssue, cycles: CycleFilter[]): boolean =>
+  cycles.length === 0 ||
+  cycles.some((c) =>
+    c === 'current'
+      ? i.sprint?.state === 'active'
+      : c === 'backlog'
+        ? !i.sprint
+        : c === 'all' || i.sprint?.id === Number(c.slice(7))
+  )
+
+/** The same people or cycles, in any order. */
+const sameSet = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && [...a].sort().join('|') === [...b].sort().join('|')
 const NO_EPIC = '__none'
 /** After this long away, coming back to the window fetches fresh tickets. */
 const STALE_MS = 2 * 60 * 1000
@@ -254,7 +257,10 @@ export default function BacklogScreen({
   // Sidebar → Epics: one epic's tickets (NO_EPIC for those without), or all.
   const [epicFilter, setEpicFilter] = useState<string | null>(null)
   const sidebarOpen = !sidebarHidden
-  const [storedFilter, setCycle] = useState<CycleFilter>('all')
+  // Cycles picked in the sidebar or Filter → Cycle; [] is every open ticket.
+  // The sidebar picks one; the filter can add more ("current + kestrel").
+  const [cycleSet, setCycleSet] = useState<CycleFilter[]>([])
+  const setCycle = useCallback((c: CycleFilter) => setCycleSet(c === 'all' ? [] : [c]), [])
   const [query, setQuery] = useState('')
   const [openKey, setOpenKey] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ key: string; x: number; y: number } | null>(null)
@@ -579,12 +585,16 @@ export default function BacklogScreen({
   const activeSprint = board?.sprints.find((s) => s.state === 'active') ?? null
   const sprints = useMemo(() => board?.sprints ?? [], [board])
   // A remembered upcoming cycle that has since started or closed falls back to everything.
-  const cycle: CycleFilter =
-    storedFilter.startsWith('sprint:') &&
-    board &&
-    !sprints.some((sp) => `sprint:${sp.id}` === storedFilter && sp.state !== 'active')
-      ? 'all'
-      : storedFilter
+  // A remembered upcoming cycle that has since started or closed drops out.
+  const cycles = cycleSet.filter(
+    (c) =>
+      !c.startsWith('sprint:') ||
+      !board ||
+      sprints.some((sp) => `sprint:${sp.id}` === c && sp.state !== 'active')
+  )
+  // One cycle picked: that one; none or several: 'all', for what shows a
+  // single cycle (the sidebar's highlight, the cycle pill on each row).
+  const cycle: CycleFilter = cycles.length === 1 ? cycles[0] : 'all'
   const myName = board?.issues.find((i) => i.assignedToMe)?.assignee ?? 'You'
 
   // Every edit, in one place, so the row menu and the panel do the same thing.
@@ -653,19 +663,7 @@ export default function BacklogScreen({
   // Sessions a ticket belongs to: ones you linked (kept locally), then any
   // whose title or branch carries the ticket's key.
   const sessionsFor = useCallback(
-    (issue: JiraIssue): SessionEntry[] => {
-      const key = issue.key.toLowerCase()
-      const out: SessionEntry[] = []
-      for (const s of sessions) {
-        if (!s.record || s.record.deletedAt) continue
-        const linked = links[s.record.id] === issue.key
-        const named =
-          (s.record.title ?? '').toLowerCase().includes(key) ||
-          (s.record.branch ?? '').toLowerCase().startsWith(key)
-        if (linked || (named && !links[s.record.id])) out.push({ session: s, linked })
-      }
-      return out.sort((a, b) => Number(b.linked) - Number(a.linked))
-    },
+    (issue: JiraIssue): SessionEntry[] => sessionsForTicket(issue, sessions, links),
     [sessions, links]
   )
 
@@ -833,22 +831,32 @@ export default function BacklogScreen({
   // Cycle and search narrow everything; the Everyone / Mine / Unassigned
   // counts are taken after them, so each count is what its tab will show.
   // Everything but the epic, so the sidebar can count each epic.
-  const narrowedAnyEpic = useMemo(
+  // Everyone / Mine / Unassigned and Filter → Assignee are one filter: the
+  // tab is where it starts, the filter changes it. On Mine, adding someone
+  // gives you and them, not the empty overlap of two separate filters.
+  const people = useMemo(
+    () =>
+      assignees.length > 0
+        ? assignees
+        : who === 'mine'
+          ? [ME]
+          : who === 'unassigned'
+            ? [UNASSIGNED]
+            : [],
+    [assignees, who]
+  )
+  // The tab you're on, or none once the filter has moved off it.
+  const whoTab: Who | null = assignees.length === 0 ? who : null
+  const narrowedAnyone = useMemo(
     () =>
       tickets.filter(
-        (i) =>
-          matches(i, q) &&
-          !hidden.includes(columnNameOf(i.status)) &&
-          (assignees.length === 0 || assignees.includes(i.assignee ?? UNASSIGNED)) &&
-          (cycle === 'all'
-            ? true
-            : cycle === 'current'
-              ? i.sprint?.state === 'active'
-              : cycle === 'backlog'
-                ? !i.sprint
-                : i.sprint?.id === Number(cycle.slice(7)))
+        (i) => matches(i, q) && !hidden.includes(columnNameOf(i.status)) && inCycles(i, cycles)
       ),
-    [tickets, cycle, q, hidden, columnNameOf, assignees]
+    [tickets, cycles, q, hidden, columnNameOf]
+  )
+  const narrowedAnyEpic = useMemo(
+    () => narrowedAnyone.filter((i) => assignedTo(i, people)),
+    [narrowedAnyone, people]
   )
   const narrowed = useMemo(
     () =>
@@ -857,18 +865,7 @@ export default function BacklogScreen({
         : narrowedAnyEpic,
     [narrowedAnyEpic, epicFilter]
   )
-  const byWho = useCallback(
-    (i: JiraIssue): boolean =>
-      who === 'mine' ? i.assignedToMe : who === 'unassigned' ? !i.assignee : true,
-    [who]
-  )
-  const visible = useMemo(
-    () =>
-      narrowed.filter((i) =>
-        who === 'mine' ? i.assignedToMe : who === 'unassigned' ? !i.assignee : true
-      ),
-    [narrowed, who]
-  )
+  const visible = narrowed
 
   /** Splits tickets into groups by status (your columns), epic or cycle. */
   const groupInto = useCallback(
@@ -1236,22 +1233,31 @@ export default function BacklogScreen({
   // ---- Saved views ----
 
   const trimmedQuery = query.trim()
-  const activeView = prefs.views.find(
-    (v) =>
-      v.who === who &&
-      v.cycle === cycle &&
-      v.groupBy === groupBy &&
-      v.view === view &&
-      (v.subGroup ?? 'none') === (subGroup ?? 'none') &&
-      [...(v.hidden ?? [])].sort().join('|') === [...hidden].sort().join('|') &&
-      [...(v.assignees ?? [])].sort().join('|') === [...assignees].sort().join('|') &&
-      (v.epic ?? null) === epicFilter &&
-      v.query === trimmedQuery
-  )
+  // The saved view you're in. Changing a filter keeps you in it, marked as
+  // changed (Save or Reset); leaving the Backlog and coming back brings back
+  // the view as saved. Picking a tab or a sidebar entry leaves it.
+  const [activeViewId, setActiveViewId] = useStoredState<string | null>('backlog-active-view', null)
+  const activeView = prefs.views.find((v) => v.id === activeViewId)
+  const viewCycles = (v: SavedView): string[] =>
+    v.cycles ?? (v.cycle && v.cycle !== 'all' ? [v.cycle] : [])
+  const viewChanged =
+    Boolean(activeView) &&
+    !(
+      activeView!.who === who &&
+      sameSet(viewCycles(activeView!), cycles) &&
+      activeView!.groupBy === groupBy &&
+      activeView!.view === view &&
+      (activeView!.subGroup ?? 'none') === (subGroup ?? 'none') &&
+      sameSet(activeView!.hidden ?? [], hidden) &&
+      sameSet(activeView!.assignees ?? [], assignees) &&
+      (activeView!.epic ?? null) === epicFilter &&
+      activeView!.query === trimmedQuery
+    )
   const applyView = useCallback(
     (v: SavedView) => {
+      setActiveViewId(v.id)
       setWho(v.who as Who)
-      setCycle(v.cycle as CycleFilter)
+      setCycleSet((v.cycles ?? (v.cycle && v.cycle !== 'all' ? [v.cycle] : [])) as CycleFilter[])
       setGrouping(
         [v.groupBy, v.subGroup].filter(
           (g): g is GroupBy => g === 'status' || g === 'epic' || g === 'cycle'
@@ -1263,14 +1269,73 @@ export default function BacklogScreen({
       setEpicFilter(v.epic ?? null)
       setQuery(v.query)
     },
-    [setWho, setGrouping, setView, setHidden]
+    [setWho, setGrouping, setView, setHidden, setActiveViewId]
   )
+  // Coming back to the Backlog: the view you were in, as saved. Edits made
+  // in it last time were for that visit.
+  // Done during render, once the saved views have loaded (the same pattern
+  // as a ticket opened from elsewhere, above), not in an effect.
+  const [viewRestored, setViewRestored] = useState(false)
+  if (!viewRestored && prefs.views.length > 0) {
+    setViewRestored(true)
+    const v = prefs.views.find((x) => x.id === activeViewId)
+    if (v) applyView(v)
+  }
+  /** Picking a tab, or a sidebar entry: starts afresh there, out of any saved view. */
+  const chooseWho = useCallback(
+    (w: Who) => {
+      setWho(w)
+      setAssignees([])
+      setActiveViewId(null)
+    },
+    [setWho, setActiveViewId]
+  )
+  const chooseCycle = useCallback(
+    (c: CycleFilter) => {
+      setCycle(c)
+      setActiveViewId(null)
+    },
+    [setCycle, setActiveViewId]
+  )
+  /** Filter → Assignee. Landing back on exactly a tab's people selects that tab. */
+  const pickPeople = (next: string[]): void => {
+    if (next.length === 0) {
+      setWho('all')
+      setAssignees([])
+    } else if (sameSet(next, [ME])) {
+      setWho('mine')
+      setAssignees([])
+    } else if (sameSet(next, [UNASSIGNED])) {
+      setWho('unassigned')
+      setAssignees([])
+    } else setAssignees(next)
+  }
+  const currentAsView = (): Omit<SavedView, 'id' | 'name'> => ({
+    who,
+    cycle,
+    cycles,
+    groupBy,
+    subGroup: subGroup ?? 'none',
+    hidden,
+    assignees,
+    epic: epicFilter,
+    view,
+    query: trimmedQuery
+  })
+  /** Save the changes made in the view you're in, over it. */
+  const updateView = (): void => {
+    if (!activeView) return
+    void saveBacklogPrefs({
+      views: prefs.views.map((v) => (v.id === activeView.id ? { ...v, ...currentAsView() } : v))
+    }).then(setPrefs)
+  }
   const saveView = (name: string): void => {
     const v: SavedView = {
       id: crypto.randomUUID(),
       name,
       who,
       cycle,
+      cycles,
       groupBy,
       subGroup: subGroup ?? 'none',
       hidden,
@@ -1280,6 +1345,7 @@ export default function BacklogScreen({
       query: trimmedQuery
     }
     void saveBacklogPrefs({ views: [...prefs.views, v] }).then(setPrefs)
+    setActiveViewId(v.id)
   }
   const deleteView = (id: string): void => {
     void saveBacklogPrefs({ views: prefs.views.filter((v) => v.id !== id) }).then(setPrefs)
@@ -1397,18 +1463,16 @@ export default function BacklogScreen({
     clearLabel: string
     clear: () => void
   }[] = []
-  if (cycle !== 'all') {
-    const upcoming = cycle.startsWith('sprint:')
-      ? sprints.find((sp) => `sprint:${sp.id}` === cycle)
-      : null
+  if (cycles.length > 0) {
+    const nameOf = (c: CycleFilter): string =>
+      c === 'current'
+        ? (activeSprint?.name ?? 'current')
+        : c === 'backlog'
+          ? 'none (backlog)'
+          : (sprints.find((sp) => `sprint:${sp.id}` === c)?.name ?? 'upcoming')
     filterChips.push({
       id: 'cycle',
-      label:
-        cycle === 'current'
-          ? `Cycle: ${activeSprint?.name ?? 'current'}`
-          : cycle === 'backlog'
-            ? 'Cycle: none (backlog)'
-            : `Cycle: ${upcoming?.name ?? 'upcoming'}`,
+      label: `Cycle: ${cycles.map(nameOf).join(' + ')}`,
       clearLabel: 'Clear the cycle filter',
       clear: () => setCycle('all')
     })
@@ -1433,7 +1497,7 @@ export default function BacklogScreen({
     })
   }
   if (assignees.length > 0) {
-    const names = assignees.map((a) => (a === UNASSIGNED ? 'Unassigned' : a))
+    const names = assignees.map((a) => (a === UNASSIGNED ? 'Unassigned' : a === ME ? 'You' : a))
     filterChips.push({
       id: 'assignee',
       label: `Assignee: ${names.length > 2 ? `${names.length} people` : names.join(', ')}`,
@@ -1467,10 +1531,14 @@ export default function BacklogScreen({
     setWho('all')
   }
 
+  // What each tab would show: the same filters, that tab's people.
+  const narrowedAnyoneInEpic = epicFilter
+    ? narrowedAnyone.filter((i) => (i.parent?.key ?? NO_EPIC) === epicFilter)
+    : narrowedAnyone
   const counts = {
-    all: narrowed.length,
-    mine: narrowed.filter((i) => i.assignedToMe).length,
-    unassigned: narrowed.filter((i) => !i.assignee).length
+    all: narrowedAnyoneInEpic.length,
+    mine: narrowedAnyoneInEpic.filter((i) => i.assignedToMe).length,
+    unassigned: narrowedAnyoneInEpic.filter((i) => !i.assignee).length
   }
   const rowProps: RowActions = {
     sessionsFor,
@@ -1583,23 +1651,25 @@ export default function BacklogScreen({
       {sidebarOpen && board && (
         <BacklogSidebar
           board={board}
-          who={who}
-          onWho={setWho}
+          who={whoTab}
+          onWho={chooseWho}
           counts={counts}
           views={
             <SavedViews
               views={prefs.views}
               activeId={activeView?.id ?? null}
+              changed={viewChanged}
               onApply={applyView}
               onSave={saveView}
+              onUpdate={updateView}
               onDelete={deleteView}
             />
           }
-          cycle={cycle}
-          onCycle={setCycle}
+          cycle={cycles.length > 1 ? null : cycle}
+          onCycle={chooseCycle}
           activeSprint={activeSprint}
           allTickets={allTickets}
-          epicTickets={narrowedAnyEpic.filter(byWho)}
+          epicTickets={narrowedAnyEpic}
           epicFilter={epicFilter}
           onEpic={setEpicFilter}
           onDrop={(key, value) => void dropInto(key, [value])}
@@ -1714,11 +1784,11 @@ export default function BacklogScreen({
                 key={value}
                 type="button"
                 role="radio"
-                aria-checked={who === value}
+                aria-checked={whoTab === value}
                 className={
-                  who === value ? 'backlog-filter backlog-filter--selected' : 'backlog-filter'
+                  whoTab === value ? 'backlog-filter backlog-filter--selected' : 'backlog-filter'
                 }
-                onClick={() => setWho(value)}
+                onClick={() => chooseWho(value)}
               >
                 {label}
                 <span className="backlog-filter-count">{counts[value]}</span>
@@ -1727,8 +1797,10 @@ export default function BacklogScreen({
             <SavedViews
               views={prefs.views}
               activeId={activeView?.id ?? null}
+              changed={viewChanged}
               onApply={applyView}
               onSave={saveView}
+              onUpdate={updateView}
               onDelete={deleteView}
             />
           </div>
@@ -1776,8 +1848,8 @@ export default function BacklogScreen({
               )}
             </div>
             <FilterMenu
-              cycle={cycle}
-              onCycle={setCycle}
+              cycles={cycles}
+              onCycles={(next) => setCycleSet(next)}
               sprintName={activeSprint?.name ?? null}
               activeSprintId={activeSprint?.id ?? null}
               onPlanCycle={setPlanningSprintId}
@@ -1795,7 +1867,7 @@ export default function BacklogScreen({
                 ]
                   .sort((a, b) => (a === myName ? -1 : b === myName ? 1 : a.localeCompare(b)))
                   .map((name) => ({
-                    value: name,
+                    value: name === myName ? ME : name,
                     label: name,
                     count: tickets.filter((i) => i.assignee === name).length
                   })),
@@ -1805,8 +1877,9 @@ export default function BacklogScreen({
                   count: tickets.filter((i) => !i.assignee).length
                 }
               ]}
-              assignees={assignees}
-              onAssignees={setAssignees}
+              assignees={people}
+              assigneesNarrowed={assignees.length > 0}
+              onAssignees={pickPeople}
               epicActive={Boolean(epicFilter)}
               onClearEpic={() => setEpicFilter(null)}
             />
@@ -2792,11 +2865,13 @@ function BacklogSidebar({
   onResizeReset
 }: {
   board: JiraBoardData
-  who: Who
+  /** The tab the people filter sits on; null once it has moved off every tab. */
+  who: Who | null
   onWho: (w: Who) => void
   counts: Record<Who, number>
   views: React.ReactNode
-  cycle: CycleFilter
+  /** The one cycle picked; null when the filter has several. */
+  cycle: CycleFilter | null
   onCycle: (c: CycleFilter) => void
   activeSprint: { id: number; name: string; endDate?: string } | null
   allTickets: JiraIssue[]
@@ -3094,8 +3169,8 @@ function SidebarItem({
 
 /** Cycle and status filters, in one menu; the button counts what's active. */
 function FilterMenu({
-  cycle,
-  onCycle,
+  cycles,
+  onCycles,
   sprintName,
   activeSprintId,
   onPlanCycle,
@@ -3105,12 +3180,14 @@ function FilterMenu({
   onHidden,
   people,
   assignees,
+  assigneesNarrowed,
   onAssignees,
   epicActive,
   onClearEpic
 }: {
-  cycle: CycleFilter
-  onCycle: (c: CycleFilter) => void
+  /** [] is every open ticket. */
+  cycles: CycleFilter[]
+  onCycles: (c: CycleFilter[]) => void
   sprintName: string | null
   /** The active cycle's id, for "Plan cycle" on that row — null with none open. */
   activeSprintId: number | null
@@ -3122,7 +3199,10 @@ function FilterMenu({
   hidden: string[]
   onHidden: (names: string[]) => void
   people: { value: string; label: string; count: number }[]
+  /** The people shown: the tab's, or the ones picked here. */
   assignees: string[]
+  /** Picked here, beyond a tab: counts as a filter. */
+  assigneesNarrowed: boolean
   onAssignees: (picked: string[]) => void
   epicActive: boolean
   onClearEpic: () => void
@@ -3130,24 +3210,44 @@ function FilterMenu({
   const [open, setOpen] = useState(false)
   const anchor = useRef<HTMLDivElement>(null)
   const active =
-    (cycle !== 'all' ? 1 : 0) +
+    (cycles.length > 0 ? 1 : 0) +
     (hidden.length > 0 ? 1 : 0) +
-    (assignees.length > 0 ? 1 : 0) +
+    (assigneesNarrowed ? 1 : 0) +
     (epicActive ? 1 : 0)
   const doneColumns = columns.filter((c) => c.category === 'done').map((c) => c.name)
   const doneHidden = doneColumns.length > 0 && doneColumns.every((n) => hidden.includes(n))
-  const radio = (value: CycleFilter, label: string): React.JSX.Element => (
-    <button
-      type="button"
-      role="menuitemradio"
-      aria-checked={cycle === value}
-      className="cr-popover-item backlog-menu-item"
-      onClick={() => onCycle(value)}
-    >
-      <span>{label}</span>
-      {cycle === value && <Icon name="Check" size={14} />}
-    </button>
-  )
+  // "All open" clears the cycle filter; each cycle is a checkbox, so several
+  // can be shown together.
+  const radio = (value: CycleFilter, label: string): React.JSX.Element => {
+    const on = value === 'all' ? cycles.length === 0 : cycles.includes(value)
+    return (
+      <button
+        type="button"
+        role={value === 'all' ? 'menuitemradio' : 'menuitemcheckbox'}
+        aria-checked={on}
+        className="cr-popover-item backlog-menu-item"
+        onClick={() =>
+          onCycles(
+            value === 'all' ? [] : on ? cycles.filter((c) => c !== value) : [...cycles, value]
+          )
+        }
+      >
+        {value === 'all' ? (
+          <>
+            <span>{label}</span>
+            {on && <Icon name="Check" size={14} />}
+          </>
+        ) : (
+          <span className="backlog-menu-item-label">
+            <span className={`backlog-check-box${on ? ' backlog-check-box--on' : ''}`}>
+              {on && <Icon name="Check" size={11} />}
+            </span>
+            {label}
+          </span>
+        )}
+      </button>
+    )
+  }
   /** A cycle's filter row, with a "Plan" action reachable here too — the
    * only way in when the sidebar (whose row has its own hover action) is
    * hidden. */
@@ -3231,6 +3331,7 @@ function FilterMenu({
               key={c.name}
               type="button"
               role="menuitemcheckbox"
+              data-status-option=""
               aria-checked={shown}
               className="cr-popover-item backlog-menu-item"
               onClick={() =>
@@ -3294,7 +3395,7 @@ function FilterMenu({
               type="button"
               className="cr-popover-item"
               onClick={() => {
-                onCycle('all')
+                onCycles([])
                 onHidden([])
                 onAssignees([])
                 onClearEpic()
@@ -4508,14 +4609,20 @@ function CycleProgress({
 function SavedViews({
   views,
   activeId,
+  changed,
   onApply,
   onSave,
+  onUpdate,
   onDelete
 }: {
   views: SavedView[]
   activeId: string | null
+  /** The view you're in has been changed since it was opened. */
+  changed: boolean
   onApply: (v: SavedView) => void
   onSave: (name: string) => void
+  /** Save the changes over the view you're in. */
+  onUpdate: () => void
   onDelete: (id: string) => void
 }): React.JSX.Element {
   const [naming, setNaming] = useState(false)
@@ -4537,7 +4644,33 @@ function SavedViews({
             onClick={() => onApply(v)}
           >
             {v.name}
+            {v.id === activeId && changed && (
+              <span
+                className="backlog-view-tab-changed"
+                aria-label="changed"
+                title="Changed since you opened it"
+              />
+            )}
           </button>
+          {v.id === activeId && changed && (
+            <>
+              <button
+                type="button"
+                className="backlog-link backlog-link--quiet backlog-view-tab-action"
+                onClick={onUpdate}
+              >
+                Save
+              </button>
+              <button
+                type="button"
+                className="backlog-link backlog-link--quiet backlog-view-tab-action"
+                title="Back to the view as saved"
+                onClick={() => onApply(v)}
+              >
+                Reset
+              </button>
+            </>
+          )}
           <button
             type="button"
             className="backlog-view-tab-remove"

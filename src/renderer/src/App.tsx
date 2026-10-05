@@ -2053,6 +2053,11 @@ function App(): React.JSX.Element {
               onViewAllSessions={() => setView('sessions')}
               onSessionsChanged={refreshSessions}
               pushToast={pushToast}
+              onStartTicketSession={(seed) => {
+                setComposerSeed(seed)
+                setShowNewSessionForm(true)
+              }}
+              onOpenTicket={setPeekTicket}
             />
           ) : view === 'backlog' ? (
             <BacklogScreen
@@ -2183,28 +2188,6 @@ function App(): React.JSX.Element {
                     onOpenTicket={setPeekTicket}
                   />
                 )}
-                {openSession && peekTicket && (
-                  <BacklogScreen
-                    panelOnly
-                    sessions={sessions}
-                    pushToast={pushToast}
-                    onOpenSession={openSessionByKey}
-                    openTicket={peekTicket}
-                    onPanelClose={() => setPeekTicket(null)}
-                    onExpand={(key) => {
-                      setPeekTicket(null)
-                      setOpenTicket(key)
-                      setOpenSessionKey(null)
-                      setGridView(false)
-                      setView('backlog')
-                    }}
-                    onStartSession={(seed) => {
-                      setPeekTicket(null)
-                      setComposerSeed(seed)
-                      setShowNewSessionForm(true)
-                    }}
-                  />
-                )}
               </div>
             </div>
           )}
@@ -2247,6 +2230,31 @@ function App(): React.JSX.Element {
           </Modal>
         )
       })()}
+
+      {/* A ticket's panel over whatever's on screen: a session's ticket, or
+          one from Home. The Backlog shows its own. */}
+      {peekTicket && view !== 'backlog' && (
+        <BacklogScreen
+          panelOnly
+          sessions={sessions}
+          pushToast={pushToast}
+          onOpenSession={openSessionByKey}
+          openTicket={peekTicket}
+          onPanelClose={() => setPeekTicket(null)}
+          onExpand={(key) => {
+            setPeekTicket(null)
+            setOpenTicket(key)
+            setOpenSessionKey(null)
+            setGridView(false)
+            setView('backlog')
+          }}
+          onStartSession={(seed) => {
+            setPeekTicket(null)
+            setComposerSeed(seed)
+            setShowNewSessionForm(true)
+          }}
+        />
+      )}
 
       {showNewSessionForm && (
         <Modal

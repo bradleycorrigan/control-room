@@ -2703,3 +2703,19 @@
   font-size: var(--text-meta-size);
   color: var(--text-muted);
 }
+
+/* The saved view you're in, changed since you opened it: a dot on its tab,
+   and Save (over it) or Reset (back as saved) beside it. */
+.backlog-view-tab-changed {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: var(--space-8);
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.backlog-view-tab-action {
+  margin-left: var(--space-8);
+  font-size: var(--text-meta-size);
+}

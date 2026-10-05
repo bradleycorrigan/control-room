@@ -148,9 +148,18 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     await key('Escape')
   }
   // Cycle lives in the Filter menu now.
+  // Just this cycle: cycles are checkboxes that combine, so clear first
+  // ("All open"), then tick the one.
   const cycleFilter = async (option: string): Promise<void> => {
     await click($('.backlog-menu-button[aria-label^="Filter"]'))
-    await click(byText('.backlog-filter-menu [role="menuitemradio"]', option))
+    await click(byText('.backlog-filter-menu [role="menuitemradio"]', 'All open'))
+    if (option !== 'All open') {
+      await click(
+        $$<HTMLElement>('.backlog-filter-menu [role="menuitemcheckbox"]').find(
+          (b) => b.textContent?.trim() === option
+        )
+      )
+    }
     await key('Escape')
   }
 
@@ -192,9 +201,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   await click(byText('.backlog-filter-menu button', 'Hide done'))
   await check(
     'Hide done leaves out the done column too',
-    $$(
-      '.backlog-filter-menu [role="menuitemcheckbox"][aria-checked="false"]:not(.backlog-filter-people *)'
-    ).length === 2
+    $$('.backlog-filter-menu [data-status-option][aria-checked="false"]').length === 2
   )
   await click(byText('.backlog-filter-menu button', 'Clear filters'))
   await key('Escape')
@@ -933,6 +940,60 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     rows().length === mineCount && Boolean($('.backlog-view-tab--selected')),
     `${rows().length} vs ${mineCount}`
   )
+  // Filters change the view you're in, in place: adding someone on Mine
+  // gives you and them, not the empty overlap of two filters.
+  {
+    const openFilter = async (): Promise<void> => {
+      await click($('.backlog-menu-button[aria-label^="Filter"]'))
+      await until(() => Boolean($('.backlog-filter-menu')))
+    }
+    // By now an earlier check has assigned "Someone Else"'s ticket to you,
+    // so Unassigned is the other choice the list is sure to have.
+    const unassigned = (): number =>
+      rows().filter((r) => r.querySelector('.backlog-avatar--none')).length
+    await openFilter()
+    await click(
+      $$<HTMLElement>('.backlog-filter-menu .backlog-filter-people button').find((b) =>
+        (b.textContent ?? '').includes('Unassigned')
+      )
+    )
+    await key('Escape')
+    await check(
+      'adding to the Assignee filter on Mine shows yours and theirs',
+      rows().length > mineCount && unassigned() > 0 && !$('.backlog-filter--selected'),
+      `${rows().length} rows (mine ${mineCount}), ${unassigned()} unassigned`
+    )
+    await check(
+      'and the saved view stays selected, marked as changed, with Save and Reset',
+      Boolean($('.backlog-filter-tabs .backlog-view-tab--selected .backlog-view-tab-changed')) &&
+        Boolean(byText('.backlog-filter-tabs .backlog-view-tab-action', 'Save')) &&
+        Boolean(byText('.backlog-filter-tabs .backlog-view-tab-action', 'Reset')),
+      $('.backlog-view-tab--selected')?.textContent ?? 'no view selected'
+    )
+    await click(byText('.backlog-filter-tabs .backlog-view-tab-action', 'Reset'))
+    await check(
+      'Reset puts the view back as saved',
+      rows().length === mineCount && !$('.backlog-view-tab-changed'),
+      `${rows().length} vs ${mineCount}`
+    )
+    await click(byText('.backlog-filter', 'Everyone'))
+    await openFilter()
+    const cycleItem = (label: string): HTMLElement | undefined =>
+      $$<HTMLElement>('.backlog-filter-menu .backlog-menu-item').find((b) =>
+        (b.textContent ?? '').startsWith(label)
+      )
+    await click(cycleItem('Current cycle'))
+    await click(cycleItem('kestrel'))
+    await key('Escape')
+    const chip = $$('.backlog-active-chip').find((c) => /Cycle:/.test(c.textContent ?? ''))
+    await check(
+      'two cycles can be shown together',
+      /honey-buzzard \+ kestrel/.test(chip?.textContent ?? ''),
+      chip?.textContent ?? 'no cycle chip'
+    )
+    chip?.querySelector<HTMLButtonElement>('button')?.click()
+    await wait(300)
+  }
   $<HTMLButtonElement>('[aria-label="Delete view My tickets"]')?.click()
   await wait(300)
   await check('a view can be deleted', !$('.backlog-view-tab'))
@@ -2590,6 +2651,52 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       await check(
         'unpinning removes the mark',
         !$$('.cr-session-card:not(.cr-session-card--new)').some(isPinned)
+      )
+    }
+  }
+
+  // Home lists your open tickets beside your sessions: view one in place,
+  // or start a session for one.
+  {
+    await ctx.goTo('home')
+    await until(() => $$('[data-home-ticket]').length > 0, 6000)
+    const cards = $$<HTMLElement>('[data-home-ticket]')
+    await check(
+      'Home lists your open tickets beside your sessions',
+      cards.length > 0 && Boolean($('.home-recent:not(.home-tickets)')),
+      `${cards.length} tickets: ${cards.map((c) => c.dataset.homeTicket).join(', ')}`
+    )
+    const first = cards[0]?.dataset.homeTicket ?? ''
+    await click(cards[0]?.querySelector('.cr-ticket-card-view'))
+    await check(
+      'View ticket opens it in place, over Home',
+      await until(
+        () =>
+          ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith(first) &&
+          Boolean($('.home-tickets'))
+      ),
+      $('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 24) ?? 'no panel'
+    )
+    await key('Escape')
+    await until(() => !$('.backlog-drawer'))
+    const fresh = $$<HTMLElement>('[data-home-ticket]').find((c) =>
+      /Start a session/.test(c.textContent ?? '')
+    )
+    if (fresh) {
+      const k = fresh.dataset.homeTicket ?? ''
+      await click(fresh.querySelector('.cr-ticket-card'))
+      await check(
+        'a ticket without a session starts one, the composer filled in from it',
+        await until(() => ($('.cr-modal-title')?.textContent ?? '').startsWith(k)),
+        $('.cr-modal-title')?.textContent ?? 'no composer'
+      )
+      await key('Escape')
+      await until(() => !$('.cr-modal'))
+    } else {
+      await check(
+        'a ticket without a session starts one (fixture had none)',
+        false,
+        'every ticket had a session'
       )
     }
   }

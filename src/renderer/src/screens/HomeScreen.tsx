@@ -38,6 +38,8 @@ import { useWorktreeChoice } from '../state/useWorktreeChoice'
 import { useStoredState } from '../state/useStoredState'
 import { Picker } from './backlog/Picker'
 import './home.css'
+import HomeTickets from './HomeTickets'
+import type { ComposerSeed } from './backlog/ticketSessions'
 
 type Model = 'opus' | 'sonnet' | 'haiku'
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -132,6 +134,9 @@ export interface HomeScreenProps {
   onViewAllSessions?: () => void
   /** Called after a recent card's action changes a record, so the list reloads. */
   onSessionsChanged?: () => void
+  /** "Your tickets": start a session for one, or look at it first. */
+  onStartTicketSession?: (seed: ComposerSeed) => void
+  onOpenTicket?: (key: string) => void
   pushToast?: (message: string) => void
 }
 
@@ -157,7 +162,9 @@ export default function HomeScreen({
   onOpenSession,
   onViewAllSessions,
   onSessionsChanged,
-  pushToast
+  pushToast,
+  onStartTicketSession,
+  onOpenTicket
 }: HomeScreenProps): React.JSX.Element {
   const { projects } = useProjects()
   const [prompt, setPrompt] = useState(initialPrompt)
@@ -1138,6 +1145,14 @@ export default function HomeScreen({
               ))}
             </div>
           </div>
+        )}
+        {variant === 'page' && sessions && onStartTicketSession && onOpenTicket && (
+          <HomeTickets
+            sessions={sessions}
+            onOpenSession={(key, background) => onOpenSession?.(key, background)}
+            onStartSession={onStartTicketSession}
+            onOpenTicket={onOpenTicket}
+          />
         )}
         {sessionActionNode}
       </div>

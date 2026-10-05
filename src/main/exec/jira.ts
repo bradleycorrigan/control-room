@@ -1910,6 +1910,8 @@ export interface SavedView {
   name: string
   who: string
   cycle: string
+  /** Every cycle picked (the filter can combine them); older views have only `cycle`. */
+  cycles?: string[]
   groupBy: string
   subGroup?: string
   /** Columns filtered out. */
