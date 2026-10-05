@@ -39,7 +39,7 @@ import { runPagesCheck } from './dev/pagesCheck'
 import { DEFAULT_TERMINAL_FONT_SIZE } from './components/Terminal'
 import PrimitivesGallery from './dev/PrimitivesGallery'
 import { useThemeProvider } from './theme/ThemeProvider'
-import { useKeyboardMap } from './keyboard'
+import { useKeyboardMap, isShortcutMod } from './keyboard'
 
 // Sidebar geometry. The floor is the narrowest the longest project name stays
 // readable at; the ceiling stops the rail eating a window it is only a filter
@@ -448,7 +448,7 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (!reopenableKey) return
-      const mod = e.metaKey || e.ctrlKey
+      const mod = isShortcutMod(e)
       if (mod && e.shiftKey && e.key.toLowerCase() === 't') {
         e.preventDefault()
         e.stopPropagation()
@@ -2185,7 +2185,8 @@ function App(): React.JSX.Element {
                     pushToast={pushToast}
                     // Opens over the session, so you stay in it; the panel's
                     // "Open on Backlog" carries on there.
-                    onOpenTicket={setPeekTicket}
+                    // The pill toggles: open, or closed if it's the one open.
+                    onOpenTicket={(key) => setPeekTicket((cur) => (cur === key ? null : key))}
                   />
                 )}
               </div>

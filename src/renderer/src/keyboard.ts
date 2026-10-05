@@ -27,6 +27,15 @@ export type KeyboardActionId =
   | 'new-tab'
   | 'home-tab'
 
+/**
+ * The key that makes a press an app shortcut: ⌘, never Ctrl. Control Room
+ * runs on macOS, where Ctrl combinations belong to the terminal: Ctrl+B is
+ * tmux's prefix, Ctrl+K deletes to the end of the line, Ctrl+F moves forward
+ * a character. Treating Ctrl like ⌘ took all of those away from tmux and the
+ * shell.
+ */
+export const isShortcutMod = (e: KeyboardEvent | React.KeyboardEvent): boolean => e.metaKey
+
 export interface KeyboardMapEntry {
   id: KeyboardActionId
   combo: string
@@ -93,7 +102,7 @@ export function useKeyboardMap(actions: KeyboardActions): void {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       const actions = actionsRef.current
-      const mod = e.metaKey || e.ctrlKey
+      const mod = isShortcutMod(e)
       const key = e.key.toLowerCase()
 
       if (mod && !e.shiftKey && key === 'k') {

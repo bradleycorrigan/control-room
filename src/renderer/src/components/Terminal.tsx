@@ -6,6 +6,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon, type ISearchOptions } from '@xterm/addon-search'
 import { IconButton } from './primitives'
+import { isShortcutMod } from '../keyboard'
 import '@xterm/xterm/css/xterm.css'
 import {
   terminalAttach,
@@ -199,7 +200,8 @@ const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(
   // terminal is mounted, so there's only ever one listening.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+      // ⌘F only: Ctrl+F is the shell's "forward a character".
+      if (isShortcutMod(e) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
         e.preventDefault()
         setSearchOpen(true)
         setSearchAsk((n) => n + 1)

@@ -1641,6 +1641,14 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]'), before)
     await wait(400)
   }
+  await click($('.session-detail-ticket'))
+  await check(
+    'clicking the ticket again closes its panel',
+    await until(() => !$('.backlog-drawer')),
+    $('.backlog-drawer') ? 'still open' : ''
+  )
+  await click($('.session-detail-ticket'))
+  await until(() => Boolean($('.backlog-drawer')))
   await click($('.backlog-drawer [aria-label="Open on Backlog"]'))
   await check(
     'Open on Backlog carries on with the ticket there',
@@ -1666,6 +1674,25 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     `${split.got ?? 'nothing'} (wanted ${split.target ?? 'no fixture pane'})`
   )
 
+  // Ctrl combinations belong to the terminal (tmux's Ctrl+B prefix, the
+  // shell's Ctrl+K and Ctrl+F); only ⌘ makes an app shortcut.
+  {
+    const rail = (): boolean => Boolean($('.projects-rail'))
+    const railBefore = rail()
+    await click($('.terminal-surface'))
+    await key('b', ['control'])
+    await key('k', ['control'])
+    await key('f', ['control'])
+    await check(
+      "Ctrl+B, Ctrl+K and Ctrl+F reach the terminal, not the app's sidebar, palette or find",
+      rail() === railBefore && !$('.command-palette-input') && !$('.terminal-search'),
+      `sidebar ${railBefore}→${rail()}, palette ${Boolean($('.command-palette-input'))}, find ${Boolean($('.terminal-search'))}`
+    )
+    await key('b', ['meta'])
+    const toggled = rail() !== railBefore
+    await key('b', ['meta'])
+    await check('⌘B still shows and hides the sidebar', toggled && rail() === railBefore)
+  }
   await key('f', ['meta'])
   await check('⌘F opens find in the terminal', Boolean($('.terminal-search')))
   await typeText('feature')
