@@ -1166,6 +1166,47 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     Boolean($('.backlog-column--filtered[data-status="Done/Not doing"]'))
   )
   {
+    // A title with a long unbroken URL breaks inside its card; the column
+    // keeps its width, in line with its header and every other lane.
+    const card = $<HTMLElement>('.backlog-card')
+    const key0 = card?.dataset.issue ?? ''
+    const before = card?.querySelector('.backlog-card-summary')?.textContent ?? ''
+    await click(card)
+    await until(() => Boolean($('.backlog-drawer')))
+    await click($('.backlog-drawer-summary'))
+    setText(
+      $<HTMLInputElement>('.backlog-drawer-summary-form input'),
+      'https://metabase.example.com/dashboard/1021-metrics-that-matter-with-a-very-long-unbroken-path-segment'
+    )
+    $('.backlog-drawer-summary-form')?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    )
+    await wait(500)
+    await key('Escape')
+    await until(() => !$('.backlog-drawer'))
+    // Every column in a lane is the same width; the bug made the one
+    // holding the long title wider than its neighbours.
+    const widths = $$<HTMLElement>('.backlog-lane .backlog-board').map((lane) =>
+      [...lane.children].map((col) => Math.round(col.getBoundingClientRect().width))
+    )
+    const uneven = widths.filter((w) => w.length > 1 && Math.max(...w) - Math.min(...w) > 2)
+    await check(
+      'a long unbroken title wraps in its card; every column in a lane stays the same width',
+      widths.length > 0 && uneven.length === 0,
+      widths.map((w) => w.join('/')).join(' | ')
+    )
+    // Put the title back.
+    await click($(`.backlog-card[data-issue="${key0}"]`))
+    await until(() => Boolean($('.backlog-drawer')))
+    await click($('.backlog-drawer-summary'))
+    setText($<HTMLInputElement>('.backlog-drawer-summary-form input'), before)
+    $('.backlog-drawer-summary-form')?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    )
+    await wait(400)
+    await key('Escape')
+    await until(() => !$('.backlog-drawer'))
+
     // A card's pick check sits in its bottom-right corner: it takes no room
     // in the top row (so priority starts at the edge) and covers nothing.
     const hit = (x: DOMRect, y: DOMRect): boolean =>

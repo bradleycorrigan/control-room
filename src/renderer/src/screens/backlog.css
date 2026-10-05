@@ -586,6 +586,10 @@
 .backlog-column {
   flex: 1 0 208px;
   max-width: 340px;
+  /* A flex item won't shrink below its widest unbreakable word by default,
+     so one ticket with a long URL in its title widened its whole column in
+     that swimlane, out of line with the headers and the other lanes. */
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
@@ -621,6 +625,7 @@
 
 .backlog-card {
   position: relative;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
@@ -666,6 +671,8 @@
   font-size: var(--text-label-size);
   line-height: 1.4;
   color: var(--text);
+  /* Long URLs and identifiers break rather than push the card wider. */
+  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
