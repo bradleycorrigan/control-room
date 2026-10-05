@@ -383,6 +383,28 @@ export async function carryIgnoredFiles(
   return { ok: true }
 }
 
+/**
+ * Copies the main checkout's `.claude/settings.local.json` into a new
+ * worktree. That file is where Claude Code saves "don't ask again"
+ * approvals, and it saves them per folder, so without this every new
+ * session starts with none and asks for everything again.
+ *
+ * A copy, not a symlink: Claude Code refuses to write settings through a
+ * symlink, so a linked file would break the next approval made in the
+ * worktree. Best-effort: a missing source or a failed copy only logs.
+ */
+export function carryClaudeLocalSettings(repo: string, worktree: string): void {
+  const src = join(repo, '.claude', 'settings.local.json')
+  const dest = join(worktree, '.claude', 'settings.local.json')
+  if (!existsSync(src) || existsSync(dest)) return
+  try {
+    mkdirSync(join(worktree, '.claude'), { recursive: true })
+    cpSync(src, dest)
+  } catch (err) {
+    log.warn('sessions:carryClaudeLocalSettings — copy failed', { worktree, error: String(err) })
+  }
+}
+
 /** Plan 4 §7.6 — the running `claude --version`, captured at session creation. */
 async function captureHarnessVersion(): Promise<string | undefined> {
   const bin = await resolveClaudeBinary()
@@ -617,6 +639,7 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
       project.ignoredFilesMode ?? 'symlink'
     )
     emitProgress(creationId, 'symlinks', carried.ok, carried.message)
+    carryClaudeLocalSettings(project.repoPath, target)
 
     // Best-effort, non-fatal — harmless if either tool isn't installed (a
     // missing binary or a real config problem both just show up as a

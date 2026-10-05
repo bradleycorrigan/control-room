@@ -119,6 +119,7 @@ import { pullRequestFor } from './exec/pullRequests'
 import { currentBranch } from './engine/sessionBranch'
 import type { JiraCreateInput, BacklogPrefs } from './exec/jira'
 import {
+  carryClaudeLocalSettings,
   createSession,
   deleteSession,
   type CreateSessionInput,
@@ -927,6 +928,7 @@ export function registerIpcHandlers(): void {
       }
       if (!worktreeOk) return { ok: false, error: 'git worktree add failed' }
 
+      carryClaudeLocalSettings(project.repoPath, target)
       return { ok: true, path: target }
     }
   )
