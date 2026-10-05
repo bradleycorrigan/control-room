@@ -195,6 +195,7 @@
 }
 
 .backlog kbd,
+.backlog-panel-only kbd,
 .backlog-menu kbd {
   padding: 0 5px;
   border-radius: 4px;
@@ -894,8 +895,16 @@
 
 /* ---- Panel ---- */
 
-.backlog {
+.backlog,
+.backlog-panel-only {
   --backlog-panel-width: min(520px, 100vw);
+}
+
+/* The ticket panel over another screen (a session, Home). Not the Backlog's
+   page container: that fills the page, and covered the session beneath it.
+   The wrapper takes no room; only the fixed panel inside it shows. */
+.backlog-panel-only {
+  display: contents;
 }
 
 /* Peek: the list stays usable beside the panel, like Linear's. */

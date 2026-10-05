@@ -1611,7 +1611,7 @@ export default function BacklogScreen({
 
   if (panelOnly) {
     return (
-      <div className="backlog backlog--peek backlog--panel-only">
+      <div className="backlog-panel-only">
         {confirmNode}
         {picker && <Picker {...picker} onClose={() => setPicker(null)} />}
         {drawer ?? (

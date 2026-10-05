@@ -1612,12 +1612,18 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   await click($('.session-detail-ticket'))
   await check(
     'and the pill opens that ticket over the session, without leaving it',
-    await until(
-      () =>
+    await until(() => {
+      // Seen, not merely in the page: what's actually drawn at the header's
+      // middle has to be the header. A full-page wrapper once covered it.
+      const header = $('.session-detail-header')
+      const r = header?.getBoundingClientRect()
+      const top = r ? document.elementFromPoint(r.left + 40, r.top + r.height / 2) : null
+      return (
         ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('DSD-101') &&
-        Boolean($('.session-detail-header')) &&
+        Boolean(header && top && header.contains(top)) &&
         !$('.backlog-list')
-    ),
+      )
+    }),
     `${$('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 20) ?? 'no panel'}, session ${Boolean($('.session-detail-header'))}, list ${Boolean($('.backlog-list'))}`
   )
   {
@@ -2711,11 +2717,17 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     await click(cards[0]?.querySelector('.cr-ticket-card-view'))
     await check(
       'View ticket opens it in place, over Home',
-      await until(
-        () =>
+      await until(() => {
+        // Home still drawn beside the panel: its first ticket card is what
+        // sits at that card's left edge, not a page-filling wrapper.
+        const cardEl = $('[data-home-ticket]')
+        const r = cardEl?.getBoundingClientRect()
+        const top = r ? document.elementFromPoint(r.left + 20, r.top + 20) : null
+        return (
           ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith(first) &&
-          Boolean($('.home-tickets'))
-      ),
+          Boolean(cardEl && top && cardEl.contains(top))
+        )
+      }),
       $('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 24) ?? 'no panel'
     )
     await key('Escape')
