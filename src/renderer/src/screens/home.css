@@ -350,7 +350,6 @@
   flex-shrink: 0;
 }
 
-
 /* Sits below the composer on the landing page. Home was a composer and a
    screenful of nothing; this is the one thing you always want on arrival. */
 .home-recent {
@@ -402,12 +401,10 @@
 
 .home-recent-title {
   margin: 0;
-  font-size: var(--text-caption-size);
-  line-height: var(--text-caption-line);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
-  font-weight: 400;
+  font-size: var(--text-heading-size);
+  line-height: var(--text-heading-line);
+  font-weight: var(--text-heading-weight);
+  color: var(--text);
 }
 
 .home-recent-list {
@@ -546,3 +543,42 @@
     transform: rotate(360deg);
   }
 }
+
+/* The day in one line, above the composer: plain sentences, each one a link
+   to where you'd act on it. Muted until pointed at, so it reads as context
+   rather than competing with the composer. */
+.home-summary {
+  margin: 0 0 var(--space-16);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-4) var(--space-8);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.home-summary-clause {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+button.home-summary-clause {
+  cursor: pointer;
+}
+
+button.home-summary-clause:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+button.home-summary-clause:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+

@@ -41,6 +41,8 @@ function themeBlock(theme: Theme): string {
     `  --term-fg: ${theme.termFg};`,
     `  --term-cursor-fg: ${theme.termCursorFg};`,
     `  --term-selection: ${theme.termSelection};`,
+    `  --term-min-contrast: ${theme.termMinContrast};`,
+    `  --term-font-smoothing: ${theme.termFontSmoothing};`,
     `  --term-ansi-0: ${a.black};`,
     `  --term-ansi-1: ${a.red};`,
     `  --term-ansi-2: ${a.green};`,

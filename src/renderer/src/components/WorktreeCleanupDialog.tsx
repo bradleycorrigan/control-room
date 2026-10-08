@@ -249,24 +249,28 @@ export default function WorktreeCleanupDialog({
         )}
 
         {candidates.length > 0 && (
-          <label className="wt-cleanup-checkbox">
-            <input
-              type="checkbox"
-              checked={deleteBranches}
-              onChange={(e) => setDeleteBranches(e.target.checked)}
-              disabled={!anyMergedSelected}
-            />
+          // The same check as the rows above, not the system checkbox.
+          <button
+            type="button"
+            role="checkbox"
+            aria-checked={deleteBranches}
+            className="wt-cleanup-checkbox"
+            disabled={!anyMergedSelected}
+            onClick={() => setDeleteBranches((v) => !v)}
+          >
+            <PickCheck on={deleteBranches} />
             Also delete merged branches
-          </label>
+          </button>
         )}
 
         <Row gap={8} justify="flex-end">
-          <Button variant="outlined" onClick={onClose} disabled={busy}>
+          <Button variant="outlined" size="default" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
           {candidates.length > 0 && (
             <Button
               variant="filled"
+              size="default"
               className="wt-cleanup-destructive"
               onClick={handleRemove}
               disabled={busy || selectedCount === 0}

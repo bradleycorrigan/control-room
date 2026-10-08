@@ -218,10 +218,10 @@
 }
 
 .git-tab-log-heading {
-  font-size: var(--text-caption-size);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-muted);
+  font-size: var(--text-heading-size);
+  line-height: var(--text-heading-line);
+  font-weight: var(--text-heading-weight);
+  color: var(--text);
 }
 
 .git-tab-commit-list {

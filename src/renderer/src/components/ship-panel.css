@@ -49,25 +49,101 @@
 
 .ship-panel-body {
   overflow-y: auto;
-  padding: var(--space-24);
+  padding: var(--space-16) var(--space-24) var(--space-24);
   display: flex;
   flex-direction: column;
-  gap: var(--space-24);
 }
 
+/* The four steps as one ruled list, the ticket panel's grid language: a
+   small label over each step's content, actions on its left edge. */
 .ship-panel-section {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-8);
+  padding-block: var(--space-12);
+}
+
+.ship-panel-section + .ship-panel-section {
+  border-top: 1px solid var(--border);
+}
+
+.ship-panel-section > * {
+  max-width: 100%;
 }
 
 .ship-panel-section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
   margin: 0;
   font-size: var(--text-caption-size);
-  font-weight: 600;
+  line-height: var(--text-caption-line);
+  font-weight: var(--text-label-weight);
   color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+}
+
+/* The step's number: it is a sequence, so it stays, small. */
+.ship-panel-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: var(--text-meta-size);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A done step: the number gives way to a tick, in the done status colour. */
+.ship-panel-step--done {
+  background: color-mix(in srgb, var(--status-done) 18%, transparent);
+  color: var(--status-done);
+  animation: ship-panel-step-in 180ms ease-out;
+}
+
+@keyframes ship-panel-step-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Every step shown is done: the header says so, with one soft fade. */
+.ship-panel-title--shipped {
+  animation: ship-panel-shipped-in 400ms ease-out;
+}
+
+.ship-panel-shipped-icon {
+  color: var(--status-done);
+}
+
+@keyframes ship-panel-shipped-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ship-panel-step--done,
+  .ship-panel-title--shipped {
+    animation: none;
+  }
+}
+
+.ship-panel-pr-number {
+  margin-right: var(--space-8);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .ship-panel-muted {
@@ -133,8 +209,25 @@
 }
 
 .ship-panel-pr-state {
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
   font-size: var(--text-caption-size);
+  line-height: 20px;
   color: var(--text-muted);
+}
+
+/* A button and the detail that goes with it, on one line. */
+.ship-panel-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+}
+
+.ship-panel-commits,
+.ship-panel-pr-form {
+  align-self: stretch;
 }
 
 .ship-panel-pr-form {
@@ -175,7 +268,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-8);
-  margin-top: var(--space-12);
 }
 
 .ship-panel-pr-actions .ship-panel-error {

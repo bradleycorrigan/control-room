@@ -138,6 +138,11 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
     const panes = await runTmux(['list-panes', '-s', '-t', '=cr-fixture', '-F', '#{pane_id}'])
     const pane = panes.stdout.split('\n').find(Boolean)
     if (!pane) return { ok: false, detail: 'no fixture pane' }
+    // Start from an empty command line. A previous run's Ctrl-key check
+    // leaves a literal ^F there, which turned this into `^Fecho …` and failed
+    // every gate run after the first on the same fixture.
+    await runTmux(['send-keys', '-t', pane, 'C-c'])
+    await new Promise((r) => setTimeout(r, 300))
     const marker = `cr-prompt-${Date.now()}`
     const zw = String.fromCharCode(0x200b)
     const result = await deliverPrompt(pane, `echo ${zw}${marker}\r\n`)

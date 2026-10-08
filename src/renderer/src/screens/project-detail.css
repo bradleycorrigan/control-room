@@ -28,10 +28,10 @@
 
 .settings-screen h3 {
   margin: 16px 0 8px;
-
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.7;
+  font-size: var(--text-heading-size);
+  line-height: var(--text-heading-line);
+  font-weight: var(--text-heading-weight);
+  color: var(--text);
 }
 
 .settings-follow-system {
@@ -563,12 +563,11 @@
 }
 
 .overview-section-header {
-  font-size: var(--text-caption-size);
-  line-height: var(--text-caption-line);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
   margin: 0 0 var(--space-16) 0;
+  font-size: var(--text-heading-size);
+  line-height: var(--text-heading-line);
+  font-weight: var(--text-heading-weight);
+  color: var(--text);
 }
 
 .overview-section-header-row {
@@ -830,4 +829,17 @@
   display: inline-flex;
   justify-content: flex-end;
   min-width: 88px;
+}
+
+/* A worktree with uncommitted work, and one whose session has ended. */
+.cr-worktree-card-dirty {
+  margin-left: var(--space-8);
+  color: var(--status-attention);
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+}
+
+.cr-worktree-card-note {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
 }

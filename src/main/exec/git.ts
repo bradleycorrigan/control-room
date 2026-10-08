@@ -1,4 +1,5 @@
-import { dirname } from 'node:path'
+import { lstat, rm, unlink } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { run } from './run'
 
 export async function findMainCheckout(anyPathInRepo: string): Promise<string | null> {
@@ -313,6 +314,20 @@ export async function removeWorktree(repoPath: string, dir: string): Promise<boo
 // per-worktree action), this is driven by a bulk selection the user may not
 // have looked at as closely.
 export async function removeWorktreeClean(repoPath: string, dir: string): Promise<GitOpResult> {
+  // `git worktree remove` refuses any untracked file, so the editor entries
+  // hasUncommittedChanges ignores would block every removal. Delete them
+  // first, but only when untracked: a tracked one is the repo's own content.
+  for (const entry of EDITOR_ENTRIES) {
+    const tracked = await run('git', ['-C', dir, 'ls-files', '--', entry])
+    if (tracked.code === 0 && tracked.stdout.trim() === '') {
+      const path = join(dir, entry)
+      const stat = await lstat(path).catch(() => null)
+      // A symlink (the usual case) is unlinked, never followed: its target is
+      // the main checkout's real copy.
+      if (stat?.isSymbolicLink()) await unlink(path)
+      else if (stat) await rm(path, { recursive: true })
+    }
+  }
   const res = await run('git', ['-C', repoPath, 'worktree', 'remove', dir])
   if (res.code === 0) return { ok: true }
   return { ok: false, error: res.stderr.trim() || `git worktree remove exited ${res.code}` }
@@ -398,8 +413,24 @@ export async function lastCommitTime(worktreePath: string): Promise<number | nul
   return res.code === 0 && Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null
 }
 
+/**
+ * Untracked editor entries that never count as uncommitted work. Worktree
+ * setup links `.cursor` back to the main checkout's copy so Cursor's rules
+ * and features work in every worktree; nobody ever commits it, so counting
+ * it flagged nearly every worktree as dirty and blocked cleanup.
+ */
+const EDITOR_ENTRIES = ['.cursor']
+
 export async function hasUncommittedChanges(worktreePath: string): Promise<boolean> {
-  const res = await run('git', ['-C', worktreePath, 'status', '--porcelain'])
+  const res = await run('git', [
+    '-C',
+    worktreePath,
+    'status',
+    '--porcelain',
+    '--',
+    '.',
+    ...EDITOR_ENTRIES.map((e) => `:(exclude)${e}`)
+  ])
   return res.code === 0 && res.stdout.trim().length > 0
 }
 
@@ -730,4 +761,44 @@ export async function resolveRemoteBranch(
   if (res.code === 0) return { ok: true, branch: name }
   if (res.code === 2) return { ok: false, error: `there’s no branch “${name}” on GitHub` }
   return { ok: false, error: `couldn’t reach GitHub to check “${name}”` }
+}
+
+// ---------------------------------------------------------------------------
+// Projects list tidy-up strip ('projects:tidy' in ipc.ts).
+
+/**
+ * Commit times (epoch ms) across every ref in the repo since `days` ago —
+ * one `git log --all`, so each commit counts once however many branches hold
+ * it. Empty on any failure.
+ */
+export async function commitTimesSince(repoPath: string, days: number): Promise<number[]> {
+  const res = await run('git', [
+    '-C',
+    repoPath,
+    'log',
+    `--since=${days}.days`,
+    '--format=%ct',
+    '--all'
+  ])
+  if (res.code !== 0) return []
+  return res.stdout
+    .split('\n')
+    .map((line) => Number(line.trim()) * 1000)
+    .filter((ms) => Number.isFinite(ms) && ms > 0)
+}
+
+/**
+ * Whether `origin/<branch>` exists locally. A branch pushed without `-u` has
+ * no upstream set, but it has still been pushed — this catches that case.
+ */
+export async function remoteTrackingRefExists(repoPath: string, branch: string): Promise<boolean> {
+  const res = await run('git', [
+    '-C',
+    repoPath,
+    'rev-parse',
+    '--verify',
+    '--quiet',
+    `refs/remotes/origin/${branch}`
+  ])
+  return res.code === 0
 }

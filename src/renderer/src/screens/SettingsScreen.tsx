@@ -77,6 +77,36 @@ export default function SettingsScreen({ theme }: SettingsScreenProps): React.JS
       {/* What a new session starts with. The composer's own picker still
           overrides it for one session; this is the value it starts from, which
           was hardcoded to Sonnet with nowhere to change it. */}
+      <h2>Views</h2>
+      {settings && (
+        <div className="settings-defaults">
+          <label className="settings-defaults-row">
+            <span className="settings-defaults-label">Sessions</span>
+            <SegmentedControl
+              value={settings.sessionsView}
+              onChange={(v) => void patchSettings({ sessionsView: v })}
+              aria-label="Sessions opens as"
+              options={[
+                { value: 'list' as const, label: 'List' },
+                { value: 'grid' as const, label: 'Grid' }
+              ]}
+            />
+          </label>
+          <label className="settings-defaults-row">
+            <span className="settings-defaults-label">Tickets</span>
+            <SegmentedControl
+              value={settings.ticketsView}
+              onChange={(v) => void patchSettings({ ticketsView: v })}
+              aria-label="Tickets opens as"
+              options={[
+                { value: 'list' as const, label: 'List' },
+                { value: 'board' as const, label: 'Board' }
+              ]}
+            />
+          </label>
+        </div>
+      )}
+
       <h2>New sessions</h2>
       {settings && (
         <div className="settings-defaults">

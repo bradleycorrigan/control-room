@@ -142,6 +142,10 @@ export interface AppSettings {
   terminalGpu: boolean // default false
   theme: string // theme id, e.g. "tokyo-night"; default "tokyo-night"
   themeFollowsSystem: boolean // default false; when on, swap dark/light theme with the OS
+  // How Sessions and Tickets open. The switch on each screen still changes
+  // it for the moment; this is where each one starts.
+  sessionsView: 'list' | 'grid' // default 'list'
+  ticketsView: 'list' | 'board' // default 'list'
 }
 
 export interface StateFile {

@@ -7,7 +7,7 @@
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
-  /* More room above "Your Projects" than the general screen-top token gives
+  /* More room above "Projects" than the general screen-top token gives
      — the header sat almost flush against the tab strip above it. */
   padding: var(--space-64) var(--space-64) var(--space-48);
 }
@@ -306,4 +306,91 @@
   align-items: center;
   gap: var(--space-8);
   min-width: 0;
+}
+
+/* Activity and tidy-up strip under each project row's metadata. */
+.project-row-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-16);
+  margin-top: var(--space-4);
+}
+
+.project-activity {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  flex-shrink: 0;
+}
+
+.project-activity-total {
+  min-width: 128px;
+  padding-top: 1px;
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+}
+
+.project-activity-days {
+  display: flex;
+  gap: 4px;
+}
+
+/* A day: its square, with its letter under it. */
+.project-activity-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 12px;
+}
+
+.project-activity-letter {
+  font-size: var(--text-micro-size);
+  line-height: 1;
+  color: var(--text-faint);
+}
+
+.project-activity-letter--today {
+  color: var(--text);
+  font-weight: var(--text-heading-weight);
+}
+
+/* Today's square: outlined, so the week reads from left to now. */
+.project-activity-day--today {
+  outline: 1px solid var(--text-muted);
+  outline-offset: 1px;
+}
+
+/* --activity-mix is set per day from its commit count; a day with none
+   stays the raised surface, so a dormant project reads as an empty strip. */
+.project-activity-day {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--surface-raised);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.project-activity-day[style] {
+  background: color-mix(in srgb, var(--status-done) var(--activity-mix), transparent);
+  box-shadow: none;
+}
+
+.project-tidy {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-12);
+  min-width: 0;
+}
+
+.project-tidy-count {
+  font-family: var(--font-ui);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  font-weight: var(--text-meta-weight);
+  color: var(--text-muted);
+  white-space: nowrap;
 }

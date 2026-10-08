@@ -54,8 +54,36 @@ export interface UnattachedWorktree {
   branch: string | null
 }
 
+/** Every worktree the project has on disk, with the session using it, if any. */
+export interface ProjectWorktree {
+  path: string
+  branch: string | null
+  isMainCheckout: boolean
+  dirty: boolean
+  /** The session record whose worktree this is, or null when nothing runs in it. */
+  sessionId: string | null
+}
+
+export function listAllWorktrees(projectId: string): Promise<ProjectWorktree[]> {
+  return window.api.invoke<ProjectWorktree[]>('worktrees:list', projectId)
+}
+
 export function listProjectWorktrees(projectId: string): Promise<UnattachedWorktree[]> {
   return window.api.invoke<UnattachedWorktree[]>('projects:worktrees', projectId)
+}
+
+/** The Projects list's tidy-up strip: what's left lying around, and the last seven days' commits. */
+export interface ProjectTidy {
+  openPrs: number
+  neverPushed: number
+  idleWorktrees: number
+  /** Commits per local day, oldest first, ending today. */
+  activity: number[]
+}
+
+/** Cached in main for two minutes; `force` re-reads (after a cleanup). Zeros on any failure. */
+export function getProjectTidy(projectId: string, force = false): Promise<ProjectTidy> {
+  return window.api.invoke<ProjectTidy>('projects:tidy', projectId, force)
 }
 
 export function adoptWorktree(projectId: string, path: string): Promise<SessionRecord | null> {
@@ -757,7 +785,8 @@ export type {
   JiraCreateInput,
   BacklogPrefs,
   SavedView,
-  TicketPullRequest
+  TicketPullRequest,
+  JiraPerson
 } from '../../main/exec/jira'
 export type { PullRequestInfo } from '../../main/exec/pullRequests'
 import type {
@@ -770,7 +799,8 @@ import type {
   JiraIssueType,
   JiraCreateInput,
   BacklogPrefs,
-  BlockDirection
+  BlockDirection,
+  JiraPerson
 } from '../../main/exec/jira'
 import type { PullRequestInfo } from '../../main/exec/pullRequests'
 
@@ -806,16 +836,29 @@ export function updateJiraText(
   return window.api.invoke<JiraResult<JiraIssue>>('jira:updateText', key, patch)
 }
 
-export function addJiraComment(key: string, body: string): Promise<JiraResult<JiraComment>> {
-  return window.api.invoke<JiraResult<JiraComment>>('jira:comment', key, body)
+/** `internal` posts a Jira Service Management internal note, seen only by the team. */
+export function addJiraComment(
+  key: string,
+  body: string,
+  internal = false
+): Promise<JiraResult<JiraComment>> {
+  return window.api.invoke<JiraResult<JiraComment>>('jira:comment', key, body, internal)
 }
 
 export function moveJiraIssue(key: string, status: string): Promise<JiraResult<JiraIssue>> {
   return window.api.invoke<JiraResult<JiraIssue>>('jira:move', key, status)
 }
 
-export function assignJiraIssue(key: string, toMe: boolean): Promise<JiraResult<JiraIssue>> {
-  return window.api.invoke<JiraResult<JiraIssue>>('jira:assign', key, toMe)
+/** `true` assigns it to you, `false` to nobody, a string to that account id. */
+export function assignJiraIssue(
+  key: string,
+  who: boolean | string
+): Promise<JiraResult<JiraIssue>> {
+  return window.api.invoke<JiraResult<JiraIssue>>('jira:assign', key, who)
+}
+
+export function loadAssignablePeople(): Promise<JiraResult<JiraPerson[]>> {
+  return window.api.invoke<JiraResult<JiraPerson[]>>('jira:assignable')
 }
 
 export function setJiraParent(key: string, parent: string | null): Promise<JiraResult<JiraIssue>> {

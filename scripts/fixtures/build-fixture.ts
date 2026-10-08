@@ -11,7 +11,7 @@
 // Then:  CR_SESSIONS_DIR=.dev/fixture/sessions npm run shot -- sessions tokyo-night
 
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -163,6 +163,16 @@ for (const [dirName, branch] of Object.entries(worktreeBranches)) {
   git(['add', '-A'], wtPath)
   git(['commit', '-q', '-m', 'A long file, so the diff overflows'], wtPath)
   writeFileSync(join(wtPath, 'scratch.txt'), 'untracked scratch file\n')
+}
+
+// The `.cursor` link worktree setup adds to real worktrees, pointing back at
+// shared Cursor config. It's untracked but never counts as uncommitted work,
+// so this worktree must still read as clean in "Clean up worktrees".
+{
+  const sharedCursor = join(fixtureRoot, 'shared-cursor')
+  mkdirSync(sharedCursor, { recursive: true })
+  writeFileSync(join(sharedCursor, 'rules.md'), 'shared Cursor rules\n')
+  symlinkSync(sharedCursor, join(worktreeRoot, 'feature-done', '.cursor'))
 }
 
 const now = Date.now()

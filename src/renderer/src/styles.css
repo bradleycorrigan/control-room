@@ -564,13 +564,11 @@
 }
 
 .projects-rail-title {
+  margin: 0;
   font-size: var(--text-caption-size);
   line-height: var(--text-caption-line);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  font-weight: var(--text-label-weight);
   color: var(--text-muted);
-  margin: 0;
-  font-weight: 500;
 }
 
 .projects-rail-add-button {
@@ -850,10 +848,10 @@
 
 .settings-screen h3 {
   margin: 16px 0 8px;
-  
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.7;
+  font-size: var(--text-heading-size);
+  line-height: var(--text-heading-line);
+  font-weight: var(--text-heading-weight);
+  color: var(--text);
 }
 
 .settings-follow-system {
@@ -1905,12 +1903,11 @@
 }
 
 .overview-section-header {
-  font-size: var(--text-caption-size);
-  line-height: var(--text-caption-line);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-muted);
   margin: 0 0 var(--space-16) 0;
+  font-size: var(--text-heading-size);
+  line-height: var(--text-heading-line);
+  font-weight: var(--text-heading-weight);
+  color: var(--text);
 }
 
 .overview-section-header-row {
@@ -2230,4 +2227,33 @@
   overflow-y: auto;
   color: var(--text);
   font-size: var(--text-body-size);
+}
+
+/* A screen that crashed: what happened, and the way back. */
+.screen-boundary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-12);
+  max-width: 520px;
+  margin: var(--space-48) auto;
+  padding: var(--space-24);
+}
+
+.screen-boundary h2 {
+  margin: 0;
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+  color: var(--text);
+}
+
+.screen-boundary p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.screen-boundary-detail {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
 }

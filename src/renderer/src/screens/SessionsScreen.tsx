@@ -31,7 +31,8 @@ import {
   killSessionWindow,
   stopBackgroundAgent,
   dismissBackgroundAgent,
-  killSessionProcess
+  killSessionProcess,
+  getAppSettings
 } from '../api'
 import { useStoredState } from '../state/useStoredState'
 import { resolveSessionProjectId } from '../state/useSessions'
@@ -114,6 +115,128 @@ function activityLabel(session: LiveSession): string | null {
   if (session.activityAt !== null) return `active ${formatElapsed(session.activityAt)} ago`
   if (session.record?.createdAt) return `started ${formatElapsed(session.record.createdAt)} ago`
   return null
+}
+
+// The statuses that mean the session is waiting on you: "needs an answer"
+// (blocked on a question) and "your turn" (finished, at its prompt).
+const WAITING_STATUSES: SessionStatus[] = ['needs_attention', 'ready', 'idle']
+// Past this, the wait turns the attention colour: long enough that it has
+// probably been forgotten, not just not got to yet.
+const LONG_WAIT_MS = 30 * 60 * 1000
+
+/** When it started waiting on you, or null if it isn't waiting or we can't tell. */
+function waitingSince(session: LiveSession): number | null {
+  if (!WAITING_STATUSES.includes(session.status)) return null
+  // activityAt is when it last finished a turn or asked something, which is
+  // the moment it started waiting. Never updatedAt: that is every poll.
+  return session.activityAt ?? session.lastEvent?.at ?? null
+}
+
+function isLongWait(since: number): boolean {
+  return Date.now() - since > LONG_WAIT_MS
+}
+
+// ---- Activity line ---------------------------------------------------------
+// The main process keeps no history, so the renderer samples it: every time
+// a session's activityAt moves, and every so often while it is working.
+// Module-level so the samples outlive this screen being switched away from.
+const ACTIVITY_WINDOW_MS = 60 * 60 * 1000
+const ACTIVITY_BUCKET_MS = 5 * 60 * 1000
+const ACTIVITY_BUCKETS = ACTIVITY_WINDOW_MS / ACTIVITY_BUCKET_MS
+// While working, at most one sample this often, so a fast poll can't inflate a bucket.
+const WORKING_SAMPLE_MS = 15_000
+const activitySamples = new Map<string, number[]>()
+const lastActivityAt = new Map<string, number | null>()
+
+function sampleActivity(sessions: LiveSession[]): void {
+  const now = Date.now()
+  const cutoff = now - ACTIVITY_WINDOW_MS
+  const live = new Set<string>()
+  for (const session of sessions) {
+    live.add(session.key)
+    const list = activitySamples.get(session.key) ?? []
+    const at = session.activityAt
+    if (at !== null && at !== lastActivityAt.get(session.key) && at >= cutoff && at <= now) {
+      list.push(at)
+    }
+    lastActivityAt.set(session.key, at)
+    if (session.status === 'working') {
+      const latest = list.length > 0 ? Math.max(...list) : -Infinity
+      if (now - latest >= WORKING_SAMPLE_MS) list.push(now)
+    }
+    const kept = list.filter((t) => t >= cutoff).sort((a, b) => a - b)
+    if (kept.length > 0) activitySamples.set(session.key, kept)
+    else activitySamples.delete(session.key)
+  }
+  for (const key of [...lastActivityAt.keys()]) {
+    if (!live.has(key)) {
+      activitySamples.delete(key)
+      lastActivityAt.delete(key)
+    }
+  }
+}
+
+const SPARK_W = 48
+const SPARK_H = 14
+const SPARK_PAD = 1.5
+
+/** Samples per five-minute bucket over the last hour, oldest first. */
+function bucketCounts(samples: number[]): number[] {
+  const now = Date.now()
+  const counts = new Array<number>(ACTIVITY_BUCKETS).fill(0)
+  for (const t of samples) {
+    const age = now - t
+    if (age < 0 || age >= ACTIVITY_WINDOW_MS) continue
+    counts[ACTIVITY_BUCKETS - 1 - Math.floor(age / ACTIVITY_BUCKET_MS)]++
+  }
+  return counts
+}
+
+/** Twelve five-minute buckets of the last hour, oldest on the left. */
+function ActivityLine({ sessionKey }: { sessionKey: string }): React.JSX.Element | null {
+  const samples = activitySamples.get(sessionKey)
+  if (!samples || samples.length === 0) return null
+  const counts = bucketCounts(samples)
+  if (counts.every((c) => c === 0)) return null
+  const max = Math.max(...counts)
+  const x = (i: number): number =>
+    SPARK_PAD + (i * (SPARK_W - 2 * SPARK_PAD)) / (ACTIVITY_BUCKETS - 1)
+  const y = (c: number): number => SPARK_H - SPARK_PAD - (c / max) * (SPARK_H - 2 * SPARK_PAD)
+  const points = counts.map((c, i) => `${x(i)},${y(c)}`).join(' ')
+  const last = ACTIVITY_BUCKETS - 1
+  const latestActive = counts[last] > 0
+  const label = 'Activity in the last hour'
+  return (
+    <Tooltip label={label}>
+      <svg
+        className="sessions-row-activity"
+        width={SPARK_W}
+        height={SPARK_H}
+        viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
+        role="img"
+        aria-label={label}
+      >
+        <polyline className="sessions-row-activity-line" points={points} />
+        {latestActive && (
+          <>
+            <line
+              className="sessions-row-activity-latest"
+              x1={x(last - 1)}
+              y1={y(counts[last - 1])}
+              x2={x(last)}
+              y2={y(counts[last])}
+            />
+            <circle
+              className="sessions-row-activity-dot"
+              cx={x(last)}
+              cy={y(counts[last])}
+              r={1.5}
+            />
+          </>
+        )}
+      </svg>
+    </Tooltip>
+  )
 }
 
 /** For the last-active sort: activity if known, else when it was created. */
@@ -421,6 +544,10 @@ function SessionListRow({
     : (session.record?.branch ?? session.agentName ?? null)
   // Never `updatedAt`: it is stamped with `now` on every poll.
   const activity = activityLabel(session)
+  // Waiting on you: say for how long, in the badge's own words, in place of
+  // "active 12m ago". The same number, but the one that matters here.
+  const since = waitingSince(session)
+  const longWait = since !== null && isLongWait(since)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [deleteConfirmType, setDeleteConfirmType] = useState<
     'window' | 'background' | 'process' | null
@@ -677,12 +804,27 @@ function SessionListRow({
             </div>
           )}
 
-          {activity && (
-            <div className="sessions-row-time-cell">
+          {since !== null ? (
+            <div
+              className={
+                longWait
+                  ? 'sessions-row-time-cell sessions-row-waiting sessions-row-waiting--long'
+                  : 'sessions-row-time-cell sessions-row-waiting'
+              }
+            >
               <Icon name="Clock" size={14} />
-              <span className="sessions-row-elapsed">{activity}</span>
+              <span className="sessions-row-elapsed">waiting {formatElapsed(since)}</span>
             </div>
+          ) : (
+            activity && (
+              <div className="sessions-row-time-cell">
+                <Icon name="Clock" size={14} />
+                <span className="sessions-row-elapsed">{activity}</span>
+              </div>
+            )
           )}
+
+          <ActivityLine sessionKey={session.key} />
 
           {activeSubagentCount > 0 && (
             <button
@@ -1207,6 +1349,16 @@ export default function SessionsScreen({
   // Plan 5 — List is the default: it's the one that uses a wide window
   // properly. Grid stays available (untouched card grid) via the toggle.
   const [view, setView] = useState<'grid' | 'list'>('list')
+  // Opens the way Settings → Views says; the switch changes it from there.
+  useEffect(() => {
+    let live = true
+    void getAppSettings().then((settings) => {
+      if (live && settings.sessionsView) setView(settings.sessionsView)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
 
   // The project filter lives in App (the ProjectsScreen sidebar owns
   // selection) — this screen only reads it, so there is exactly one place
@@ -1221,11 +1373,18 @@ export default function SessionsScreen({
   // "active 5m ago" is worked out at render. The list used to redraw every
   // 2s whether anything changed or not, which kept these fresh by accident;
   // now it only redraws on real changes, so a slow clock keeps them honest.
+  // Activity is sampled before the rows render, so a row's activity line is
+  // never one update behind, and again on the clock: a working session whose
+  // list entry hasn't changed is still working.
+  useMemo(() => sampleActivity(sessions), [sessions])
   const [, setClock] = useState(0)
   useEffect(() => {
-    const id = setInterval(() => setClock((n) => n + 1), 30_000)
+    const id = setInterval(() => {
+      sampleActivity(sessions)
+      setClock((n) => n + 1)
+    }, 30_000)
     return () => clearInterval(id)
-  }, [])
+  }, [sessions])
 
   const [sortMode, setSortMode] = useStoredState<SortMode>('sessions-sort', 'attention')
   // Owned by App, so the bell can switch Unread on from anywhere.

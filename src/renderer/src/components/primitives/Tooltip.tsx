@@ -1,11 +1,9 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import './primitives.css'
 
 const OPEN_DELAY_MS = 400
 const GAP = 8
-/** Keep in step with `--cr-tooltip-max-width` behaviour in primitives.css. */
-const MAX_WIDTH = 280
 const EDGE_MARGIN = 8
 
 export interface TooltipProps {
@@ -32,6 +30,7 @@ export default function Tooltip({
 }: TooltipProps): React.JSX.Element {
   const id = useId()
   const wrapRef = useRef<HTMLSpanElement>(null)
+  const tipRef = useRef<HTMLSpanElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [pos, setPos] = useState<{ top: number; left: number; placed: 'top' | 'bottom' } | null>(
     null
@@ -52,18 +51,9 @@ export default function Tooltip({
     const wantsTop = side === 'top'
     const fitsTop = r.top > 40
     const placed: 'top' | 'bottom' = wantsTop ? (fitsTop ? 'top' : 'bottom') : 'bottom'
-    // The tooltip is centred on its trigger, so a control near either edge of
-    // the window would otherwise have half its tooltip off-screen. Clamping the
-    // centre keeps it fully visible; it only takes effect within half a
-    // tooltip's width of an edge, where being slightly off-centre is much
-    // better than being cut off.
-    const half = MAX_WIDTH / 2
-    const centre = r.left + r.width / 2
-    const minLeft = half + EDGE_MARGIN
-    const maxLeft = window.innerWidth - half - EDGE_MARGIN
     setPos({
       top: placed === 'top' ? r.top - GAP : r.bottom + GAP,
-      left: maxLeft > minLeft ? Math.min(Math.max(centre, minLeft), maxLeft) : centre,
+      left: r.left + r.width / 2,
       placed
     })
   }, [side])
@@ -83,6 +73,20 @@ export default function Tooltip({
   }, [clear])
 
   useEffect(() => clear, [clear])
+
+  // The tooltip is centred on its trigger, so a control near either edge of
+  // the window would otherwise have part of its tooltip off-screen. Clamp the
+  // centre using the tooltip's real width, measured before paint. Clamping by
+  // the 280px maximum instead pulled every short label near the right edge to
+  // the same spot (under the + button), far from its own control.
+  useLayoutEffect(() => {
+    const tip = tipRef.current
+    if (!pos || !tip) return
+    const half = tip.offsetWidth / 2
+    const minLeft = half + EDGE_MARGIN
+    const maxLeft = window.innerWidth - half - EDGE_MARGIN
+    if (maxLeft > minLeft) tip.style.left = `${Math.min(Math.max(pos.left, minLeft), maxLeft)}px`
+  }, [pos])
 
   useEffect(() => {
     if (!pos) return
@@ -111,6 +115,7 @@ export default function Tooltip({
       {pos &&
         createPortal(
           <span
+            ref={tipRef}
             id={id}
             role="tooltip"
             className={`cr-tooltip cr-tooltip--${pos.placed}`}

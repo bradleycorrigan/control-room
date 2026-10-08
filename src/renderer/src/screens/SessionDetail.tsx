@@ -654,7 +654,7 @@ export default function SessionDetail({
               <button
                 type="button"
                 className="session-detail-ticket"
-                title={`Open ${ticketKey} on Backlog`}
+                title={`Open ${ticketKey} in Tickets`}
                 onClick={() => onOpenTicket(ticketKey)}
               >
                 {ticketKey}

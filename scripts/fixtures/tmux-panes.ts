@@ -47,6 +47,18 @@ for (const name of rest) {
   tmux(['new-window', '-t', `=${SESSION}`, '-n', name, '-c', join(worktreeRoot, name)])
 }
 
+// Sample coloured output in the first window, so a terminal screenshot shows
+// how the theme treats text. The 24-bit pale pink stands in for Claude
+// Code's own fixed colours (it prints file paths in one), which no ANSI
+// palette can remap; on a light theme it was near-invisible.
+tmux([
+  'send-keys',
+  '-t',
+  `=${SESSION}:${first}`,
+  "clear; printf '\\033[38;2;255;175;215msrc/engine/status.js\\033[0m  \\033[35mmagenta\\033[0m  \\033[90mdim grey\\033[0m  plain text\\n'",
+  'Enter'
+])
+
 // A plain shell in each window, cwd'd into the matching fixture worktree —
 // enough to exercise send-keys, resize and PTY attach/detach without
 // needing a live agent, and enough for findPaneForSession to join it to the

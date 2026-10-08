@@ -746,31 +746,6 @@
   flex: 1;
 }
 
-.backlog-drawer-fields {
-  display: grid;
-  grid-template-columns: 96px 1fr;
-  align-items: center;
-  gap: var(--space-12) var(--space-16);
-  margin: 0;
-}
-
-.backlog-drawer-fields dt {
-  font-size: var(--text-caption-size);
-  color: var(--text-muted);
-}
-
-.backlog-drawer-fields dd {
-  margin: 0;
-  font-size: var(--text-label-size);
-  color: var(--text);
-}
-
-.backlog-drawer-inline {
-  display: flex;
-  align-items: center;
-  gap: var(--space-12);
-}
-
 .backlog-select {
   width: 100%;
   height: 32px;
@@ -794,14 +769,26 @@
 .backlog-drawer-section-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  /* Actions sit right after the heading, on the same left edge as the
+     section's content, never pushed to the far side of the panel. */
+  gap: var(--space-12);
+}
+
+.backlog-drawer-section-head .cr-button--ghost {
+  gap: var(--space-4);
+  color: var(--text-muted);
+}
+
+.backlog-drawer-section-head .cr-button--ghost:hover {
+  color: var(--text);
 }
 
 .backlog-drawer-section-head h3 {
   margin: 0;
-  font-size: var(--text-caption-size);
-  font-weight: var(--text-title-weight);
-  color: var(--text-muted);
+  font-size: var(--text-heading-size);
+  line-height: var(--text-heading-line);
+  font-weight: var(--text-heading-weight);
+  color: var(--text);
 }
 
 .backlog-drawer-text {
@@ -916,6 +903,20 @@
   display: none;
 }
 
+/* With the pills hidden nothing in the meta can shrink, so the meta mustn't
+   either: shrinking it let the sub-task count and session chip spill left,
+   over the ticket's title. The title gives way instead, with an ellipsis. */
+.backlog--peek .backlog-row-meta {
+  flex-shrink: 0;
+}
+
+/* And the meta keeps to its marks: the session's dot (its word is in the
+   tooltip and the panel), the sub-task count without the word. */
+.backlog--peek .backlog-row-meta .backlog-session-chip-word,
+.backlog--peek .backlog-row-meta .backlog-subtask-count-word {
+  display: none;
+}
+
 .backlog-drawer-nav {
   display: flex;
   align-items: center;
@@ -963,51 +964,12 @@
   font-size: var(--text-label-size);
 }
 
-.backlog-drawer-sessions {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-}
-
-.backlog-drawer-session {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  min-width: 0;
-}
-
-.backlog-drawer-session .backlog-session-chip {
-  height: 28px;
-  max-width: 100%;
-  overflow: hidden;
-}
-
 .backlog-session-chip-title {
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .backlog-session-chip-status {
-  color: var(--text-muted);
-}
-
-.backlog-drawer-session-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-}
-
-.backlog-select--inline {
-  width: auto;
-  flex: 1;
-  max-width: 280px;
-}
-
-.backlog-drawer-dates {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-4) var(--space-16);
-  font-size: var(--text-caption-size);
   color: var(--text-muted);
 }
 
@@ -1127,6 +1089,12 @@
 }
 
 .backlog-wiki .backlog-link {
+  /* A link is a button (it opens outside the app), but in running text it
+     has to read as text: inline, left-aligned, breaking anywhere a long URL
+     needs to, not a centred block of its own. */
+  display: inline;
+  text-align: left;
+  overflow-wrap: anywhere;
   text-decoration: none;
 }
 
@@ -1475,26 +1443,6 @@
 
 .backlog-pill--removable button:hover {
   background: var(--surface-raised);
-  color: var(--text);
-}
-
-/* One quiet line, like the rest of the panel: the PR, then what to do about it. */
-.backlog-nudge {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-4) var(--space-12);
-  color: var(--text-muted);
-  font-size: var(--text-label-size);
-}
-
-.backlog-nudge .backlog-link {
-  white-space: nowrap;
-  text-decoration: none;
-}
-
-.backlog-nudge > .backlog-link:not(.backlog-link--quiet) {
-  margin-left: calc(var(--space-8) * -1 + var(--space-4));
   color: var(--text);
 }
 
@@ -2044,46 +1992,6 @@
   white-space: nowrap;
 }
 
-/* The ticket's pull requests, from Jira. */
-.backlog-ticket-prs {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.backlog-ticket-pr {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  min-width: 0;
-  padding: var(--space-8) var(--space-12);
-  border: none;
-  border-radius: var(--radius-md);
-  background: var(--surface);
-  color: var(--text);
-  font-family: var(--font-ui);
-  font-size: var(--text-label-size);
-  text-align: left;
-  cursor: pointer;
-}
-
-.backlog-ticket-pr:hover {
-  background: var(--surface-raised);
-}
-
-.backlog-ticket-pr-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.backlog-ticket-pr-state {
-  color: var(--text-muted);
-  font-size: var(--text-caption-size);
-}
-
 .backlog-pr--closed {
   color: var(--text-muted);
 }
@@ -2119,10 +2027,9 @@
 .backlog-subgroup-title {
   padding: var(--space-4) var(--space-12) var(--space-4) 40px;
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--border) 55%, transparent);
-  font-size: var(--text-meta-size);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
   font-weight: var(--text-label-weight);
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
   color: var(--text-muted);
 }
 
@@ -2734,4 +2641,622 @@
 .backlog-view-tab-action {
   margin-left: var(--space-8);
   font-size: var(--text-meta-size);
+}
+
+/* ---- Ticket panel: fields and work ----
+   Ruled like a printed form: hairlines between cells, a small label over
+   each value, two cells to a row. The controls inside go flat so the grid,
+   not a stack of boxed inputs, gives the panel its shape. */
+.backlog-props {
+  /* The panel is a scrolling flex column: without this, overflow: hidden
+     lets the box shrink to nothing. */
+  flex: none;
+  /* Six tracks, so a cell can take a third, a half or the whole row. The
+     rules are the 1px gaps showing the border colour through, which keeps
+     every line straight whatever widths the cells mix. */
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.backlog-prop {
+  position: relative;
+  grid-column: span 3;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-8) var(--space-12) var(--space-12);
+  background: var(--bg);
+}
+
+.backlog-prop--third {
+  grid-column: span 2;
+}
+
+.backlog-prop--wide {
+  grid-column: 1 / -1;
+}
+
+.backlog-prop:hover {
+  background: color-mix(in srgb, var(--surface) 70%, var(--bg));
+}
+
+.backlog-prop-label {
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.backlog-prop-value {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  min-height: 28px;
+  font-size: var(--text-label-size);
+  color: var(--text);
+}
+
+.backlog-prop-value > svg,
+.backlog-prop-value > .backlog-epic-mark,
+.backlog-prop-value > .backlog-drawer-field-blank {
+  flex: none;
+}
+
+.backlog-prop-value > .backlog-epic-mark {
+  margin: 0 3.5px;
+}
+
+.backlog-prop-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backlog-prop-action {
+  /* Over the cell's corner, not beside the value: taking room there cut
+     long names short even while the link was invisible. */
+  position: absolute;
+  top: var(--space-8);
+  right: var(--space-12);
+  white-space: nowrap;
+  text-decoration: none;
+  font-size: var(--text-caption-size);
+  opacity: 0;
+}
+
+.backlog-prop:hover .backlog-prop-action,
+.backlog-prop-action:focus-visible {
+  opacity: 1;
+}
+
+/* A select that reads as its value: no box until you point at it. */
+.backlog-prop .backlog-select,
+.backlog-select--flat {
+  height: 28px;
+  min-width: 0;
+  padding-left: 0;
+  border-color: transparent;
+  background-color: transparent;
+  text-overflow: ellipsis;
+}
+
+.backlog-prop .backlog-select {
+  flex: 1;
+}
+
+/* The chevron only when you point at it: a column of them read as a form. */
+.backlog-prop .backlog-select:not(:hover):not(:focus-visible),
+.backlog-select--flat:not(:hover):not(:focus-visible) {
+  background-image: none;
+}
+
+.backlog-prop .backlog-select:hover,
+.backlog-prop .backlog-select:focus-visible,
+.backlog-select--flat:hover,
+.backlog-select--flat:focus-visible {
+  border-color: transparent;
+  background-color: var(--surface-raised);
+}
+
+.backlog-prop .backlog-select:hover {
+  padding-left: var(--space-8);
+  margin-left: calc(var(--space-8) * -1);
+}
+
+.backlog-drawer-byline {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-16);
+  margin: calc(var(--space-8) * -1) 0 0;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.backlog-drawer-byline .backlog-person {
+  gap: var(--space-8);
+}
+
+/* Work: one box, a row per session and pull request, actions at the foot. */
+.backlog-work {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.backlog-work-row,
+.backlog-ticket-pr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--space-12);
+  min-width: 0;
+  padding: var(--space-4) var(--space-8) var(--space-4) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.backlog-work-row:hover,
+.backlog-ticket-pr:hover {
+  background: var(--surface);
+}
+
+.backlog-work-open,
+.backlog-ticket-pr-open {
+  display: flex;
+  flex: 1 1 220px;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 var(--space-12);
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.backlog-work-title,
+.backlog-ticket-pr-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backlog-work-state,
+.backlog-ticket-pr-state {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+.backlog-ticket-pr-number {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.backlog-ticket-pr-actions {
+  display: flex;
+  gap: var(--space-12);
+  padding: 0 0 var(--space-4) calc(var(--space-12) + 14px + var(--space-8));
+  font-size: var(--text-label-size);
+}
+
+.backlog-ticket-pr-actions .backlog-link {
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.backlog-ticket-prs {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.backlog-ticket-prs > .backlog-note {
+  padding: 0 var(--space-12) var(--space-8);
+}
+
+/* The last row closes the box; no rule under it. */
+.backlog-ticket-prs > .backlog-ticket-pr:last-child {
+  border-bottom: none;
+}
+
+.backlog-ticket-pr-state {
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  line-height: 20px;
+}
+
+.backlog-ticket-pr-go {
+  flex: none;
+  color: var(--text-muted);
+  opacity: 0;
+}
+
+.backlog-ticket-pr-open:hover .backlog-ticket-pr-go,
+.backlog-ticket-pr-open:focus-visible .backlog-ticket-pr-go {
+  opacity: 1;
+}
+
+.backlog-work-hover {
+  opacity: 0;
+}
+
+.backlog-work-row:hover .backlog-work-hover,
+.backlog-work-hover:focus-visible {
+  opacity: 1;
+}
+
+/* Sub-task, Blocked by, Blocking while they're empty: one row of adds. */
+.backlog-drawer-adds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-left: calc(var(--space-8) * -1);
+}
+
+.backlog-drawer-adds .cr-button {
+  gap: var(--space-4);
+  color: var(--text-muted);
+}
+
+.backlog-drawer-adds .cr-button:hover {
+  color: var(--text);
+}
+
+/* Work and Pull requests: a section heading, its actions beside it, and a
+   box only when there's something to list. */
+.backlog-drawer-group {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.backlog-drawer-section-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.backlog-drawer-section-actions .backlog-select--flat {
+  width: auto;
+  max-width: 200px;
+  padding-left: var(--space-8);
+  color: var(--text-muted);
+}
+
+.backlog-work > .backlog-work-row:last-child {
+  border-bottom: none;
+}
+
+/* Work with nothing linked: the action is the section's body, under its
+   heading and on its left edge. */
+.backlog-work-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.backlog-work-empty .backlog-select--flat {
+  width: auto;
+  max-width: 220px;
+  padding-left: var(--space-8);
+  color: var(--text-muted);
+}
+
+/* @-mentions: the people list opens under the comment box as you type. */
+.backlog-comment-box {
+  position: relative;
+}
+
+.backlog-mention-list {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  left: 0;
+  z-index: var(--layer-popover);
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-popover);
+}
+
+.backlog-mention-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: 32px;
+  padding: 0 var(--space-8);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  text-align: left;
+  cursor: pointer;
+}
+
+.backlog-mention-option--active,
+.backlog-mention-option:hover {
+  background: var(--surface);
+}
+
+/* Internal notes: Jira's own tell is a warm tint and a label; the same
+   here, from the theme's waiting colour so it reads in every theme. */
+.backlog-comment--internal {
+  background: color-mix(in srgb, var(--status-attention) 10%, var(--surface));
+}
+
+.backlog-comment-tag {
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--status-attention) 22%, transparent);
+  color: var(--text);
+  font-size: var(--text-caption-size);
+  line-height: 18px;
+  font-weight: var(--text-label-weight);
+}
+
+/* ---- Where the ticket sits: epic › parent › key ---- */
+.backlog-drawer-crumbs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.backlog-drawer-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+}
+
+.backlog-drawer-crumb-text {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backlog-drawer-crumb::after {
+  content: "›";
+  margin-left: var(--space-4);
+  color: var(--text-faint);
+}
+
+.backlog-drawer-crumb--link {
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  cursor: pointer;
+}
+
+.backlog-drawer-crumb--link:hover {
+  color: var(--text);
+}
+
+/* The byline sits under the title now, as part of the ticket's heading. */
+.backlog-drawer-byline {
+  margin: calc(var(--space-8) * -1) 0 0;
+  align-items: center;
+}
+
+.backlog-drawer-byline .cr-pill {
+  height: 22px;
+  margin-right: var(--space-4);
+  font-size: var(--text-caption-size);
+}
+
+/* ---- Work: a row per session, with its branch and PR on one quiet line ---- */
+.backlog-work-item + .backlog-work-item,
+.backlog-work > .backlog-ticket-pr {
+  border-top: 1px solid var(--border);
+}
+
+.backlog-work .backlog-work-row {
+  border-bottom: none;
+}
+
+.backlog-work-note {
+  padding: var(--space-8) var(--space-12);
+}
+
+/* One chip for state, sessions and pull requests alike. */
+.backlog-state-chip {
+  flex: none;
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.backlog-state-chip--open {
+  color: var(--status-done);
+}
+
+.backlog-state-chip--merged {
+  color: var(--accent);
+}
+
+/* Filter → Assignee: "Only" picks just that person, shown on hover. */
+.backlog-filter-only {
+  margin-left: auto;
+  margin-right: var(--space-8);
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  opacity: 0;
+  cursor: pointer;
+}
+
+.backlog-filter-only:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.backlog-menu-item:hover .backlog-filter-only,
+.backlog-menu-item:focus-visible .backlog-filter-only {
+  opacity: 1;
+}
+
+/* A ticket that changed since the last load: a brief glow that fades. */
+@keyframes backlog-changed {
+  from {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.backlog-row--changed {
+  animation: backlog-changed 2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backlog-row--changed {
+    animation: none;
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+}
+
+/* What you hold while dragging a ticket. */
+.backlog-drag-ghost {
+  position: fixed;
+  top: -1000px;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  max-width: 320px;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.backlog-drag-ghost-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+/* The cycle's last two days. */
+.backlog-cycle-days--soon {
+  color: var(--status-attention);
+}
+
+/* Move to: the next statuses in the workflow, one click each. */
+.backlog-next-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  margin-top: calc(var(--space-4) * -1);
+}
+
+.backlog-next-status-label {
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.backlog-next-status-option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 26px;
+  padding: 0 var(--space-12);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  cursor: pointer;
+}
+
+.backlog-next-status-option:hover {
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+
+/* How far a branch got, beside its name. */
+.backlog-branch-progress {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  white-space: nowrap;
+}
+
+.backlog-branch-progress--waiting {
+  color: var(--status-attention);
+}
+
+/* Long descriptions fold to about eight lines. */
+.backlog-drawer-text--folded {
+  max-height: calc(var(--text-body-line) * 8);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent);
+  mask-image: linear-gradient(to bottom, black 70%, transparent);
+}
+
+.backlog-fold-toggle {
+  align-self: flex-start;
+  text-decoration: none;
+  font-size: var(--text-caption-size);
+}
+
+/* Hover tools on a Work row: always laid out, only shown while you point,
+   so the row never changes width under the cursor. */
+.backlog-work-tools {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  min-width: 28px;
+  visibility: hidden;
+}
+
+.backlog-work-row:hover .backlog-work-tools,
+.backlog-work-tools:focus-within {
+  visibility: visible;
+}
+
+/* A drop target that is a group's header row: no focus ring left behind. */
+.backlog-group-title:focus:not(:focus-visible) {
+  outline: none;
 }

@@ -64,6 +64,18 @@ for (const theme of themes) {
 
 let failures = 0
 
+// Terminal text on a light theme can arrive in colours no palette controls
+// (Claude Code's own 24-bit ones), so light themes must keep xterm's
+// contrast floor at the body-text bar.
+for (const theme of themes) {
+  if (!theme.isDark && theme.termMinContrast < 4.5) {
+    failures++
+    console.log(
+      `FAIL  ${theme.name.padEnd(18)} terminal contrast floor ${theme.termMinContrast} (need >= 4.5)`
+    )
+  }
+}
+
 for (const check of checks) {
   const ratio = contrastRatio(check.fg, check.bg)
   const pass = ratio >= check.minRatio

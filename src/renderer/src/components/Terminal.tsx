@@ -126,6 +126,12 @@ function readXtermTheme(el: HTMLElement): ITheme {
   }
 }
 
+/** The theme's contrast floor for terminal text (see themes.ts). 1 = off. */
+function readMinContrast(el: HTMLElement): number {
+  const n = Number(getComputedStyle(el).getPropertyValue('--term-min-contrast').trim())
+  return Number.isFinite(n) && n >= 1 ? n : 1
+}
+
 export interface TerminalHandle {
   scrollToBottom: () => void
   focus: () => void
@@ -284,6 +290,7 @@ const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(
       scrollback: 5000,
       allowProposedApi: true,
       cursorBlink: true,
+      minimumContrastRatio: readMinContrast(container),
       theme: readXtermTheme(container)
       // esc-esc (2.5) releases focus back to the app; a single Escape still
       // reaches the agent normally, so this only swallows the *second* one.
@@ -393,7 +400,9 @@ const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(
     fitRef.current = fit
 
     const themeObserver = new MutationObserver(() => {
-      if (!disposed) term.options.theme = readXtermTheme(container)
+      if (disposed) return
+      term.options.theme = readXtermTheme(container)
+      term.options.minimumContrastRatio = readMinContrast(container)
     })
     themeObserver.observe(document.documentElement, {
       attributes: true,
@@ -415,6 +424,10 @@ const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(
     }
     const resizeObserver = new ResizeObserver(() => {
       if (disposed || !terminalLiveRef.current) return
+      // A box squeezed to nothing for a frame is a layout hiccup, not a size
+      // to adopt. Fitting it shrank the terminal to one row, and growing back
+      // brought blank rows: everything but the cursor line was gone.
+      if (container.clientWidth < 2 || container.clientHeight < 2) return
       fit.fit()
       if (resizeTimer) clearTimeout(resizeTimer)
       resizeTimer = setTimeout(sendResize, RESIZE_DEBOUNCE_MS)

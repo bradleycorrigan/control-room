@@ -55,6 +55,8 @@
 .terminal-xterm {
   position: absolute;
   inset: 0;
+  /* Per theme: light themes use the heavier system smoothing (themes.ts). */
+  -webkit-font-smoothing: var(--term-font-smoothing, antialiased);
 }
 
 /* A drop that couldn't be used, briefly, bottom-centre over the terminal. */

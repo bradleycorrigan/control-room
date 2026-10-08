@@ -189,8 +189,14 @@ export function writePty(paneId: string, data: string): boolean {
 export function resizePty(paneId: string, cols: number, rows: number): boolean {
   const entry = ptyByPane.get(paneId)
   if (!entry) return false
+  const c = Math.max(1, cols)
+  const r = Math.max(1, rows)
+  // Same size: nothing to do. Layout changes that leave the terminal's size
+  // alone still fire the renderer's ResizeObserver, and passing each one on
+  // made tmux clear and repaint the whole client for nothing.
+  if (entry.proc.cols === c && entry.proc.rows === r) return true
   try {
-    entry.proc.resize(Math.max(1, cols), Math.max(1, rows))
+    entry.proc.resize(c, r)
     return true
   } catch {
     return false

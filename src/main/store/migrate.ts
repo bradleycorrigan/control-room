@@ -43,6 +43,8 @@ export function migrate(raw: unknown): StateFile {
       terminalGpu: false,
       theme: 'tokyo-night',
       themeFollowsSystem: false,
+      sessionsView: 'list' as const,
+      ticketsView: 'list' as const,
       ...(obj.settings ?? {})
     }
   }

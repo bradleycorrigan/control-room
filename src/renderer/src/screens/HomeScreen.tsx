@@ -29,7 +29,11 @@ import {
   listCheckoutBranches,
   type CheckoutBranch,
   resolveBranch,
-  getDefaultBranch
+  getDefaultBranch,
+  getJiraStatus,
+  getSessionTicketLinks,
+  loadJiraBoard,
+  type JiraBoardData
 } from '../api'
 import { useProjects } from '../state/useProjects'
 import SessionCard from '../components/SessionCard'
@@ -39,7 +43,7 @@ import { useStoredState } from '../state/useStoredState'
 import { Picker } from './backlog/Picker'
 import './home.css'
 import HomeTickets from './HomeTickets'
-import type { ComposerSeed } from './backlog/ticketSessions'
+import { type ComposerSeed } from './backlog/ticketSessions'
 
 type Model = 'opus' | 'sonnet' | 'haiku'
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -90,6 +94,26 @@ const MAX_ATTACHMENTS = 10
 // unreadable and unedittable; a chip saying how much you pasted is neither.
 const PASTE_AS_FILE_LINES = 20
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+/**
+ * When the cycle ends, as you'd say it: today, tomorrow, the weekday within
+ * the next six days, else the date. Null once it has passed or when the date
+ * won't parse.
+ */
+function cycleEndWords(endDate: string, now = new Date()): string | null {
+  const end = new Date(endDate)
+  if (Number.isNaN(end.getTime())) return null
+  const midnight = (d: Date): number =>
+    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const days = Math.round((midnight(end) - midnight(now)) / 86_400_000)
+  if (days < 0) return null
+  if (days === 0) return 'today'
+  if (days === 1) return 'tomorrow'
+  if (days <= 6) return WEEKDAYS[end.getDay()]
+  return end.toLocaleDateString(undefined, { day: 'numeric', month: 'long' })
+}
+
 export interface HomeScreenProps {
   // Optional — the app shell wires these to navigation once a session
   // exists. Home works without them (the new session still lands under its
@@ -137,6 +161,8 @@ export interface HomeScreenProps {
   /** "Your tickets": start a session for one, or look at it first. */
   onStartTicketSession?: (seed: ComposerSeed) => void
   onOpenTicket?: (key: string) => void
+  /** Opens the Tickets screen, for the summary's review and cycle clauses. */
+  onViewTickets?: () => void
   pushToast?: (message: string) => void
 }
 
@@ -164,7 +190,8 @@ export default function HomeScreen({
   onSessionsChanged,
   pushToast,
   onStartTicketSession,
-  onOpenTicket
+  onOpenTicket,
+  onViewTickets
 }: HomeScreenProps): React.JSX.Element {
   const { projects } = useProjects()
   const [prompt, setPrompt] = useState(initialPrompt)
@@ -340,6 +367,60 @@ export default function HomeScreen({
   }
   const toggleFilter = (next: 'unread' | 'your-turn'): void =>
     setHomeFilter(homeFilter === next ? 'all' : next)
+
+  // The Jira board, for "Your tickets", the summary line and the composer's
+  // suggestions. Nothing loads until Jira is connected, and only on the page.
+  const [board, setBoard] = useState<JiraBoardData | null>(null)
+  const [ticketLinks, setTicketLinks] = useState<Record<string, string>>({})
+  useEffect(() => {
+    if (variant !== 'page') return
+    let cancelled = false
+    void getJiraStatus().then(async (status) => {
+      if (cancelled || !status.configured) return
+      const [loaded, linked] = await Promise.all([loadJiraBoard(), getSessionTicketLinks()])
+      if (cancelled) return
+      setTicketLinks(linked)
+      if (loaded.ok) setBoard(loaded.value)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [variant])
+  const showsTickets = variant === 'page' && Boolean(onStartTicketSession && onOpenTicket)
+
+  // The day in one line: what's waiting on you, and when the
+  // cycle ends. A clause with nothing to say is left out.
+  const needYou = resumable.filter((s) => wantsYou(s.status)).length
+  const activeSprint = board?.sprints.find((s) => s.state === 'active')
+  const cycleEnds = activeSprint?.endDate ? cycleEndWords(activeSprint.endDate) : null
+  const showTickets = (): void => {
+    if (onViewTickets) onViewTickets()
+    else
+      document
+        .querySelector('.home-tickets')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  const showYourTurn = (): void => {
+    setHomeFilter('your-turn')
+    document
+      .querySelector('.home-recent:not(.home-tickets)')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  const summary: { key: string; text: string; onClick?: () => void }[] = []
+  if (needYou > 0) {
+    summary.push({
+      key: 'sessions',
+      text: `${needYou} ${needYou === 1 ? 'session needs' : 'sessions need'} you.`,
+      onClick: showYourTurn
+    })
+  }
+  if (cycleEnds) {
+    summary.push({
+      key: 'cycle',
+      text: `Cycle ends ${cycleEnds}.`,
+      onClick: onViewTickets || showsTickets ? showTickets : undefined
+    })
+  }
 
   const [sessionActionNode, sessionActions] = useSessionActions({
     pushToast,
@@ -720,6 +801,27 @@ export default function HomeScreen({
   return (
     <div className={`home-screen home-screen--${variant}`}>
       <div className="home-composer" onKeyDown={handleComposerKeyDown}>
+        {variant === 'page' && summary.length > 0 && (
+          <p className="home-summary" data-home-summary>
+            {summary.map((clause) =>
+              clause.onClick ? (
+                <button
+                  key={clause.key}
+                  type="button"
+                  className="home-summary-clause"
+                  data-summary={clause.key}
+                  onClick={clause.onClick}
+                >
+                  {clause.text}
+                </button>
+              ) : (
+                <span key={clause.key} className="home-summary-clause" data-summary={clause.key}>
+                  {clause.text}
+                </span>
+              )
+            )}
+          </p>
+        )}
         <div
           className={`home-composer-card${dragOver ? ' home-composer-card--drag-over' : ''}`}
           onDragOver={handleDragOver}
@@ -1146,8 +1248,10 @@ export default function HomeScreen({
             </div>
           </div>
         )}
-        {variant === 'page' && sessions && onStartTicketSession && onOpenTicket && (
+        {showsTickets && onStartTicketSession && onOpenTicket && (
           <HomeTickets
+            issues={board?.issues ?? null}
+            links={ticketLinks}
             sessions={sessions}
             onOpenSession={(key, background) => onOpenSession?.(key, background)}
             onStartSession={onStartTicketSession}

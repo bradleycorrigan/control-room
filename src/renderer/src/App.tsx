@@ -22,6 +22,7 @@ import {
   installHooks,
   openDataFolder,
   listProjects,
+  linkSessionToTicket,
   listSessions,
   createSession,
   setAppSettings,
@@ -31,6 +32,7 @@ import {
   acknowledgeSession
 } from './api'
 import SessionTabs from './components/SessionTabs'
+import ScreenBoundary from './components/ScreenBoundary'
 import BacklogScreen, { type ComposerSeed } from './screens/BacklogScreen'
 import { useStoredState } from './state/useStoredState'
 import { initShotListener, registerShotScreen, registerShotReset } from './dev/shot'
@@ -370,6 +372,8 @@ function App(): React.JSX.Element {
   const [openTicket, setOpenTicket] = useState<string | null>(null)
   // A ticket opened from a session: its panel, over the session.
   const [peekTicket, setPeekTicket] = useState<string | null>(null)
+  // Test runs only: makes the current screen throw, to check ScreenBoundary.
+  const [crashTest, setCrashTest] = useState(false)
   const clearOpenTicket = useCallback(() => setOpenTicket(null), [])
 
   const goToSessionsList = useCallback(() => {
@@ -872,9 +876,18 @@ function App(): React.JSX.Element {
       setOpenTabs([])
       await runPagesCheck({
         goTo: async (target) => {
+          // A fresh start for each group of checks: whatever an earlier one
+          // left open (a panel, the palette, the composer, a ticket over the
+          // screen, focus in a text box) closes first.
+          setPaletteOpen(false)
+          setShowNewSessionForm(false)
+          setPeekTicket(null)
+          setCrashTest(false)
+          ;(document.activeElement as HTMLElement | null)?.blur()
           setOpenSessionKey(null)
           setGridView(false)
           setView(target)
+          await new Promise((r) => setTimeout(r, 150))
         },
         openFirstSession: async () => {
           const list = sessions.length > 0 ? sessions : await listSessions()
@@ -884,6 +897,10 @@ function App(): React.JSX.Element {
         refreshSessions: async () => {
           refreshSessions()
           await new Promise((r) => setTimeout(r, 400))
+        },
+        crashScreen: async () => {
+          setCrashTest(true)
+          await new Promise((r) => setTimeout(r, 300))
         }
       })
     })
@@ -923,6 +940,32 @@ function App(): React.JSX.Element {
       // sessions list instead of opening a card).
       const list = sessions.length > 0 ? sessions : await listSessions()
       setOpenSessionKey(list[0]?.key ?? null)
+    })
+    // A session with its ticket's panel open over it: the terminal has to
+    // keep drawing what it had. -before is the same session without it.
+    const openTicketSession = async (): Promise<void> => {
+      setView('sessions')
+      setPaletteOpen(false)
+      const list = await listSessions()
+      const first =
+        list.find((s) => s.record?.id === 'fixture-rec-ready') ?? list.find((s) => s.record)
+      if (first?.record) await linkSessionToTicket(first.record.id, 'DSD-101')
+      setOpenSessionKey(first?.key ?? null)
+      await new Promise((r) => setTimeout(r, 2500))
+    }
+    registerShotScreen('session-ticket-before', openTicketSession)
+    registerShotScreen('ship-panel', async () => {
+      await openTicketSession()
+      document.querySelector<HTMLElement>('.session-detail-header [aria-label="Ship"]')?.click()
+      await new Promise((r) => setTimeout(r, 2500))
+    })
+    registerShotScreen('session-ticket-panel', async () => {
+      await openTicketSession()
+      for (let i = 0; i < 50 && !document.querySelector('.session-detail-ticket'); i++) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      document.querySelector<HTMLElement>('.session-detail-ticket')?.click()
+      await new Promise((r) => setTimeout(r, 2500))
     })
     // Resume's positive case. The plain 'session-detail' shot opens list[0],
     // which is never the resumable record, so the control shipped verified only
@@ -1989,7 +2032,6 @@ function App(): React.JSX.Element {
         onInstallHooks={handleInstallHooks}
         onOpenDataFolder={handleOpenDataFolder}
         onNewSession={() => setShowNewSessionForm(true)}
-        onToggleHistory={() => setPaletteOpen(true)}
         onShowUnread={handleShowUnread}
         onToggleSidebar={toggleSidebar}
         sidebarHidden={sidebarHidden}
@@ -2036,162 +2078,173 @@ function App(): React.JSX.Element {
             back to main, so a capture of the wrong screen is visible in the
             run output rather than only in the image. */}
         <div className="main-pane" data-screen={view}>
-          {view === 'home' ? (
-            <HomeScreen
-              onSessionCreated={(record) => {
-                refreshSessions()
-                // `LiveSession.key` comes from sessionIdentityCandidates()
-                // (engine/status.ts), which puts `record:<id>` first whenever a
-                // record exists — and a session we just created always has one.
-                // Building the key any other way here matched nothing, so Start
-                // silently dropped you back on the Sessions list.
-                openSessionByKey(`record:${record.id}`)
-              }}
-              onViewAllProjects={() => setView('projects')}
-              sessions={sessions}
-              onOpenSession={openSessionFrom}
-              onViewAllSessions={() => setView('sessions')}
-              onSessionsChanged={refreshSessions}
-              pushToast={pushToast}
-              onStartTicketSession={(seed) => {
-                setComposerSeed(seed)
-                setShowNewSessionForm(true)
-              }}
-              onOpenTicket={setPeekTicket}
-            />
-          ) : view === 'backlog' ? (
-            <BacklogScreen
-              sidebarHidden={sidebarHidden}
-              sidebarWidth={sidebarWidth}
-              onSidebarResizeStart={startSidebarResize}
-              onSidebarResizeReset={() => setSidebarWidth(SIDEBAR_DEFAULT)}
-              sessions={sessions}
-              pushToast={pushToast}
-              onOpenSession={openSessionByKey}
-              openTicket={openTicket}
-              onTicketOpened={clearOpenTicket}
-              onStartSession={(seed) => {
-                setComposerSeed(seed)
-                setShowNewSessionForm(true)
-              }}
-            />
-          ) : view === 'settings' ? (
-            <SettingsScreen theme={theme} />
-          ) : view === 'gallery' ? (
-            <PrimitivesGallery />
-          ) : view === 'projects' ? (
-            openProjectId && projects.find((p) => p.id === openProjectId) ? (
-              <ProjectDetail
-                project={projects.find((p) => p.id === openProjectId)!}
+          <ScreenBoundary
+            screen={openSessionKey ? 'session' : view}
+            resetKey={`${view}:${openSessionKey ?? ''}`}
+          >
+            {crashTest && <CrashForTest />}
+            {view === 'home' ? (
+              <HomeScreen
+                onViewTickets={() => {
+                  setOpenSessionKey(null)
+                  setGridView(false)
+                  setView('backlog')
+                }}
+                onSessionCreated={(record) => {
+                  refreshSessions()
+                  // `LiveSession.key` comes from sessionIdentityCandidates()
+                  // (engine/status.ts), which puts `record:<id>` first whenever a
+                  // record exists — and a session we just created always has one.
+                  // Building the key any other way here matched nothing, so Start
+                  // silently dropped you back on the Sessions list.
+                  openSessionByKey(`record:${record.id}`)
+                }}
+                onViewAllProjects={() => setView('projects')}
                 sessions={sessions}
-                onBack={() => setOpenProjectId(null)}
-                onSessionsChanged={refreshSessions}
-                onProjectsChanged={refreshProjects}
                 onOpenSession={openSessionFrom}
+                onViewAllSessions={() => setView('sessions')}
+                onSessionsChanged={refreshSessions}
                 pushToast={pushToast}
-                initialTab={shotProjectTab}
-                initialHistoryTab={shotHistoryTab}
+                onStartTicketSession={(seed) => {
+                  setComposerSeed(seed)
+                  setShowNewSessionForm(true)
+                }}
+                onOpenTicket={setPeekTicket}
               />
-            ) : (
-              <ProjectsListScreen
-                projects={projects}
+            ) : view === 'backlog' ? (
+              <BacklogScreen
+                sidebarHidden={sidebarHidden}
+                sidebarWidth={sidebarWidth}
+                onSidebarResizeStart={startSidebarResize}
+                onSidebarResizeReset={() => setSidebarWidth(SIDEBAR_DEFAULT)}
                 sessions={sessions}
-                onProjectsChanged={refreshProjects}
-                onOpenProject={setOpenProjectId}
                 pushToast={pushToast}
+                onOpenSession={openSessionByKey}
+                openTicket={openTicket}
+                onTicketOpened={clearOpenTicket}
+                onStartSession={(seed) => {
+                  setComposerSeed(seed)
+                  setShowNewSessionForm(true)
+                }}
               />
-            )
-          ) : (
-            // Sessions: one strip of tabs, the list pinned first under a house.
-            // The list stays mounted beneath an open session (hidden, not
-            // removed), so its filters, sort and scroll are where you left
-            // them when you come back — switching tabs, not reloading a page.
-            <div className="cr-session-screen">
-              <SessionTabs
-                tabs={tabSessions}
-                activeKey={openSession?.key ?? null}
-                homeUnread={sessions.filter((s) => s.unread).length}
-                onHome={goToSessionsList}
-                onSelect={openSessionByKey}
-                onClose={closeTab}
-                onCloseOthers={closeOtherTabs}
-                onCloseToRight={closeTabsToRight}
-                onReorder={reorderTabs}
-                onChanged={refreshSessions}
-                onReopenClosed={reopenableKey ? reopenClosedTab : undefined}
-                pushToast={pushToast}
-              />
-              <div className="cr-session-body">
-                <div
-                  className={
-                    openSession ? 'cr-sessions-home cr-sessions-home--behind' : 'cr-sessions-home'
-                  }
-                  aria-hidden={openSession ? true : undefined}
-                >
-                  {gridView ? (
-                    // Grid tiles poll their panes; no point while hidden.
-                    !openSession && (
-                      <GridView
+            ) : view === 'settings' ? (
+              <SettingsScreen theme={theme} />
+            ) : view === 'gallery' ? (
+              <PrimitivesGallery />
+            ) : view === 'projects' ? (
+              openProjectId && projects.find((p) => p.id === openProjectId) ? (
+                <ProjectDetail
+                  project={projects.find((p) => p.id === openProjectId)!}
+                  sessions={sessions}
+                  onBack={() => setOpenProjectId(null)}
+                  onSessionsChanged={refreshSessions}
+                  onProjectsChanged={refreshProjects}
+                  onOpenSession={openSessionFrom}
+                  pushToast={pushToast}
+                  initialTab={shotProjectTab}
+                  initialHistoryTab={shotHistoryTab}
+                />
+              ) : (
+                <ProjectsListScreen
+                  projects={projects}
+                  sessions={sessions}
+                  onProjectsChanged={refreshProjects}
+                  onOpenProject={setOpenProjectId}
+                  pushToast={pushToast}
+                />
+              )
+            ) : (
+              // Sessions: one strip of tabs, the list pinned first under a house.
+              // The list stays mounted beneath an open session (hidden, not
+              // removed), so its filters, sort and scroll are where you left
+              // them when you come back — switching tabs, not reloading a page.
+              <div className="cr-session-screen">
+                <SessionTabs
+                  tabs={tabSessions}
+                  activeKey={openSession?.key ?? null}
+                  homeUnread={sessions.filter((s) => s.unread).length}
+                  onHome={goToSessionsList}
+                  onSelect={openSessionByKey}
+                  onClose={closeTab}
+                  onCloseOthers={closeOtherTabs}
+                  onCloseToRight={closeTabsToRight}
+                  onReorder={reorderTabs}
+                  onChanged={refreshSessions}
+                  onReopenClosed={reopenableKey ? reopenClosedTab : undefined}
+                  pushToast={pushToast}
+                />
+                <div className="cr-session-body">
+                  <div
+                    className={
+                      openSession ? 'cr-sessions-home cr-sessions-home--behind' : 'cr-sessions-home'
+                    }
+                    aria-hidden={openSession ? true : undefined}
+                  >
+                    {gridView ? (
+                      // Grid tiles poll their panes; no point while hidden.
+                      !openSession && (
+                        <GridView
+                          sessions={sessions}
+                          projects={projects}
+                          onOpenSession={openSessionFrom}
+                          onExitGrid={() => setGridView(false)}
+                        />
+                      )
+                    ) : (
+                      <SessionsScreen
                         sessions={sessions}
                         projects={projects}
+                        selectedProjectId={selectedProjectId}
+                        pushToast={pushToast}
+                        unreadOnly={unreadOnly}
+                        onUnreadOnlyChange={setUnreadOnly}
+                        statusFilter={statusFilter}
+                        onStatusFilterChange={setStatusFilter}
+                        onAdopted={refreshSessions}
                         onOpenSession={openSessionFrom}
-                        onExitGrid={() => setGridView(false)}
+                        onClearFilter={() => {
+                          setSelectedProjectId(null)
+                        }}
+                        onNewSession={(projectId) => {
+                          setNewSessionProjectId(projectId ?? null)
+                          setShowNewSessionForm(true)
+                        }}
+                        onProjectsChanged={refreshProjects}
+                        onOpenInIde={handleOpenInIde}
+                        onFocusTerminal={handleFocusTerminal}
                       />
-                    )
-                  ) : (
-                    <SessionsScreen
-                      sessions={sessions}
-                      projects={projects}
-                      selectedProjectId={selectedProjectId}
+                    )}
+                  </div>
+                  {openSession && (
+                    <SessionDetail
+                      // A fresh detail per tab, so nothing — a half-typed rename,
+                      // an open menu, the terminal — carries over from the last.
+                      key={openSession.key}
+                      session={openSession}
+                      projectName={
+                        projects.find((p) => p.id === openSession.record?.projectId)?.name ??
+                        projects.find(
+                          (p) =>
+                            openSession.cwd === p.repoPath ||
+                            openSession.cwd.startsWith(`${p.worktreeRoot}/`)
+                        )?.name ??
+                        null
+                      }
+                      // Deleted or ended from inside: its tab goes with it.
+                      onClose={() => closeTab(openSession.key)}
+                      onDeleted={refreshSessions}
+                      onSessionUpdated={refreshSessions}
                       pushToast={pushToast}
-                      unreadOnly={unreadOnly}
-                      onUnreadOnlyChange={setUnreadOnly}
-                      statusFilter={statusFilter}
-                      onStatusFilterChange={setStatusFilter}
-                      onAdopted={refreshSessions}
-                      onOpenSession={openSessionFrom}
-                      onClearFilter={() => {
-                        setSelectedProjectId(null)
-                      }}
-                      onNewSession={(projectId) => {
-                        setNewSessionProjectId(projectId ?? null)
-                        setShowNewSessionForm(true)
-                      }}
-                      onProjectsChanged={refreshProjects}
-                      onOpenInIde={handleOpenInIde}
-                      onFocusTerminal={handleFocusTerminal}
+                      // Opens over the session, so you stay in it; the panel's
+                      // "Open on Backlog" carries on there.
+                      // The pill toggles: open, or closed if it's the one open.
+                      onOpenTicket={(key) => setPeekTicket((cur) => (cur === key ? null : key))}
                     />
                   )}
                 </div>
-                {openSession && (
-                  <SessionDetail
-                    // A fresh detail per tab, so nothing — a half-typed rename,
-                    // an open menu, the terminal — carries over from the last.
-                    key={openSession.key}
-                    session={openSession}
-                    projectName={
-                      projects.find((p) => p.id === openSession.record?.projectId)?.name ??
-                      projects.find(
-                        (p) =>
-                          openSession.cwd === p.repoPath ||
-                          openSession.cwd.startsWith(`${p.worktreeRoot}/`)
-                      )?.name ??
-                      null
-                    }
-                    // Deleted or ended from inside: its tab goes with it.
-                    onClose={() => closeTab(openSession.key)}
-                    onDeleted={refreshSessions}
-                    onSessionUpdated={refreshSessions}
-                    pushToast={pushToast}
-                    // Opens over the session, so you stay in it; the panel's
-                    // "Open on Backlog" carries on there.
-                    // The pill toggles: open, or closed if it's the one open.
-                    onOpenTicket={(key) => setPeekTicket((cur) => (cur === key ? null : key))}
-                  />
-                )}
               </div>
-            </div>
-          )}
+            )}
+          </ScreenBoundary>
         </div>
       </div>
 
@@ -2364,3 +2417,8 @@ function App(): React.JSX.Element {
 }
 
 export default App
+
+/** Throws when rendered: the check's way to crash a screen on purpose. */
+function CrashForTest(): React.JSX.Element {
+  throw new Error('test crash from the pages check')
+}

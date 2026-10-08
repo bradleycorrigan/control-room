@@ -21,6 +21,8 @@ interface Props {
   onRenameChange?: (value: string) => void
   onRenameSubmit?: () => void
   onRenameCancel?: () => void
+  /** Extra lines under the metadata row (the Projects list's activity and tidy-up strip). */
+  footer?: React.ReactNode
 }
 
 /** A project card, per plan 3 section 2.2 — a Raised container with a folder
@@ -43,7 +45,8 @@ export default function ProjectRow({
   renameError = null,
   onRenameChange,
   onRenameSubmit,
-  onRenameCancel
+  onRenameCancel,
+  footer
 }: Props): React.JSX.Element {
   const isGeneral = project.id === 'general'
   const iconName = isGeneral ? 'Terminal' : 'Folder'
@@ -165,6 +168,7 @@ export default function ProjectRow({
               {totalCount} session{totalCount === 1 ? '' : 's'}
             </MetaItem>
           </Meta>
+          {footer}
         </div>
       </div>
     </Card>

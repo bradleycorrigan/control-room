@@ -1,3 +1,4 @@
+import { GitHubGlyph } from '../screens/backlogGlyphs'
 import { useEffect, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
 import {
@@ -34,6 +35,22 @@ interface Props {
 }
 
 type ButtonState = 'idle' | 'busy' | 'done' | 'error'
+
+/**
+ * A step's number, which turns into a tick once that step is done. The key
+ * swap remounts the badge, so the change plays its short entrance once.
+ */
+function StepBadge({ n, done }: { n: number; done: boolean }): React.JSX.Element {
+  return done ? (
+    <span key="done" className="ship-panel-step ship-panel-step--done" role="img" aria-label="Done">
+      <Icon name="Check" size={11} strokeWidth={2.25} />
+    </span>
+  ) : (
+    <span key="number" className="ship-panel-step">
+      {n}
+    </span>
+  )
+}
 
 /**
  * The Ship flow (plan 7 step 3): review, open the PR, tell Jira, tell
@@ -192,7 +209,8 @@ export default function ShipPanel({
   const handleComment = async (): Promise<void> => {
     if (!ticketKey || !existingPr) return
     setCommentState('busy')
-    const result = await addJiraComment(ticketKey, `PR ready for review: ${existingPr.url}`)
+    // An internal note: the team sees it, a service desk's requester doesn't.
+    const result = await addJiraComment(ticketKey, `PR ready for review: ${existingPr.url}`, true)
     if (result.ok) setCommentState('done')
     else {
       setCommentState('error')
@@ -216,10 +234,16 @@ export default function ShipPanel({
   const slackLink =
     issue?.links.find((l) => /slack/i.test(l.title) || /slack\.com/i.test(l.url)) ?? null
 
+  const [copied, setCopied] = useState(false)
   const handleCopyMessage = async (): Promise<void> => {
     if (!existingPr) return
     try {
-      await navigator.clipboard.writeText(`PR ready for review: ${existingPr.url}`)
+      // The way review requests go out in Slack: the PR's title, then its
+      // changes link on the next line.
+      await navigator.clipboard.writeText(
+        `:github: ${existingPr.title}\n:pr-arrow: ${existingPr.url}/changes`
+      )
+      setCopied(true)
       pushToast?.('Message copied.')
     } catch {
       pushToast?.('Could not copy - try selecting the text by hand.')
@@ -233,6 +257,22 @@ export default function ShipPanel({
   const openPr = existingPr && existingPr.state === 'OPEN' ? existingPr : null
   const prStateLabel: Record<string, string> = { CLOSED: 'Closed', MERGED: 'Merged' }
 
+  // When each step counts as done, from the state the panel already has.
+  const [diffOpened, setDiffOpened] = useState(false)
+  const reviewDone = commits.length > 0 && (info?.unpushed === 0 || diffOpened)
+  const prDone =
+    Boolean(existingPr && (existingPr.state === 'OPEN' || existingPr.state === 'MERGED')) &&
+    info?.unpushed === 0
+  const showJira = Boolean(ticketKey && jiraReady)
+  const jiraDone = commentState === 'done' || moveState === 'done'
+  const showSlack = Boolean(slackLink)
+  const slackDone = copied
+  const allDone = reviewDone && prDone && (!showJira || jiraDone) && (!showSlack || slackDone)
+  // Once every step shown is done, the panel says so until it closes, even
+  // if something later (a new commit) would undo a step.
+  const [shipped, setShipped] = useState(false)
+  if (allDone && !shipped) setShipped(true)
+
   return (
     <div className="ship-panel-backdrop" onClick={onClose}>
       <div
@@ -243,10 +283,17 @@ export default function ShipPanel({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="ship-panel-header">
-          <div className="ship-panel-title">
-            <Icon name="Rocket" size={20} />
-            <h2>Ship</h2>
-          </div>
+          {shipped ? (
+            <div key="shipped" className="ship-panel-title ship-panel-title--shipped">
+              <Icon name="Check" size={20} className="ship-panel-shipped-icon" />
+              <h2>Shipped</h2>
+            </div>
+          ) : (
+            <div key="ship" className="ship-panel-title">
+              <Icon name="Rocket" size={20} />
+              <h2>Ship</h2>
+            </div>
+          )}
           <Button variant="ghost" size="compact" onClick={onClose}>
             Close
           </Button>
@@ -255,7 +302,10 @@ export default function ShipPanel({
         <div className="ship-panel-body">
           {/* 1. Review */}
           <section className="ship-panel-section">
-            <h3 className="ship-panel-section-title">1. Review</h3>
+            <h3 className="ship-panel-section-title">
+              <StepBadge n={1} done={reviewDone} />
+              Review
+            </h3>
             {loadingReview ? (
               <p className="ship-panel-muted">Loading commits…</p>
             ) : (
@@ -276,23 +326,35 @@ export default function ShipPanel({
                     ))
                   )}
                 </div>
-                {info?.git && info.git.filesChanged > 0 && (
-                  <p className="ship-panel-diffstat">
-                    {info.git.filesChanged} file{info.git.filesChanged === 1 ? '' : 's'} changed,{' '}
-                    <span className="ship-panel-add">+{info.git.added}</span>{' '}
-                    <span className="ship-panel-remove">−{info.git.removed}</span>
-                  </p>
-                )}
-                <Button variant="outlined" size="compact" onClick={onOpenDiff}>
-                  View diff
-                </Button>
+                <div className="ship-panel-inline">
+                  <Button
+                    variant="outlined"
+                    size="compact"
+                    onClick={() => {
+                      setDiffOpened(true)
+                      onOpenDiff()
+                    }}
+                  >
+                    View diff
+                  </Button>
+                  {info?.git && info.git.filesChanged > 0 && (
+                    <p className="ship-panel-diffstat">
+                      {info.git.filesChanged} file{info.git.filesChanged === 1 ? '' : 's'} changed,{' '}
+                      <span className="ship-panel-add">+{info.git.added}</span>{' '}
+                      <span className="ship-panel-remove">−{info.git.removed}</span>
+                    </p>
+                  )}
+                </div>
               </>
             )}
           </section>
 
           {/* 2. Pull request */}
           <section className="ship-panel-section">
-            <h3 className="ship-panel-section-title">2. Pull request</h3>
+            <h3 className="ship-panel-section-title">
+              <StepBadge n={2} done={prDone} />
+              Pull request
+            </h3>
             {existingPr === undefined ? (
               <p className="ship-panel-muted">Checking for an existing pull request…</p>
             ) : (
@@ -306,6 +368,7 @@ export default function ShipPanel({
                         void openExternal(existingPr.url)
                       }}
                     >
+                      <span className="ship-panel-pr-number">#{existingPr.number}</span>
                       {existingPr.title}
                     </a>
                     <span className="ship-panel-pr-state">
@@ -341,11 +404,12 @@ export default function ShipPanel({
                       </Button>
                     )}
                     <Button
-                      variant="ghost"
+                      variant="outlined"
                       size="compact"
                       onClick={() => void openExternal(openPr.url)}
                     >
-                      Open on GitHub
+                      <GitHubGlyph size={13} />
+                      Open in GitHub
                     </Button>
                     {info?.unpushed === 0 && !openPr.isDraft && (
                       <span className="ship-panel-muted">Up to date with your latest commit.</span>
@@ -392,24 +456,27 @@ export default function ShipPanel({
           </section>
 
           {/* 3. Jira */}
-          {ticketKey && jiraReady && (
+          {showJira && (
             <section className="ship-panel-section">
-              <h3 className="ship-panel-section-title">3. Jira</h3>
+              <h3 className="ship-panel-section-title">
+                <StepBadge n={3} done={jiraDone} />
+                Jira
+              </h3>
               <div className="ship-panel-jira-row">
                 <Button
                   variant="outlined"
                   size="compact"
                   disabled={!existingPr || commentState === 'busy' || commentState === 'done'}
                   title={
-                    !existingPr ? 'Open the pull request to comment with its link.' : undefined
+                    !existingPr ? 'Open the pull request to add its link as a note.' : undefined
                   }
                   onClick={() => void handleComment()}
                 >
                   {commentState === 'busy'
-                    ? 'Commenting…'
+                    ? 'Adding note…'
                     : commentState === 'done'
-                      ? 'Commented'
-                      : 'Comment with the PR link'}
+                      ? 'Note added'
+                      : 'Add internal note with the PR link'}
                 </Button>
                 {reviewStatus && (
                   <Button
@@ -434,7 +501,10 @@ export default function ShipPanel({
           {/* 4. Slack */}
           {slackLink && (
             <section className="ship-panel-section">
-              <h3 className="ship-panel-section-title">4. Slack</h3>
+              <h3 className="ship-panel-section-title">
+                <StepBadge n={4} done={slackDone} />
+                Slack
+              </h3>
               <div className="ship-panel-jira-row">
                 <Button
                   variant="outlined"

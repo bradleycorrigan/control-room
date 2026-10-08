@@ -131,6 +131,8 @@ export interface JiraComment {
   author: string
   created: string
   body: string
+  /** A Jira Service Management internal note: only the team sees it. */
+  internal?: boolean
 }
 
 export interface JiraIssueDetail {
@@ -1137,6 +1139,7 @@ export async function loadIssueDetail(key: string): Promise<JiraResult<JiraIssue
         author?: { displayName?: string }
         created?: string
         body?: string
+        jsdPublic?: boolean
       }>
     }>(conn, `/rest/api/2/issue/${encodeURIComponent(key)}/comment?orderBy=created&maxResults=100`)
     // Tags are stored as [~accountid:…]; look the names up once each.
@@ -1177,7 +1180,8 @@ export async function loadIssueDetail(key: string): Promise<JiraResult<JiraIssue
         id: c.id,
         author: c.author?.displayName ?? 'Someone',
         created: c.created ?? '',
-        body: c.body ?? ''
+        body: c.body ?? '',
+        internal: c.jsdPublic === false
       })),
       links: await linksFor(conn, key, issue.fields?.updated ?? ''),
       attachments: (issue.fields?.attachment ?? [])
@@ -1221,7 +1225,16 @@ export async function updateIssueText(
   })
 }
 
-export async function addComment(key: string, body: string): Promise<JiraResult<JiraComment>> {
+/**
+ * Adds a comment. `internal` makes it a Jira Service Management internal
+ * note, which only the team sees; on a project that isn't a service desk
+ * Jira ignores the flag and the comment is an ordinary one.
+ */
+export async function addComment(
+  key: string,
+  body: string,
+  internal = false
+): Promise<JiraResult<JiraComment>> {
   if (!body.trim()) return { ok: false, error: 'the comment is empty' }
   const store = fixtureStore()
   if (store) {
@@ -1229,7 +1242,8 @@ export async function addComment(key: string, body: string): Promise<JiraResult<
       id: String(Date.now()),
       author: 'You',
       created: new Date().toISOString(),
-      body: body.trim()
+      body: body.trim(),
+      internal
     }
     store.details[key]?.comments.push(c)
     return { ok: true, value: c }
@@ -1242,15 +1256,22 @@ export async function addComment(key: string, body: string): Promise<JiraResult<
       author?: { displayName?: string }
       created?: string
       body?: string
+      jsdPublic?: boolean
     }>(conn, `/rest/api/2/issue/${encodeURIComponent(key)}/comment`, {
       method: 'POST',
-      body: { body: body.trim() }
+      body: {
+        body: body.trim(),
+        ...(internal
+          ? { properties: [{ key: 'sd.public.comment', value: { internal: true } }] }
+          : {})
+      }
     })
     return {
       id: c.id,
       author: c.author?.displayName ?? 'You',
       created: c.created ?? '',
-      body: c.body ?? body
+      body: c.body ?? body,
+      internal: c.jsdPublic === undefined ? internal : c.jsdPublic === false
     }
   })
 }
@@ -1282,19 +1303,70 @@ export async function moveToStatus(key: string, status: string): Promise<JiraRes
   })
 }
 
-export async function assignIssue(key: string, toMe: boolean): Promise<JiraResult<JiraIssue>> {
+/** Someone a ticket can be assigned to. */
+export interface JiraPerson {
+  accountId: string
+  name: string
+}
+
+const assignableCache: { at: number; people: JiraPerson[] } = { at: 0, people: [] }
+
+/** Everyone who can be assigned tickets in the followed projects. */
+export async function assignablePeople(): Promise<JiraResult<JiraPerson[]>> {
   if (fixtureStore()) {
+    return {
+      ok: true,
+      value: [
+        { accountId: 'fixture-me', name: 'You' },
+        { accountId: 'fixture-someone', name: 'Someone Else' },
+        { accountId: 'fixture-joanna', name: 'Joanna Fixture' }
+      ]
+    }
+  }
+  if (Date.now() - assignableCache.at < 10 * 60_000)
+    return { ok: true, value: assignableCache.people }
+  const conn = connection()
+  if ('error' in conn) return { ok: false, error: conn.error }
+  const config = readConfig()
+  return attempt(async () => {
+    const keys = encodeURIComponent((config?.projects ?? []).join(','))
+    const users = await callJson<
+      Array<{ accountId?: string; displayName?: string; active?: boolean; accountType?: string }>
+    >(conn, `/rest/api/3/user/assignable/multiProjectSearch?projectKeys=${keys}&maxResults=500`)
+    const people = users
+      .filter((u) => u.accountId && u.active !== false && u.accountType !== 'app')
+      .map((u) => ({ accountId: u.accountId!, name: u.displayName ?? u.accountId! }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    assignableCache.at = Date.now()
+    assignableCache.people = people
+    return people
+  })
+}
+
+/**
+ * Assigns a ticket: `true` to you, `false` to nobody, or a person's account
+ * id to them.
+ */
+export async function assignIssue(
+  key: string,
+  who: boolean | string
+): Promise<JiraResult<JiraIssue>> {
+  if (fixtureStore()) {
+    const people = (await assignablePeople()) as { ok: true; value: JiraPerson[] }
+    const person = typeof who === 'string' ? people.value.find((p) => p.accountId === who) : null
     return fixtureUpdate(key, (i) => {
-      i.assignee = toMe ? 'You' : null
+      const toMe = who === true || who === 'fixture-me'
+      i.assignee = toMe ? 'You' : (person?.name ?? null)
       i.assignedToMe = toMe
     })
   }
   const conn = connection()
   if ('error' in conn) return { ok: false, error: conn.error }
   return attempt(async () => {
+    const accountId = who === true ? await me(conn) : who === false ? null : who
     await callJson(conn, `/rest/api/3/issue/${encodeURIComponent(key)}/assignee`, {
       method: 'PUT',
-      body: { accountId: toMe ? await me(conn) : null }
+      body: { accountId }
     })
     return loadIssue(conn, key)
   })
@@ -1734,8 +1806,29 @@ export async function ticketPullRequests(key: string): Promise<JiraResult<Ticket
       conn,
       `/rest/api/3/issue/${encodeURIComponent(key)}?fields=summary`
     )
+    // Ask which integrations hold this ticket's PRs rather than guessing the
+    // name: the GitHub for Jira app and the older DVCS connector file them
+    // under different application types, and the detail call returns an
+    // empty list, not an error, for the wrong one.
+    const apps = new Set<string>()
+    try {
+      const summary = await callJson<{
+        summary?: {
+          pullrequest?: { byInstanceType?: Record<string, { name?: string }> }
+        }
+      }>(conn, `/rest/dev-status/latest/issue/summary?issueId=${issue.id}`)
+      for (const [type, v] of Object.entries(summary.summary?.pullrequest?.byInstanceType ?? {})) {
+        apps.add(type)
+        if (v.name) apps.add(v.name)
+      }
+    } catch (err) {
+      // Fall back to the usual names below.
+      log.warn('jira: PR summary failed', { key, error: String(err) })
+    }
+    for (const app of ['GitHub', 'githube']) apps.add(app)
     const list: TicketPullRequest[] = []
-    for (const app of ['GitHub', 'githube']) {
+    const seen = new Set<string>()
+    for (const app of apps) {
       try {
         const body = await callJson<{
           detail?: Array<{
@@ -1749,11 +1842,12 @@ export async function ticketPullRequests(key: string): Promise<JiraResult<Ticket
           }>
         }>(
           conn,
-          `/rest/dev-status/latest/issue/detail?issueId=${issue.id}&applicationType=${app}&dataType=pullrequest`
+          `/rest/dev-status/latest/issue/detail?issueId=${issue.id}&applicationType=${encodeURIComponent(app)}&dataType=pullrequest`
         )
         for (const d of body.detail ?? []) {
           for (const pr of d.pullRequests ?? []) {
-            if (!pr.url) continue
+            if (!pr.url || seen.has(pr.url)) continue
+            seen.add(pr.url)
             list.push({
               name: pr.name ?? pr.url,
               url: pr.url,
@@ -1763,8 +1857,9 @@ export async function ticketPullRequests(key: string): Promise<JiraResult<Ticket
             })
           }
         }
-      } catch {
-        /* that application isn't connected */
+      } catch (err) {
+        // That application isn't connected.
+        log.info('jira: PR detail failed', { key, app, error: String(err) })
       }
     }
     // Open first, then most recently updated.
@@ -1773,6 +1868,7 @@ export async function ticketPullRequests(key: string): Promise<JiraResult<Ticket
         Number(b.status === 'OPEN') - Number(a.status === 'OPEN') ||
         (b.updated ?? '').localeCompare(a.updated ?? '')
     )
+    log.info('jira: PRs for ticket', { key, apps: [...apps], found: list.length })
     prCache.set(key, { at: Date.now(), list })
     return list
   })

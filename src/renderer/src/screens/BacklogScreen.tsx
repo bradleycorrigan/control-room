@@ -12,6 +12,7 @@ import {
   Textarea,
   Tooltip,
   useConfirm,
+  SegmentedControl,
   type IconName
 } from '../components/primitives'
 import { STATUS_WORDS } from '../components/primitives/Badge'
@@ -23,8 +24,11 @@ import {
   loadTicketPullRequests,
   type TicketPullRequest,
   assignJiraIssue,
+  loadAssignablePeople,
   configureJira,
   disconnectJira,
+  getAppSettings,
+  getGitStatus,
   getBacklogPrefs,
   getJiraStatus,
   getSessionPullRequest,
@@ -49,6 +53,7 @@ import {
   type PullRequestInfo,
   type SavedView,
   type JiraIssue,
+  type JiraPerson,
   type JiraIssueDetail,
   type JiraResult,
   type JiraStatus
@@ -56,7 +61,15 @@ import {
 import { createJiraSubtask } from '../api-backlog'
 import { useDismissible } from '../keyboard'
 import { useStoredState } from '../state/useStoredState'
-import { Avatar, EpicMark, PriorityGlyph, SlackGlyph, StatusGlyph, WikiText } from './backlogGlyphs'
+import {
+  Avatar,
+  EpicMark,
+  PriorityGlyph,
+  GitHubGlyph,
+  SlackGlyph,
+  StatusGlyph,
+  WikiText
+} from './backlogGlyphs'
 import { DRAG_TYPE } from './backlogStatus'
 import { ColumnsEditor } from './backlog/ColumnsEditor'
 import { CreateTicket } from './backlog/CreateTicket'
@@ -136,6 +149,13 @@ interface Lane {
   value: LaneValue
 }
 
+/** "5m ago", "3d ago", or "on 23 Jul" once it's two months old. */
+function when(iso: string): string {
+  const short = ago(iso)
+  if (!short) return ''
+  return /\d[mhd]$/.test(short) ? `${short} ago` : `on ${short}`
+}
+
 function ago(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime()
   if (!Number.isFinite(ms)) return ''
@@ -145,7 +165,13 @@ function ago(iso: string): string {
   if (h < 24) return `${h}h`
   const d = Math.round(h / 24)
   if (d < 60) return `${d}d`
-  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  // Older than that, the date; with the year once it isn't this year's.
+  const date = new Date(iso)
+  return date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    ...(date.getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {})
+  })
 }
 
 function fullDate(iso: string): string {
@@ -217,6 +243,29 @@ function matches(issue: JiraIssue, query: string): boolean {
  * for everything you can do to a ticket. Sessions link to tickets locally
  * (Jira never hears about the link).
  */
+/**
+ * Ids in the order they first appeared, including ones that have since
+ * gone, until `resetKey` changes. Lists that re-sort or drop rows as tickets
+ * move (an epic's count reaching 0, a group's last ticket leaving) read this
+ * to hold still while you work; they settle when you change the view.
+ */
+function useSettledOrder(ids: string[], resetKey: string): string[] {
+  const [state, setState] = useState<{ key: string; order: string[] }>({
+    key: resetKey,
+    order: ids
+  })
+  const base = state.key === resetKey ? state.order : []
+  const missing = ids.filter((id) => !base.includes(id))
+  if (state.key !== resetKey || missing.length > 0) {
+    const order = [...base, ...missing]
+    // Storing what earlier renders saw: React's pattern for state derived
+    // from a changing input, set during render rather than in an effect.
+    setState({ key: resetKey, order })
+    return order
+  }
+  return base
+}
+
 export default function BacklogScreen({
   sessions,
   onStartSession,
@@ -237,8 +286,20 @@ export default function BacklogScreen({
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [links, setLinks] = useState<Record<string, string>>({})
+  // Everyone a ticket can be assigned to, for the assignee pickers.
+  const [assignable, setAssignable] = useState<JiraPerson[]>([])
   const [who, setWho] = useStoredState<Who>('backlog-who', 'all')
-  const [view, setView] = useStoredState<View>('backlog-view', 'list')
+  // Opens the way Settings → Views says; the switch changes it from there.
+  const [view, setView] = useState<View>('list')
+  useEffect(() => {
+    let live = true
+    void getAppSettings().then((settings) => {
+      if (live && settings.ticketsView) setView(settings.ticketsView)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
   // Group by one thing, or two: the second splits each group into sub-groups.
   const [grouping, setGrouping] = useStoredState<GroupBy[]>('backlog-grouping', ['status'])
   const groupBy: GroupBy = grouping[0] ?? 'status'
@@ -596,6 +657,17 @@ export default function BacklogScreen({
   // single cycle (the sidebar's highlight, the cycle pill on each row).
   const cycle: CycleFilter = cycles.length === 1 ? cycles[0] : 'all'
   const myName = board?.issues.find((i) => i.assignedToMe)?.assignee ?? 'You'
+  const boardLoaded = Boolean(board)
+  useEffect(() => {
+    if (!boardLoaded) return
+    let live = true
+    void loadAssignablePeople().then((r) => {
+      if (live && r.ok) setAssignable(r.value)
+    })
+    return () => {
+      live = false
+    }
+  }, [boardLoaded])
 
   // Every edit, in one place, so the row menu and the panel do the same thing.
   const actions = useMemo(
@@ -617,14 +689,19 @@ export default function BacklogScreen({
           sprint: sprint ? { id: sprint.id, name: sprint.name, state: sprint.state } : null
         })
       },
-      setAssignee: (issue: JiraIssue, toMe: boolean) =>
-        issue.assignedToMe === toMe && (toMe || issue.assignee === null)
-          ? Promise.resolve(true)
-          : write(() => assignJiraIssue(issue.key, toMe), {
-              ...issue,
-              assignedToMe: toMe,
-              assignee: toMe ? myName : null
-            }),
+      setAssignee: (issue: JiraIssue, who: 'me' | 'none' | JiraPerson) => {
+        const name = who === 'me' ? myName : who === 'none' ? null : who.name
+        const toMe = who === 'me' || name === myName
+        if (issue.assignee === name && issue.assignedToMe === toMe) return Promise.resolve(true)
+        return write(
+          () =>
+            assignJiraIssue(
+              issue.key,
+              who === 'me' ? true : who === 'none' ? false : who.accountId
+            ),
+          { ...issue, assignedToMe: toMe, assignee: name }
+        )
+      },
       assign: (issue: JiraIssue) =>
         write(() => assignJiraIssue(issue.key, !issue.assignedToMe), {
           ...issue,
@@ -944,21 +1021,86 @@ export default function BacklogScreen({
     },
     [board, sprints, shownColumns, categoryOf]
   )
+  // Tickets whose status, epic, cycle or assignee changed since the last
+  // load (from Jira, or another screen) glow for a moment, so you see what moved.
+  const [changed, setChanged] = useState<Set<string>>(() => new Set())
+  const lastSeen = useRef<Map<string, string> | null>(null)
+  useEffect(() => {
+    if (!board) return
+    const now = new Map(
+      board.issues.map((i) => [
+        i.key,
+        [i.status, i.parent?.key ?? '', i.sprint?.id ?? '', i.assignee ?? ''].join('|')
+      ])
+    )
+    const before = lastSeen.current
+    lastSeen.current = now
+    if (!before) return
+    const moved = [...now].filter(([k, v]) => before.has(k) && before.get(k) !== v).map(([k]) => k)
+    if (!moved.length) return
+    const show = setTimeout(() => setChanged(new Set(moved)), 0)
+    const hide = setTimeout(() => setChanged(new Set()), 2200)
+    return () => {
+      clearTimeout(show)
+      clearTimeout(hide)
+    }
+  }, [board])
   const lanes = useMemo(() => groupInto(visible, groupBy), [groupInto, visible, groupBy])
+  // What you're looking at: change any of it and lists may re-sort and drop
+  // emptied groups; until then they hold still as tickets move.
+  const settleKey = JSON.stringify([
+    who,
+    view,
+    grouping,
+    hiddenColumns,
+    hideDone,
+    assignees,
+    epicFilter,
+    cycleSet,
+    query
+  ])
+  const keptLaneOrder = useSettledOrder(
+    lanes.filter((l) => l.items.length > 0).map((l) => l.id),
+    settleKey
+  )
+  const keptLaneIds = useMemo(() => new Set(keptLaneOrder), [keptLaneOrder])
+  const keptSubLaneOrder = useSettledOrder(
+    subGroup
+      ? lanes.flatMap((lane) =>
+          groupInto(lane.items, subGroup)
+            .filter((l) => l.items.length > 0)
+            .map((l) => `${lane.id}/${l.id}`)
+        )
+      : [],
+    settleKey
+  )
+  const keptSubLaneIds = useMemo(() => new Set(keptSubLaneOrder), [keptSubLaneOrder])
   /** A group's sub-groups, when sub-grouping: the non-empty ones, or all while dragging. */
   const subLanesFor = useCallback(
     (lane: Lane): Lane[] | null =>
       subGroup
-        ? groupInto(lane.items, subGroup).filter((l) => l.items.length > 0 || (dragging && l.value))
+        ? groupInto(lane.items, subGroup).filter(
+            (l) =>
+              l.items.length > 0 ||
+              keptSubLaneIds.has(`${lane.id}/${l.id}`) ||
+              (dragging && l.value)
+          )
         : null,
-    [groupInto, subGroup, dragging]
+    [groupInto, subGroup, dragging, keptSubLaneIds]
   )
 
   // What the list shows: empty groups only while something is being dragged
   // (as drop targets), except the two cycle groups, which always show.
   const shownLanes = useMemo(
-    () => lanes.filter((l) => l.items.length > 0 || groupBy === 'cycle' || (dragging && l.value)),
-    [lanes, groupBy, dragging]
+    () =>
+      lanes.filter(
+        (l) =>
+          l.items.length > 0 ||
+          groupBy === 'cycle' ||
+          keptLaneIds.has(l.id) ||
+          (dragging && l.value)
+      ),
+    [lanes, groupBy, dragging, keptLaneIds]
   )
   const boardLanes = useMemo(
     () =>
@@ -1205,9 +1347,25 @@ export default function BacklogScreen({
           anchor,
           options: [
             { value: 'me', label: 'Assign to me', checked: issues.every((i) => i.assignedToMe) },
-            { value: 'none', label: 'Unassign', checked: issues.every((i) => !i.assignee) }
+            { value: 'none', label: 'Unassign', checked: issues.every((i) => !i.assignee) },
+            ...assignable
+              .filter((p) => p.name !== myName)
+              .map((p) => ({
+                value: p.accountId,
+                label: p.name,
+                icon: <Avatar name={p.name} size={16} />,
+                checked: issues.every((i) => i.assignee === p.name)
+              }))
           ],
-          onPick: (v) => void runAll(issues, (i) => actions.setAssignee(i, v === 'me'))
+          onPick: (v) =>
+            void runAll(issues, (i) =>
+              actions.setAssignee(
+                i,
+                v === 'me' || v === 'none'
+                  ? v
+                  : (assignable.find((p) => p.accountId === v) ?? 'none')
+              )
+            )
         })
       }
       if (field === 'estimate') {
@@ -1227,7 +1385,17 @@ export default function BacklogScreen({
         })
       }
     },
-    [targetsFor, statusPicker, priorityPicker, cyclePicker, board, runAll, actions]
+    [
+      targetsFor,
+      statusPicker,
+      priorityPicker,
+      cyclePicker,
+      board,
+      runAll,
+      actions,
+      assignable,
+      myName
+    ]
   )
 
   // ---- Saved views ----
@@ -1434,7 +1602,10 @@ export default function BacklogScreen({
     onStartSession
   ])
 
-  if (!status) return <div className="backlog" />
+  // Over another screen, render nothing until Jira answers: the Backlog's
+  // page container fills the page, and for that moment it squeezed the
+  // session beneath to zero height, which wiped its terminal.
+  if (!status) return <div className={panelOnly ? 'backlog-panel-only' : 'backlog'} />
   if (!status.configured) {
     return (
       <div className="backlog">
@@ -1546,6 +1717,11 @@ export default function BacklogScreen({
     selected,
     onSelect: selectTicket,
     onEdit: editField,
+    onFilter: ({ epic, cycle }) => {
+      if (epic) setEpicFilter(epic)
+      else if (cycle) setCycle(cycle)
+    },
+    changed,
     prFor: (recordId: string) => prs[recordId] ?? null,
     onCopy: copy,
     onOpen: (key: string) => {
@@ -1585,6 +1761,8 @@ export default function BacklogScreen({
         key={openIssue.key}
         issue={openIssue}
         board={board}
+        people={assignable}
+        myName={myName}
         sessions={sessions}
         linkedSessions={sessionsFor(openIssue)}
         position={{ index: order.indexOf(openIssue.key), total: order.length }}
@@ -1651,6 +1829,7 @@ export default function BacklogScreen({
       {sidebarOpen && board && (
         <BacklogSidebar
           board={board}
+          settleKey={settleKey}
           who={whoTab}
           onWho={chooseWho}
           counts={counts}
@@ -1686,7 +1865,10 @@ export default function BacklogScreen({
           openIssue ? 'backlog--peek' : ''
         ].join(' ')}
         onDragStart={(e) => {
-          if ((e.target as HTMLElement).dataset?.issue) setDragging(true)
+          // Not in the same tick: showing the drop targets moves the rows,
+          // and Chromium cancels a drag whose page changes as it starts
+          // (dragstart, then dragend at once, and the ticket never moves).
+          if ((e.target as HTMLElement).dataset?.issue) setTimeout(() => setDragging(true), 0)
         }}
         onDragEnd={() => setDragging(false)}
         onDrop={() => setDragging(false)}
@@ -1740,7 +1922,7 @@ export default function BacklogScreen({
         {picker && <Picker {...picker} onClose={() => setPicker(null)} />}
         <div className="backlog-header">
           <div className="backlog-heading">
-            <h1 className="backlog-title">Backlog</h1>
+            <h1 className="backlog-title">Tickets</h1>
             {loading && board && (
               <span className="backlog-loading" role="status" aria-label="Refreshing from Jira">
                 <Icon name="Loader2" size={14} />
@@ -2029,7 +2211,9 @@ export default function BacklogScreen({
                                     <IssueRow key={issue.key} issue={issue} {...rowProps} />
                                   ))}
                                 {sub.items.length === 0 && (
-                                  <p className="backlog-empty-lane">Drop here</p>
+                                  <p className="backlog-empty-lane">
+                                    {dragging ? 'Drop here' : 'Nothing left here'}
+                                  </p>
                                 )}
                               </DropGroup>
                             )
@@ -2171,7 +2355,7 @@ type Actions = {
   status: (issue: JiraIssue, s: StatusOption) => Promise<boolean>
   cycle: (issue: JiraIssue, sprintId: number | null) => Promise<boolean>
   assign: (issue: JiraIssue) => Promise<boolean>
-  setAssignee: (issue: JiraIssue, toMe: boolean) => Promise<boolean>
+  setAssignee: (issue: JiraIssue, who: 'me' | 'none' | JiraPerson) => Promise<boolean>
   parent: (issue: JiraIssue, key: string | null) => Promise<boolean>
   priority: (issue: JiraIssue, priority: string) => Promise<boolean>
   labels: (issue: JiraIssue, labels: string[]) => Promise<boolean>
@@ -2184,6 +2368,9 @@ interface RowActions {
   selected: string[]
   onSelect: (key: string, mode: 'toggle' | 'range') => void
   onEdit: (field: EditField, issue: JiraIssue, anchor: HTMLElement) => void
+  onFilter: (f: { epic?: string; cycle?: CycleFilter }) => void
+  /** Tickets that changed since the last load, for a brief highlight. */
+  changed: Set<string>
   prFor: (recordId: string) => PullRequestInfo | null
   onCopy: (text: string, what: string) => void
   onOpen: (key: string) => void
@@ -2217,6 +2404,20 @@ function ticketHandlers(
     onDragStart: (e) => {
       e.dataTransfer.setData(DRAG_TYPE, issue.key)
       e.dataTransfer.effectAllowed = 'move'
+      // A tidy chip under the pointer instead of the browser's see-through
+      // copy of the whole row. It has to be in the page when the drag image
+      // is taken, and goes again straight after.
+      const ghost = document.createElement('div')
+      ghost.className = 'backlog-drag-ghost'
+      const key = document.createElement('span')
+      key.className = 'backlog-drag-ghost-key'
+      key.textContent = issue.key
+      const title = document.createElement('span')
+      title.textContent = issue.summary
+      ghost.append(key, title)
+      document.body.appendChild(ghost)
+      e.dataTransfer.setDragImage(ghost, 14, 14)
+      setTimeout(() => ghost.remove(), 0)
     },
     // Picking works as it does on Sessions (and in Linear): the check, X,
     // or ⇧-click for the run up to it. Once anything is picked, a plain
@@ -2324,6 +2525,18 @@ function DropGroup({
   children: React.ReactNode
 }): React.JSX.Element {
   const [over, setOver] = useState(false)
+  // A drop in a group nested inside this one never reaches this one, so its
+  // highlight stayed on after the drop. Any drag ending clears it.
+  useEffect(() => {
+    if (!over) return
+    const clear = (): void => setOver(false)
+    window.addEventListener('drop', clear, true)
+    window.addEventListener('dragend', clear, true)
+    return () => {
+      window.removeEventListener('drop', clear, true)
+      window.removeEventListener('dragend', clear, true)
+    }
+  }, [over])
   const base = nested ? 'backlog-subgroup' : 'backlog-group'
   return (
     <section
@@ -2369,14 +2582,14 @@ function SessionChip({
     <button
       type="button"
       className="backlog-session-chip"
-      title={`Open session: ${first.session.record?.title ?? ''}${others ? ` (and ${others} more)` : ''}`}
+      title={`Open session: ${first.session.record?.title ?? ''} (${STATUS_WORDS[first.session.status]})${others ? `, and ${others} more` : ''}`}
       onClick={(e) => {
         e.stopPropagation()
         onOpenSession(first.session.key)
       }}
     >
       <StatusDot status={first.session.status} size={8} />
-      <span>{STATUS_WORDS[first.session.status]}</span>
+      <span className="backlog-session-chip-word">{STATUS_WORDS[first.session.status]}</span>
       {others > 0 && <span className="backlog-session-chip-more">+{others}</span>}
     </button>
   )
@@ -2505,11 +2718,14 @@ function Editable({
   label,
   className = '',
   onEdit,
+  onFilter,
   children
 }: {
   label: string
   className?: string
   onEdit?: (anchor: HTMLElement) => void
+  /** ⌥-click: show only the tickets that share this value. */
+  onFilter?: () => void
   children: React.ReactNode
 }): React.JSX.Element {
   if (!onEdit) return <span className={className}>{children}</span>
@@ -2518,9 +2734,15 @@ function Editable({
       type="button"
       className={`backlog-edit ${className}`}
       aria-label={label}
-      title={label}
+      title={onFilter ? `${label}. ⌥-click to show only these` : label}
       draggable={false}
       onClick={(e) => {
+        if (e.altKey && onFilter) {
+          e.preventDefault()
+          e.stopPropagation()
+          onFilter()
+          return
+        }
         // ⌘/⇧-click still picks the ticket, wherever on the row it lands.
         if (e.metaKey || e.ctrlKey || e.shiftKey) return
         e.stopPropagation()
@@ -2538,7 +2760,8 @@ function IssuePills({
   showEpic,
   showCycle,
   compact = false,
-  onEdit
+  onEdit,
+  onFilter
 }: {
   issue: JiraIssue
   showStatus: boolean
@@ -2546,6 +2769,8 @@ function IssuePills({
   showCycle: boolean
   compact?: boolean
   onEdit?: (field: EditField, anchor: HTMLElement) => void
+  /** ⌥-click a chip: filter to its epic or cycle. */
+  onFilter?: (f: { epic?: string; cycle?: CycleFilter }) => void
 }): React.JSX.Element {
   const edit = (field: EditField): ((a: HTMLElement) => void) | undefined =>
     onEdit ? (a) => onEdit(field, a) : undefined
@@ -2567,6 +2792,7 @@ function IssuePills({
           label={`Epic: ${issue.parent.summary} (${issue.parent.key})`}
           className="backlog-pill backlog-pill--accent"
           onEdit={edit('epic')}
+          onFilter={onFilter ? () => onFilter({ epic: issue.parent!.key }) : undefined}
         >
           <EpicMark />
           <span className="backlog-pill-text">{issue.parent.summary}</span>
@@ -2577,6 +2803,7 @@ function IssuePills({
           label={`Cycle: ${issue.sprint.name}`}
           className="backlog-pill"
           onEdit={edit('cycle')}
+          onFilter={onFilter ? () => onFilter({ cycle: 'current' }) : undefined}
         >
           <Icon name="RefreshCw" size={12} />
           {issue.sprint.name}
@@ -2615,7 +2842,8 @@ function IssueRow({ issue, ...p }: { issue: JiraIssue } & RowActions): React.JSX
           entries.length ? 'backlog-row--in-session' : '',
           selected ? 'backlog-row--selected' : '',
           picked ? 'backlog-row--picked' : '',
-          selecting ? 'backlog-row--picking' : ''
+          selecting ? 'backlog-row--picking' : '',
+          p.changed.has(issue.key) ? 'backlog-row--changed' : ''
         ].join(' ')}
         data-issue={issue.key}
         data-nav-item=""
@@ -2646,6 +2874,7 @@ function IssueRow({ issue, ...p }: { issue: JiraIssue } & RowActions): React.JSX
             showEpic={p.showEpic}
             showCycle={p.showCycle}
             onEdit={selecting ? undefined : (field, anchor) => p.onEdit(field, issue, anchor)}
+            onFilter={selecting ? undefined : p.onFilter}
           />
           {subtasks.length > 0 && (
             <button
@@ -2658,7 +2887,11 @@ function IssueRow({ issue, ...p }: { issue: JiraIssue } & RowActions): React.JSX
               }}
             >
               <Icon name={subtasksOpen ? 'ChevronDown' : 'ChevronRight'} size={12} />
-              {subtasks.length} sub-task{subtasks.length > 1 ? 's' : ''}
+              {subtasks.length}
+              <span className="backlog-subtask-count-word">
+                {' '}
+                sub-task{subtasks.length > 1 ? 's' : ''}
+              </span>
             </button>
           )}
           <SessionChip entries={entries} onOpenSession={p.onOpenSession} />
@@ -2857,6 +3090,7 @@ function BacklogSidebar({
   allTickets,
   epicTickets,
   epicFilter,
+  settleKey,
   onEpic,
   onDrop,
   onPlanCycle,
@@ -2878,6 +3112,8 @@ function BacklogSidebar({
   /** The tickets every other filter lets through, for the epic counts. */
   epicTickets: JiraIssue[]
   epicFilter: string | null
+  /** Changes when the view does; until then the epic list holds its order. */
+  settleKey: string
   onEpic: (key: string | null) => void
   onDrop: (key: string, value: LaneValue) => void
   /** Opens the planning view for that cycle — the sidebar row's hover action. */
@@ -2901,13 +3137,22 @@ function BacklogSidebar({
       }
     })
     .sort((a, b) => b.count - a.count || a.summary.localeCompare(b.summary))
-  const withTickets = epicRows.filter((e) => e.count > 0 || e.key === epicFilter)
-  const empty = epicRows.filter((e) => e.count === 0 && e.key !== epicFilter)
+  // Sorted by count when you arrive, then held still: moving a ticket only
+  // changes the numbers, and an epic whose last ticket left stays put at 0
+  // until you change the view.
+  const epicOrder = useSettledOrder(
+    epicRows.filter((e) => e.count > 0 || e.key === epicFilter).map((e) => e.key),
+    settleKey
+  )
+  const withTickets = epicOrder
+    .map((key) => epicRows.find((e) => e.key === key))
+    .filter((e): e is (typeof epicRows)[number] => Boolean(e))
+  const empty = epicRows.filter((e) => !epicOrder.includes(e.key))
   const noEpic = epicTickets.filter((i) => !i.parent).length
   const inCycle = allTickets.filter((i) => i.sprint?.state === 'active')
   return (
     <div className="sidebar-column backlog-sidebar" style={{ flexBasis: `${width}px` }}>
-      <nav className="projects-rail" aria-label="Backlog sidebar">
+      <nav className="projects-rail" aria-label="Tickets sidebar">
         <div className="projects-rail-header">
           <h2 className="projects-rail-title">Views</h2>
         </div>
@@ -3304,7 +3549,7 @@ function FilterMenu({
         {upcoming.map((sp) => (
           <Fragment key={sp.id}>{cycleRow(`sprint:${sp.id}`, sp.name, sp.id)}</Fragment>
         ))}
-        {radio('backlog', 'Backlog only')}
+        {radio('backlog', 'Backlog')}
         <div className="backlog-menu-separator" role="separator" />
         <div className="backlog-menu-heading backlog-menu-heading--row">
           Status
@@ -3364,7 +3609,18 @@ function FilterMenu({
         </div>
         <div className="backlog-filter-people">
           {people.map((p) => {
-            const on = assignees.includes(p.value)
+            // No pick means everyone, so everyone shows ticked; untick one to
+            // leave them out, and ticking the last one back is Everyone again.
+            const everyone = assignees.length === 0
+            const on = everyone || assignees.includes(p.value)
+            const toggle = (): void => {
+              const picked = everyone
+                ? people.map((x) => x.value).filter((v) => v !== p.value)
+                : on
+                  ? assignees.filter((a) => a !== p.value)
+                  : [...assignees, p.value]
+              onAssignees(people.every((x) => picked.includes(x.value)) ? [] : picked)
+            }
             return (
               <button
                 key={p.value}
@@ -3372,9 +3628,7 @@ function FilterMenu({
                 role="menuitemcheckbox"
                 aria-checked={on}
                 className="cr-popover-item backlog-menu-item"
-                onClick={() =>
-                  onAssignees(on ? assignees.filter((a) => a !== p.value) : [...assignees, p.value])
-                }
+                onClick={toggle}
               >
                 <span className="backlog-menu-item-label">
                   <span className={`backlog-check-box${on ? ' backlog-check-box--on' : ''}`}>
@@ -3382,6 +3636,18 @@ function FilterMenu({
                   </span>
                   <Avatar name={p.value === UNASSIGNED ? null : p.label} size={16} />
                   {p.label}
+                </span>
+                {/* Just them, in one click, without unticking everyone else. */}
+                <span
+                  role="button"
+                  tabIndex={-1}
+                  className="backlog-filter-only"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onAssignees([p.value])
+                  }}
+                >
+                  Only
                 </span>
                 <span className="backlog-group-count">{p.count}</span>
               </button>
@@ -3690,6 +3956,8 @@ function IssueMenu({
 function IssueDrawer({
   issue,
   board,
+  people,
+  myName,
   sessions,
   linkedSessions,
   position,
@@ -3711,13 +3979,16 @@ function IssueDrawer({
 }: {
   issue: JiraIssue
   board: JiraBoardData
+  /** Everyone the ticket can be assigned to. */
+  people: JiraPerson[]
+  myName: string
   sessions: LiveSession[]
   linkedSessions: SessionEntry[]
   position: { index: number; total: number }
   /** Left out when there's no list to step through (the panel over a session). */
   onStep?: (delta: number) => void
   onClose: () => void
-  /** Shown as "Open on Backlog" when the panel sits over another screen. */
+  /** Shown as "Open in Tickets" when the panel sits over another screen. */
   onExpand?: () => void
   write: (run: () => Promise<JiraResult<JiraIssue>>, optimistic?: JiraIssue) => Promise<boolean>
   actions: Actions
@@ -3741,6 +4012,27 @@ function IssueDrawer({
   const [editingDescription, setEditingDescription] = useState(false)
   const [description, setDescription] = useState('')
   const [comment, setComment] = useState('')
+  // Internal notes by default: only the team sees them. Reply is for the
+  // person who raised the ticket (service desk projects).
+  const [asNote, setAsNote] = useState(true)
+  // @-mentions in the comment box: the names you picked, and the one being typed.
+  const [mentions, setMentions] = useState<Record<string, string>>({})
+  const [mention, setMention] = useState<{ query: string; start: number; index: number } | null>(
+    null
+  )
+  const mentionMatches = mention
+    ? people.filter((p) => p.name.toLowerCase().includes(mention.query.toLowerCase())).slice(0, 6)
+    : []
+  const pickMention = (person: JiraPerson, el: HTMLTextAreaElement | null): void => {
+    if (!mention) return
+    const end = mention.start + 1 + mention.query.length
+    const next = `${comment.slice(0, mention.start)}@${person.name} ${comment.slice(end)}`
+    setComment(next)
+    setMentions((m) => ({ ...m, [person.name]: person.accountId }))
+    setMention(null)
+    const caret = mention.start + person.name.length + 2
+    requestAnimationFrame(() => el?.setSelectionRange(caret, caret))
+  }
   const [busy, setBusy] = useState(false)
   const [addingSubtask, setAddingSubtask] = useState(false)
   const [subtaskSummary, setSubtaskSummary] = useState('')
@@ -3808,10 +4100,27 @@ function IssueDrawer({
   const sendComment = (): void => {
     if (!comment.trim() || !detail) return
     void run(async () => {
-      const r = await addJiraComment(issue.key, comment)
+      // @Name → [~accountid:…], which Jira shows as a mention and notifies.
+      let body = comment
+      for (const [name, id] of Object.entries(mentions)) {
+        body = body.split(`@${name}`).join(`[~accountid:${id}]`)
+      }
+      const r = await addJiraComment(issue.key, body, asNote)
       if (r.ok) {
-        setDetail((d) => (d ? { ...d, comments: [...d.comments, r.value] } : d))
+        setDetail((d) =>
+          d
+            ? {
+                ...d,
+                comments: [...d.comments, r.value],
+                people: {
+                  ...d.people,
+                  ...Object.fromEntries(Object.entries(mentions).map(([n, id]) => [id, n]))
+                }
+              }
+            : d
+        )
         setComment('')
+        setMentions({})
       } else onError(`Jira: ${r.error}`)
       return r.ok
     })
@@ -3822,6 +4131,19 @@ function IssueDrawer({
   const linkable = sessions.filter(
     (s) => s.record && !s.record.deletedAt && !linkedSessions.some((l) => l.session.key === s.key)
   )
+  const prs = useTicketPullRequests(issue, linkedSessions)
+  const noteWithLink = async (body: string): Promise<boolean> => {
+    const r = await addJiraComment(issue.key, body, true)
+    if (r.ok) setDetail((d) => (d ? { ...d, comments: [...d.comments, r.value] } : d))
+    else onError(`Jira: ${r.error}`)
+    return r.ok
+  }
+  // The header's GitHub button opens the PR that matters most: an open one,
+  // else the latest merged one.
+  const headPr =
+    prs.rows.find((r) => r.state === 'open' || r.state === 'draft') ??
+    prs.rows.find((r) => r.state === 'merged') ??
+    prs.rows[0]
   const priorities = board.priorities.includes(issue.priority ?? '')
     ? board.priorities
     : [...(issue.priority ? [issue.priority] : []), ...board.priorities]
@@ -3857,26 +4179,65 @@ function IssueDrawer({
               />
             </>
           )}
-          <button
-            type="button"
-            className="backlog-drawer-key"
-            title="Copy key"
-            onClick={() => copy(issue.key, issue.key)}
-          >
-            {issue.key}
-          </button>
-          <Pill>{typeName(issue)}</Pill>
+          {/* Where it sits: its epic, its parent ticket for a sub-task, then
+              its own key. */}
+          {(() => {
+            const parentIssue = issue.isSubtask
+              ? board.issues.find((i) => i.key === issue.parent?.key)
+              : null
+            const epic = issue.isSubtask ? parentIssue?.parent : issue.parent
+            return (
+              <span className="backlog-drawer-crumbs">
+                {epic && (
+                  <span className="backlog-drawer-crumb" title={`Epic ${epic.key}`}>
+                    <EpicMark />
+                    <span className="backlog-drawer-crumb-text">{epic.summary}</span>
+                  </span>
+                )}
+                {issue.isSubtask && issue.parent && (
+                  <button
+                    type="button"
+                    className="backlog-drawer-crumb backlog-drawer-crumb--link"
+                    title={issue.parent.summary}
+                    onClick={() => onOpenKey(issue.parent!.key)}
+                  >
+                    {issue.parent.key}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="backlog-drawer-key"
+                  title="Copy key"
+                  onClick={() => copy(issue.key, issue.key)}
+                >
+                  {issue.key}
+                </button>
+              </span>
+            )
+          })()}
         </div>
         <div className="backlog-drawer-header-actions">
           {onExpand && (
             <IconButton
               icon="PanelRight"
-              label="Open on Backlog"
-              tooltip="Open on Backlog"
+              label="Open in Tickets"
+              tooltip="Open in Tickets"
               size={28}
               variant="ghost"
               onClick={onExpand}
             />
+          )}
+          {headPr && (
+            <Tooltip label={`Open ${headPr.number || 'pull request'} in GitHub (${headPr.state})`}>
+              <button
+                type="button"
+                className="cr-icon-button cr-icon-button--28 cr-icon-button--ghost"
+                aria-label="Open in GitHub"
+                onClick={() => void openExternal(headPr.url)}
+              >
+                <GitHubGlyph size={15} />
+              </button>
+            </Tooltip>
           )}
           {slack ? (
             <Tooltip label="Open in Slack">
@@ -3964,42 +4325,248 @@ function IssueDrawer({
         </h2>
       )}
 
-      {/* Sessions: linked locally, or named after the ticket. */}
-      <div className="backlog-drawer-sessions">
-        {linkedSessions.map(({ session, linked }) => (
-          <span key={session.key} className="backlog-drawer-session">
+      <p className="backlog-drawer-byline">
+        <span className="backlog-person">
+          <Pill>{typeName(issue)}</Pill>
+          <Avatar name={issue.reporter} size={16} />
+          <span title={issue.created ? fullDate(issue.created) : undefined}>
+            {issue.reporter ?? 'Someone'} reported this
+            {issue.created ? ` ${when(issue.created)}` : ''}
+          </span>
+        </span>
+        {issue.updated && (
+          <span title={fullDate(issue.updated)}>Updated {when(issue.updated)}</span>
+        )}
+      </p>
+
+      {/* The ticket's fields as a ruled grid, label over value, each cell as wide
+          as its content needs: small values in thirds, people and labels in
+          halves, cycle and epic across. */}
+      <div className="backlog-props">
+        <div className="backlog-prop backlog-prop--third">
+          <span className="backlog-prop-label">Status</span>
+          <div className="backlog-prop-value">
+            <StatusGlyph name={issue.status} category={issue.statusCategory} />
+            <select
+              aria-label="Status"
+              className="backlog-select"
+              value={issue.status}
+              onChange={(e) => {
+                const s = statuses.find((x) => x.name === e.target.value)
+                if (s) void actions.status(issue, s)
+              }}
+            >
+              {statuses.map((s) => (
+                <option key={s.name} value={s.name}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="backlog-prop backlog-prop--third">
+          <span className="backlog-prop-label">Priority</span>
+          <div className="backlog-prop-value">
+            <PriorityGlyph priority={issue.priority} />
+            <select
+              aria-label="Priority"
+              className="backlog-select"
+              value={issue.priority ?? ''}
+              onChange={(e) => void actions.priority(issue, e.target.value)}
+            >
+              {!issue.priority && <option value="">No priority</option>}
+              {priorities.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="backlog-prop backlog-prop--third">
+          <span className="backlog-prop-label">Estimate</span>
+          <div className="backlog-prop-value">
+            <EstimateField issue={issue} onSave={(v) => actions.estimate(issue, v)} />
+          </div>
+        </div>
+        <div className="backlog-prop">
+          <span className="backlog-prop-label">Assignee</span>
+          <div className="backlog-prop-value">
+            <Avatar name={issue.assignee} size={20} />
+            {people.length > 0 ? (
+              <select
+                aria-label="Assignee"
+                className="backlog-select"
+                value={
+                  issue.assignedToMe
+                    ? 'me'
+                    : (people.find((p) => p.name === issue.assignee)?.accountId ??
+                      (issue.assignee ? 'other' : 'none'))
+                }
+                onChange={(e) => {
+                  const v = e.target.value
+                  const person = people.find((p) => p.accountId === v)
+                  if (v === 'me' || v === 'none') void actions.setAssignee(issue, v)
+                  else if (person) void actions.setAssignee(issue, person)
+                }}
+              >
+                <option value="none">Unassigned</option>
+                <option value="me">{myName === 'You' ? 'You' : `${myName} (you)`}</option>
+                {issue.assignee &&
+                  !issue.assignedToMe &&
+                  !people.some((p) => p.name === issue.assignee) && (
+                    <option value="other">{issue.assignee}</option>
+                  )}
+                {people
+                  .filter((p) => p.name !== myName)
+                  .map((p) => (
+                    <option key={p.accountId} value={p.accountId}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>
+            ) : (
+              <span className="backlog-person backlog-prop-text">
+                {issue.assignee ?? 'Unassigned'}
+              </span>
+            )}
             <button
               type="button"
-              className="backlog-session-chip"
-              onClick={() => onOpenSession(session.key)}
+              className="backlog-link backlog-link--quiet backlog-prop-action"
+              onClick={() => void actions.assign(issue)}
             >
-              <StatusDot status={session.status} size={8} />
-              <span className="backlog-session-chip-title">{session.record?.title}</span>
-              <span className="backlog-session-chip-status">{STATUS_WORDS[session.status]}</span>
+              {issue.assignedToMe ? 'Unassign' : 'Assign to me'}
             </button>
-            {linked && (
-              <IconButton
-                icon="Unlink"
-                label="Unlink this session"
-                size={28}
-                variant="ghost"
-                onClick={() => void onLink(session.record!.id, null)}
-              />
-            )}
-          </span>
-        ))}
-        <div className="backlog-drawer-session-actions">
-          <Button
-            variant={linkedSessions.length ? 'ghost' : 'filled'}
-            size="compact"
-            onClick={onStartSession}
-          >
-            Start session
-          </Button>
-          {linkable.length > 0 && (
+          </div>
+        </div>
+        <div className="backlog-prop">
+          <span className="backlog-prop-label">Labels</span>
+          <div className="backlog-prop-value">
+            <LabelsField
+              issue={issue}
+              suggestions={board.labels}
+              onSave={(labels) => actions.labels(issue, labels)}
+            />
+          </div>
+        </div>
+        {issue.isSubtask ? (
+          <>
+            <div className="backlog-prop backlog-prop--wide">
+              <span className="backlog-prop-label">Cycle</span>
+              <div className="backlog-prop-value">
+                <Icon name={issue.sprint ? 'RefreshCw' : 'Inbox'} size={14} />
+                <span className="backlog-drawer-field-note">
+                  {issue.sprint ? `Follows ${issue.parent?.key ?? 'its parent'}` : 'Backlog'}
+                </span>
+              </div>
+            </div>
+            <div className="backlog-prop backlog-prop--wide">
+              <span className="backlog-prop-label">Parent</span>
+              <div className="backlog-prop-value">
+                {issue.parent ? (
+                  <button
+                    type="button"
+                    className="backlog-link backlog-prop-text"
+                    onClick={() => onOpenKey(issue.parent!.key)}
+                  >
+                    {issue.parent.key} {issue.parent.summary}
+                  </button>
+                ) : (
+                  <span className="backlog-drawer-field-note">None</span>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="backlog-prop backlog-prop--wide">
+              <span className="backlog-prop-label">Cycle</span>
+              <div className="backlog-prop-value">
+                <Icon name={issue.sprint ? 'RefreshCw' : 'Inbox'} size={14} />
+                <select
+                  aria-label="Cycle"
+                  className="backlog-select"
+                  value={issue.sprint ? String(issue.sprint.id) : ''}
+                  disabled={board.sprints.length === 0}
+                  onChange={(e) =>
+                    void actions.cycle(issue, e.target.value ? Number(e.target.value) : null)
+                  }
+                >
+                  <option value="">Backlog</option>
+                  {issue.sprint && !board.sprints.some((sp) => sp.id === issue.sprint!.id) && (
+                    <option value={String(issue.sprint.id)}>{issue.sprint.name}</option>
+                  )}
+                  {board.sprints.map((sp) => (
+                    <option key={sp.id} value={String(sp.id)}>
+                      {sp.state === 'active'
+                        ? `Current cycle · ${sp.name}`
+                        : `${sp.name} · upcoming`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="backlog-prop backlog-prop--wide">
+              <span className="backlog-prop-label">Epic</span>
+              <div className="backlog-prop-value">
+                {issue.parent ? <EpicMark /> : <span className="backlog-drawer-field-blank" />}
+                <select
+                  aria-label="Parent"
+                  className="backlog-select"
+                  value={issue.parent?.key ?? ''}
+                  onChange={(e) => void actions.parent(issue, e.target.value || null)}
+                >
+                  <option value="">No epic</option>
+                  {issue.parent && !board.epics.some((ep) => ep.key === issue.parent!.key) && (
+                    <option value={issue.parent.key}>
+                      {issue.parent.summary} ({issue.parent.key})
+                    </option>
+                  )}
+                  {board.epics.map((ep) => (
+                    <option key={ep.key} value={ep.key}>
+                      {ep.summary} ({ep.key})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* One click to the next steps in the workflow, alongside the dropdown. */}
+      {(() => {
+        const at = statuses.findIndex((st) => st.name === issue.status)
+        const next = at >= 0 ? statuses.slice(at + 1, at + 3) : []
+        if (!next.length) return null
+        return (
+          <div className="backlog-next-status" role="group" aria-label="Move to">
+            <span className="backlog-next-status-label">Move to</span>
+            {next.map((st) => (
+              <button
+                key={st.name}
+                type="button"
+                className="backlog-next-status-option"
+                onClick={() => void actions.status(issue, st)}
+              >
+                <StatusGlyph name={st.name} category={st.category} size={12} />
+                {st.name}
+              </button>
+            ))}
+          </div>
+        )
+      })()}
+
+      {/* Work: the sessions on this ticket and their pull requests, in one box. */}
+      <section className="backlog-drawer-group" aria-label="Work">
+        {/* Heading first, then what to do. With sessions, the adds are quiet
+            and sit beside the heading; with none, Start session is the body. */}
+        {(() => {
+          const linkSelect = linkable.length > 0 && (
             <select
               aria-label="Link a session"
-              className="backlog-select backlog-select--inline"
+              className="backlog-select backlog-select--flat"
               value=""
               onChange={(e) => {
                 const id = e.target.value
@@ -4013,185 +4580,82 @@ function IssueDrawer({
                 </option>
               ))}
             </select>
-          )}
-        </div>
-      </div>
-
-      {issue.pullRequests && <TicketPullRequests issueKey={issue.key} />}
-
-      <PullRequestNudge
-        issue={issue}
-        entries={linkedSessions}
-        statuses={statuses}
-        onMove={(st) => void actions.status(issue, st)}
-        onComment={async (body) => {
-          const r = await addJiraComment(issue.key, body)
-          if (r.ok) setDetail((d) => (d ? { ...d, comments: [...d.comments, r.value] } : d))
-          else onError(`Jira: ${r.error}`)
-          return r.ok
-        }}
-      />
-
-      <dl className="backlog-drawer-fields">
-        <dt>Status</dt>
-        <dd className="backlog-drawer-field">
-          <StatusGlyph name={issue.status} category={issue.statusCategory} />
-          <select
-            aria-label="Status"
-            className="backlog-select"
-            value={issue.status}
-            onChange={(e) => {
-              const s = statuses.find((x) => x.name === e.target.value)
-              if (s) void actions.status(issue, s)
-            }}
-          >
-            {statuses.map((s) => (
-              <option key={s.name} value={s.name}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </dd>
-
-        <dt>Priority</dt>
-        <dd className="backlog-drawer-field">
-          <PriorityGlyph priority={issue.priority} />
-          <select
-            aria-label="Priority"
-            className="backlog-select"
-            value={issue.priority ?? ''}
-            onChange={(e) => void actions.priority(issue, e.target.value)}
-          >
-            {!issue.priority && <option value="">No priority</option>}
-            {priorities.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </dd>
-
-        {issue.isSubtask ? (
-          <>
-            <dt>Cycle</dt>
-            <dd className="backlog-drawer-field">
-              <Icon name={issue.sprint ? 'RefreshCw' : 'Inbox'} size={14} />
-              <span className="backlog-drawer-field-note">
-                {issue.sprint ? `Follows ${issue.parent?.key ?? 'its parent'}` : 'Backlog'}
-              </span>
-            </dd>
-
-            <dt>Parent</dt>
-            <dd className="backlog-drawer-field">
-              {issue.parent ? (
-                <button
-                  type="button"
-                  className="backlog-link"
-                  onClick={() => onOpenKey(issue.parent!.key)}
-                >
-                  {issue.parent.key} {issue.parent.summary}
-                </button>
-              ) : (
-                <span className="backlog-drawer-field-blank" />
-              )}
-            </dd>
-          </>
-        ) : (
-          <>
-            <dt>Cycle</dt>
-            <dd className="backlog-drawer-field">
-              <Icon name={issue.sprint ? 'RefreshCw' : 'Inbox'} size={14} />
-              <select
-                aria-label="Cycle"
-                className="backlog-select"
-                value={issue.sprint ? String(issue.sprint.id) : ''}
-                disabled={board.sprints.length === 0}
-                onChange={(e) =>
-                  void actions.cycle(issue, e.target.value ? Number(e.target.value) : null)
-                }
-              >
-                <option value="">Backlog</option>
-                {issue.sprint && !board.sprints.some((sp) => sp.id === issue.sprint!.id) && (
-                  <option value={String(issue.sprint.id)}>{issue.sprint.name}</option>
+          )
+          return linkedSessions.length > 0 || prs.rows.length > 0 ? (
+            <div className="backlog-drawer-section-head">
+              <h3>
+                Work{' '}
+                {linkedSessions.length > 1 && (
+                  <span className="backlog-group-count">{linkedSessions.length}</span>
                 )}
-                {board.sprints.map((sp) => (
-                  <option key={sp.id} value={String(sp.id)}>
-                    {sp.state === 'active' ? `Current cycle · ${sp.name}` : `${sp.name} · upcoming`}
-                  </option>
-                ))}
-              </select>
-            </dd>
-
-            <dt>Epic</dt>
-            <dd className="backlog-drawer-field">
-              {issue.parent ? <EpicMark /> : <span className="backlog-drawer-field-blank" />}
-              <select
-                aria-label="Parent"
-                className="backlog-select"
-                value={issue.parent?.key ?? ''}
-                onChange={(e) => void actions.parent(issue, e.target.value || null)}
-              >
-                <option value="">No epic</option>
-                {issue.parent && !board.epics.some((ep) => ep.key === issue.parent!.key) && (
-                  <option value={issue.parent.key}>
-                    {issue.parent.summary} ({issue.parent.key})
-                  </option>
-                )}
-                {board.epics.map((ep) => (
-                  <option key={ep.key} value={ep.key}>
-                    {ep.summary} ({ep.key})
-                  </option>
-                ))}
-              </select>
-            </dd>
-          </>
+              </h3>
+              <div className="backlog-drawer-section-actions">
+                <Button variant="ghost" size="compact" onClick={onStartSession}>
+                  <Icon name="Plus" size={12} />
+                  Start session
+                </Button>
+                {linkSelect}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="backlog-drawer-section-head">
+                <h3>Work</h3>
+              </div>
+              <div className="backlog-work-empty">
+                <Button variant="filled" size="compact" onClick={onStartSession}>
+                  Start session
+                </Button>
+                {linkSelect}
+              </div>
+            </>
+          )
+        })()}
+        {(linkedSessions.length > 0 || prs.rows.length > 0 || prs.jiraError) && (
+          <div className="backlog-work">
+            {linkedSessions.map(({ session, linked }) => (
+              <div key={session.key} className="backlog-work-item">
+                <div className="backlog-work-row">
+                  <button
+                    type="button"
+                    className="backlog-work-open"
+                    onClick={() => onOpenSession(session.key)}
+                  >
+                    <StatusDot status={session.status} size={8} />
+                    <span className="backlog-work-title">{session.record?.title}</span>
+                    <span className="backlog-state-chip">{STATUS_WORDS[session.status]}</span>
+                  </button>
+                  {/* Always laid out, shown on hover: nothing shifts as you point. */}
+                  <span className="backlog-work-tools">
+                    {session.record?.branch && !session.record.investigation && (
+                      <BranchCopy
+                        branch={session.record.branch}
+                        projectId={session.record.projectId}
+                        recordId={session.record.id}
+                        hasPr={prs.ownRecordId === session.record.id}
+                        onCopy={(b) => copy(b, 'Branch name')}
+                      />
+                    )}
+                    {linked && (
+                      <IconButton
+                        icon="Unlink"
+                        label="Unlink this session"
+                        tooltip="Unlink"
+                        size={28}
+                        variant="ghost"
+                        onClick={() => void onLink(session.record!.id, null)}
+                      />
+                    )}
+                  </span>
+                </div>
+              </div>
+            ))}
+            <TicketPullRequests prs={prs} show="all" onComment={noteWithLink} />
+          </div>
         )}
+      </section>
 
-        <dt>Assignee</dt>
-        <dd className="backlog-drawer-inline">
-          <span className="backlog-person">
-            <Avatar name={issue.assignee} size={20} />
-            {issue.assignee ?? 'Unassigned'}
-          </span>
-          <Button variant="ghost" size="compact" onClick={() => void actions.assign(issue)}>
-            {issue.assignedToMe ? 'Unassign' : 'Assign to me'}
-          </Button>
-        </dd>
-
-        <dt>Reporter</dt>
-        <dd>
-          <span className="backlog-person">
-            <Avatar name={issue.reporter} size={20} />
-            {issue.reporter ?? 'Unknown'}
-          </span>
-        </dd>
-
-        <dt>Estimate</dt>
-        <dd>
-          <EstimateField issue={issue} onSave={(v) => actions.estimate(issue, v)} />
-        </dd>
-
-        <dt>Labels</dt>
-        <dd>
-          <LabelsField
-            issue={issue}
-            suggestions={board.labels}
-            onSave={(labels) => actions.labels(issue, labels)}
-          />
-        </dd>
-
-        <dt>Dates</dt>
-        <dd className="backlog-drawer-dates">
-          {issue.created && (
-            <span title={fullDate(issue.created)}>Created {ago(issue.created)} ago</span>
-          )}
-          {issue.updated && (
-            <span title={fullDate(issue.updated)}>Updated {ago(issue.updated)} ago</span>
-          )}
-        </dd>
-      </dl>
-
-      {!issue.isSubtask && (
+      {!issue.isSubtask && ((issue.subtasks?.length ?? 0) > 0 || addingSubtask) && (
         <section className="backlog-drawer-section">
           <div className="backlog-drawer-section-head">
             <h3>
@@ -4221,9 +4685,6 @@ function IssueDrawer({
                 <span className="backlog-drawer-subtask-summary">{sub.summary}</span>
               </button>
             ))}
-          {(issue.subtasks?.length ?? 0) === 0 && !addingSubtask && (
-            <p className="backlog-note">No sub-tasks.</p>
-          )}
           {addingSubtask && (
             <form
               className="backlog-drawer-summary-form"
@@ -4266,17 +4727,53 @@ function IssueDrawer({
         </section>
       )}
 
-      {(['blockedBy', 'blocking'] as const).map((direction) => (
-        <BlockSection
-          key={direction}
-          issue={issue}
-          direction={direction}
-          board={board}
-          onOpenKey={onOpenKey}
-          onAdd={(other) => onAddBlock(issue, other, direction)}
-          onRemove={(link) => onRemoveBlock(issue, link)}
-        />
-      ))}
+      {(['blockedBy', 'blocking'] as const)
+        .filter((direction) => issue[direction].length > 0)
+        .map((direction) => (
+          <BlockSection
+            key={direction}
+            issue={issue}
+            direction={direction}
+            board={board}
+            onOpenKey={onOpenKey}
+            onAdd={(other) => onAddBlock(issue, other, direction)}
+            onRemove={(link) => onRemoveBlock(issue, link)}
+          />
+        ))}
+
+      {/* What's empty and rarely used takes one row of adds, not a section
+          each. A section appears once it has something in it. */}
+      {((!issue.isSubtask && (issue.subtasks?.length ?? 0) === 0 && !addingSubtask) ||
+        issue.blockedBy.length === 0 ||
+        issue.blocking.length === 0) && (
+        <div className="backlog-drawer-adds" role="group" aria-label="Add to this ticket">
+          {!issue.isSubtask && (issue.subtasks?.length ?? 0) === 0 && !addingSubtask && (
+            <Button
+              variant="ghost"
+              size="compact"
+              aria-label="Add sub-task"
+              onClick={() => setAddingSubtask(true)}
+            >
+              <Icon name="Plus" size={12} />
+              Sub-task
+            </Button>
+          )}
+          {(['blockedBy', 'blocking'] as const)
+            .filter((direction) => issue[direction].length === 0)
+            .map((direction) => (
+              <BlockSection
+                key={direction}
+                inline
+                issue={issue}
+                direction={direction}
+                board={board}
+                onOpenKey={onOpenKey}
+                onAdd={(other) => onAddBlock(issue, other, direction)}
+                onRemove={(link) => onRemoveBlock(issue, link)}
+              />
+            ))}
+        </div>
+      )}
 
       {issue.why && (
         <section className="backlog-drawer-section">
@@ -4356,9 +4853,9 @@ function IssueDrawer({
               </div>
             </>
           ) : detail.descriptionWiki.trim() ? (
-            <div className="backlog-drawer-text">
+            <FoldedText>
               <WikiText source={detail.descriptionWiki} people={detail.people} />
-            </div>
+            </FoldedText>
           ) : (
             <p className="backlog-note">No description.</p>
           ))}
@@ -4395,21 +4892,96 @@ function IssueDrawer({
             {detail && <span className="backlog-group-count">{detail.comments.length}</span>}
           </h3>
         </div>
-        <Textarea
-          aria-label="Add a comment"
-          className="backlog-drawer-textarea"
-          placeholder="Add a comment"
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && e.metaKey) {
-              e.preventDefault()
-              sendComment()
+        <div className="backlog-comment-box">
+          <Textarea
+            aria-label="Add a comment"
+            className="backlog-drawer-textarea"
+            placeholder={
+              asNote
+                ? 'Add an internal note. Type @ to mention someone'
+                : 'Reply to the person who raised this. Type @ to mention someone'
             }
-          }}
-          rows={3}
-        />
+            value={comment}
+            onChange={(e) => {
+              setComment(e.target.value)
+              // An @ at the start or after a space, then the name so far.
+              const upTo = e.target.value.slice(0, e.target.selectionStart ?? 0)
+              const m = /(^|\s)@([^\s@]{0,30})$/.exec(upTo)
+              setMention(
+                m && people.length
+                  ? { query: m[2], start: upTo.length - m[2].length - 1, index: 0 }
+                  : null
+              )
+            }}
+            onKeyDown={(e) => {
+              if (mention && mentionMatches.length) {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  const step = e.key === 'ArrowDown' ? 1 : -1
+                  const n = mentionMatches.length
+                  setMention({ ...mention, index: (mention.index + step + n) % n })
+                  return
+                }
+                if ((e.key === 'Enter' && !e.metaKey) || e.key === 'Tab') {
+                  e.preventDefault()
+                  pickMention(mentionMatches[mention.index] ?? mentionMatches[0], e.currentTarget)
+                  return
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  setMention(null)
+                  return
+                }
+              }
+              if (e.key === 'Enter' && e.metaKey) {
+                e.preventDefault()
+                sendComment()
+              }
+            }}
+            onBlur={() => setMention(null)}
+            rows={3}
+          />
+          {mention && mentionMatches.length > 0 && (
+            <div className="backlog-mention-list" role="listbox" aria-label="Mention someone">
+              {mentionMatches.map((p, i) => (
+                <button
+                  key={p.accountId}
+                  type="button"
+                  role="option"
+                  aria-selected={i === mention.index}
+                  className={
+                    i === mention.index
+                      ? 'backlog-mention-option backlog-mention-option--active'
+                      : 'backlog-mention-option'
+                  }
+                  // mousedown, not click: the textarea's blur would close the list first.
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    pickMention(
+                      p,
+                      e.currentTarget.closest('.backlog-comment-box')?.querySelector('textarea') ??
+                        null
+                    )
+                  }}
+                >
+                  <Avatar name={p.name} size={18} />
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="backlog-drawer-buttons">
+          <SegmentedControl<'note' | 'reply'>
+            aria-label="Comment type"
+            options={[
+              { value: 'note', label: 'Internal note' },
+              { value: 'reply', label: 'Reply' }
+            ]}
+            value={asNote ? 'note' : 'reply'}
+            onChange={(v) => setAsNote(v === 'note')}
+          />
           <span className="backlog-note">⌘↩ to send</span>
           <Button
             variant="outlined"
@@ -4417,18 +4989,22 @@ function IssueDrawer({
             disabled={busy || !comment.trim() || !detail}
             onClick={sendComment}
           >
-            Comment
+            {asNote ? 'Add note' : 'Reply'}
           </Button>
         </div>
         {/* Newest first, like a feed; the box to add one sits above them. */}
         {[...(detail?.comments ?? [])].reverse().map((c) => (
-          <div key={c.id} className="backlog-comment">
+          <div
+            key={c.id}
+            className={c.internal ? 'backlog-comment backlog-comment--internal' : 'backlog-comment'}
+          >
             <div className="backlog-comment-head">
               <span className="backlog-person">
                 <Avatar name={c.author} size={18} />
                 <strong>{c.author}</strong>
+                {c.internal && <span className="backlog-comment-tag">Internal note</span>}
               </span>
-              <span title={fullDate(c.created)}>{ago(c.created)} ago</span>
+              <span title={fullDate(c.created)}>{when(c.created)}</span>
             </div>
             <div className="backlog-drawer-text">
               <WikiText source={c.body} people={detail?.people} />
@@ -4517,43 +5093,243 @@ function AddSlackLink({ onAdd }: { onAdd: (url: string) => Promise<boolean> }): 
   )
 }
 
-/** The ticket's pull requests, as Jira's development panel lists them. */
-function TicketPullRequests({ issueKey }: { issueKey: string }): React.JSX.Element {
-  const [prs, setPrs] = useState<TicketPullRequest[] | null>(null)
+/** One row of the ticket's pull requests, from a linked session or Jira. */
+interface TicketPrRow {
+  url: string
+  number: string
+  title: string
+  state: string
+}
+
+/**
+ * The ticket's pull requests: an open (or else merged) one from a linked
+ * session's branch, then whatever Jira's development panel knows of.
+ */
+function useTicketPullRequests(
+  issue: JiraIssue,
+  entries: SessionEntry[]
+): {
+  rows: TicketPrRow[]
+  own: PullRequestInfo | null
+  /** The session whose branch the `own` pull request is from. */
+  ownRecordId: string | null
+  jiraError: string | null
+} {
+  const [fromJira, setFromJira] = useState<TicketPullRequest[] | null>(null)
+  const [jiraError, setJiraError] = useState<string | null>(null)
+  // Keyed by the sessions it came from, so unlinking one drops its PR.
+  const [ownFor, setOwnFor] = useState<{
+    ids: string
+    pr: PullRequestInfo
+    recordId: string
+  } | null>(null)
+  const hasJiraPrs = Boolean(issue.pullRequests)
   useEffect(() => {
+    if (!hasJiraPrs) return
     let live = true
-    void loadTicketPullRequests(issueKey).then((r) => {
-      if (live) setPrs(r.ok ? r.value : [])
+    void loadTicketPullRequests(issue.key).then((r) => {
+      if (!live) return
+      setFromJira(r.ok ? r.value : [])
+      setJiraError(r.ok ? null : r.error)
     })
     return () => {
       live = false
     }
-  }, [issueKey])
+  }, [issue.key, hasJiraPrs])
+  const idsKey = entries
+    .map((e) => e.session.record?.id)
+    .filter((id): id is string => Boolean(id))
+    .join(',')
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      // An open one wins; failing that, the first merged one still belongs here.
+      let merged: { pr: PullRequestInfo; recordId: string } | null = null
+      for (const id of idsKey ? idsKey.split(',') : []) {
+        const found = await getSessionPullRequest(id)
+        if (!live) return
+        if (found?.state === 'OPEN') {
+          setOwnFor({ ids: idsKey, pr: found, recordId: id })
+          return
+        }
+        if (found?.state === 'MERGED') merged ??= { pr: found, recordId: id }
+      }
+      if (merged) setOwnFor({ ids: idsKey, ...merged })
+    })()
+    return () => {
+      live = false
+    }
+  }, [idsKey])
+  const own = ownFor && ownFor.ids === idsKey ? ownFor.pr : null
+  const ownRecordId = own ? ownFor!.recordId : null
+
+  const rows: TicketPrRow[] = []
+  if (own) {
+    rows.push({
+      url: own.url,
+      number: `#${own.number}`,
+      title: own.title,
+      state: own.state === 'MERGED' ? 'merged' : own.isDraft ? 'draft' : 'open'
+    })
+  }
+  for (const pr of fromJira ?? []) {
+    if (pr.url === own?.url) continue
+    const n = /\/pull\/(\d+)/.exec(pr.url)?.[1]
+    rows.push({
+      url: pr.url,
+      number: n ? `#${n}` : '',
+      title: pr.name,
+      state: pr.status === 'MERGED' ? 'merged' : pr.status === 'OPEN' ? 'open' : 'closed'
+    })
+  }
+  return { rows, own, ownRecordId, jiraError }
+}
+
+/**
+ * Pull request rows for the Work tree: `own` is the one from a linked
+ * session's branch (it sits under that branch, with what to do next),
+ * `others` the ones Jira knows of from anywhere else.
+ */
+function TicketPullRequests({
+  prs,
+  show,
+  onComment
+}: {
+  prs: ReturnType<typeof useTicketPullRequests>
+  show: 'own' | 'others' | 'all'
+  onComment: (body: string) => Promise<boolean>
+}): React.JSX.Element | null {
+  const { own, jiraError } = prs
+  const [commented, setCommented] = useState(false)
+  const rows = prs.rows.filter((r) =>
+    show === 'all' ? true : show === 'own' ? r.url === own?.url : r.url !== own?.url
+  )
+  if (!rows.length && !(show !== 'own' && jiraError)) return null
+
   return (
-    <div className="backlog-ticket-prs" aria-label="Pull requests">
-      {prs === null && <p className="backlog-note">Loading pull requests…</p>}
-      {prs?.length === 0 && <p className="backlog-note">No pull requests found.</p>}
-      {prs?.map((pr) => {
-        const state = pr.status === 'MERGED' ? 'merged' : pr.status === 'OPEN' ? 'open' : 'closed'
-        return (
+    <>
+      {!rows.length && jiraError && (
+        <p className="backlog-note backlog-work-note">
+          Couldn’t load pull requests from Jira: {jiraError}
+        </p>
+      )}
+      {rows.map((pr) => (
+        <div key={pr.url} className="backlog-work-row backlog-ticket-pr">
           <button
-            key={pr.url}
             type="button"
-            className="backlog-ticket-pr"
-            title={pr.url}
+            className="backlog-work-open"
+            title={`Open ${pr.number || 'the pull request'} on GitHub`}
             onClick={() => void openExternal(pr.url)}
           >
             <Icon
-              name={state === 'merged' ? 'GitMerge' : 'GitPullRequest'}
+              name={pr.state === 'merged' ? 'GitMerge' : 'GitPullRequest'}
               size={14}
-              className={`backlog-pr--${state}`}
+              className={`backlog-pr--${pr.state}`}
             />
-            <span className="backlog-ticket-pr-name">{pr.name}</span>
-            <span className="backlog-ticket-pr-state">{state}</span>
+            {pr.number && <span className="backlog-ticket-pr-number">{pr.number}</span>}
+            <span className="backlog-work-title">{pr.title}</span>
+            <span className={`backlog-state-chip backlog-state-chip--${pr.state}`}>{pr.state}</span>
           </button>
-        )
-      })}
-    </div>
+          <span className="backlog-work-tools">
+            {own && own.state === 'OPEN' && pr.url === own.url && !commented && (
+              <IconButton
+                icon="MessageSquarePlus"
+                label="Add note with link"
+                tooltip="Add an internal note with this PR's link"
+                size={28}
+                variant="ghost"
+                onClick={() =>
+                  void onComment(`Pull request: [#${own.number} ${own.title}|${own.url}]`).then(
+                    (ok) => ok && setCommented(true)
+                  )
+                }
+              />
+            )}
+          </span>
+        </div>
+      ))}
+    </>
+  )
+}
+
+/** Long text folds to about eight lines, with Show all to open it. */
+function FoldedText({ children }: { children: React.ReactNode }): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [long, setLong] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = (): void => setLong(el.scrollHeight > el.clientHeight + 4)
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  return (
+    <>
+      <div
+        ref={ref}
+        className={open ? 'backlog-drawer-text' : 'backlog-drawer-text backlog-drawer-text--folded'}
+      >
+        {children}
+      </div>
+      {(long || open) && (
+        <button
+          type="button"
+          className="backlog-link backlog-link--quiet backlog-fold-toggle"
+          onClick={() => setOpen((o) => !o)}
+        >
+          {open ? 'Show less' : 'Show all'}
+        </button>
+      )}
+    </>
+  )
+}
+
+/**
+ * A session's branch, as a small icon that copies its name. The tooltip
+ * says the name and, before there's a PR, how far it got.
+ */
+function BranchCopy({
+  branch,
+  projectId,
+  recordId,
+  hasPr,
+  onCopy
+}: {
+  branch: string
+  projectId: string
+  recordId: string
+  hasPr: boolean
+  onCopy: (branch: string) => void
+}): React.JSX.Element {
+  const [progress, setProgress] = useState<string | null>(null)
+  useEffect(() => {
+    if (hasPr) return
+    let live = true
+    void getGitStatus(projectId, recordId).then((r) => {
+      if (!live || !r) return
+      setProgress(
+        !r.upstream
+          ? 'local only'
+          : r.ahead > 0
+            ? `${r.ahead} commit${r.ahead === 1 ? '' : 's'} not pushed`
+            : 'pushed, no PR'
+      )
+    })
+    return () => {
+      live = false
+    }
+  }, [projectId, recordId, hasPr])
+  return (
+    <IconButton
+      icon="GitBranch"
+      label={`Copy branch ${branch}`}
+      tooltip={`Copy ${branch}${progress ? `, ${progress}` : ''}`}
+      size={28}
+      variant="ghost"
+      onClick={() => onCopy(branch)}
+    />
   )
 }
 
@@ -4583,7 +5359,7 @@ function CycleProgress({
       {!compact && <span className="backlog-cycle-name">{sprint.name}</span>}
       <ProgressBar
         value={done / inCycle.length}
-        tone="var(--status-done)"
+        tone={days !== null && days <= 2 ? 'var(--status-attention)' : 'var(--status-done)'}
         height={4}
         className="backlog-cycle-bar"
       />
@@ -4591,7 +5367,13 @@ function CycleProgress({
         {done} of {inCycle.length} done
       </span>
       {days !== null && (
-        <span className="backlog-cycle-days">
+        <span
+          className={
+            days !== null && days <= 2
+              ? 'backlog-cycle-days backlog-cycle-days--soon'
+              : 'backlog-cycle-days'
+          }
+        >
           {days > 1
             ? `${days} days left`
             : days === 1
@@ -4798,10 +5580,13 @@ function BlockSection({
   issue,
   direction,
   board,
+  inline = false,
   onOpenKey,
   onAdd,
   onRemove
 }: {
+  /** Nothing linked yet: just the add button, for the panel's row of adds. */
+  inline?: boolean
   issue: JiraIssue
   direction: BlockDirection
   board: JiraBoardData
@@ -4820,6 +5605,37 @@ function BlockSection({
       label: `${i.key} ${i.summary}`,
       icon: <StatusGlyph name={i.status} category={i.statusCategory} size={12} />
     }))
+  const picker = anchor && (
+    <Picker
+      anchor={anchor}
+      title={direction === 'blockedBy' ? 'Blocked by which ticket' : 'Blocking which ticket'}
+      options={options}
+      emptyText="No tickets match. Type a key, like DSD-123"
+      custom={(text) =>
+        ISSUE_KEY.test(text) && !linked.has(text.toUpperCase())
+          ? `Link ${text.toUpperCase()}`
+          : null
+      }
+      onPick={(value) => void onAdd(value)}
+      onClose={() => setAnchor(null)}
+    />
+  )
+  if (inline) {
+    return (
+      <>
+        <Button
+          variant="ghost"
+          size="compact"
+          aria-label={`Add ${title.toLowerCase()}`}
+          onClick={(e) => setAnchor(e.currentTarget)}
+        >
+          <Icon name="Plus" size={12} />
+          {title}
+        </Button>
+        {picker}
+      </>
+    )
+  }
   return (
     <section className="backlog-drawer-section" data-blocks={direction}>
       <div className="backlog-drawer-section-head">
@@ -4864,21 +5680,7 @@ function BlockSection({
           </div>
         )
       })}
-      {anchor && (
-        <Picker
-          anchor={anchor}
-          title={direction === 'blockedBy' ? 'Blocked by which ticket' : 'Blocking which ticket'}
-          options={options}
-          emptyText="No tickets match. Type a key, like DSD-123"
-          custom={(text) =>
-            ISSUE_KEY.test(text) && !linked.has(text.toUpperCase())
-              ? `Link ${text.toUpperCase()}`
-              : null
-          }
-          onPick={(value) => void onAdd(value)}
-          onClose={() => setAnchor(null)}
-        />
-      )}
+      {picker}
     </section>
   )
 }
@@ -4992,81 +5794,6 @@ function LabelsField({
             <option key={l} value={l} />
           ))}
       </datalist>
-    </div>
-  )
-}
-
-/**
- * A linked session with an open pull request: offer the two things people do
- * next — move the ticket to review, and put the PR's link on it.
- */
-function PullRequestNudge({
-  issue,
-  entries,
-  statuses,
-  onMove,
-  onComment
-}: {
-  issue: JiraIssue
-  entries: SessionEntry[]
-  statuses: StatusOption[]
-  onMove: (status: StatusOption) => void
-  onComment: (body: string) => Promise<boolean>
-}): React.JSX.Element | null {
-  const [pr, setPr] = useState<PullRequestInfo | null>(null)
-  const [commented, setCommented] = useState(false)
-  const recordIds = entries
-    .map((e) => e.session.record?.id)
-    .filter((id): id is string => Boolean(id))
-  const idsKey = recordIds.join(',')
-  useEffect(() => {
-    let live = true
-    void (async () => {
-      for (const id of idsKey ? idsKey.split(',') : []) {
-        const found = await getSessionPullRequest(id)
-        if (!live) return
-        if (found && found.state === 'OPEN') {
-          setPr(found)
-          return
-        }
-      }
-    })()
-    return () => {
-      live = false
-    }
-  }, [idsKey])
-  if (!pr) return null
-  const review = statuses.find((st) => /review/i.test(st.name))
-  const inReview = issue.status === review?.name || issue.statusCategory === 'done'
-  const alreadyLinked = commented
-  return (
-    <div className="backlog-nudge" role="group" aria-label="Pull request">
-      <Icon name="GitPullRequest" size={14} />
-      <button type="button" className="backlog-link" onClick={() => void openExternal(pr.url)}>
-        {pr.isDraft ? 'Draft pull request' : 'Pull request'} #{pr.number}
-      </button>
-      {review && !inReview && (
-        <button
-          type="button"
-          className="backlog-link backlog-link--quiet"
-          onClick={() => onMove(review)}
-        >
-          Move to {review.name}
-        </button>
-      )}
-      {!alreadyLinked && (
-        <button
-          type="button"
-          className="backlog-link backlog-link--quiet"
-          onClick={() =>
-            void onComment(`Pull request: [#${pr.number} ${pr.title}|${pr.url}]`).then(
-              (ok) => ok && setCommented(true)
-            )
-          }
-        >
-          Comment with link
-        </button>
-      )}
     </div>
   )
 }

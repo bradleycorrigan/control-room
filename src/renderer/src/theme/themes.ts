@@ -1,5 +1,6 @@
-// The ten themes, ported from Brad's Cursor set (see `_wt_themes` in
-// ~/.zsh/worktrees.zsh). Every colour the app renders comes from here — a
+// The themes: the first ten ported from Brad's Cursor set (see `_wt_themes`
+// in ~/.zsh/worktrees.zsh), then popular editor themes from their published
+// palettes. Every colour the app renders comes from here — a
 // hex literal in a component is a bug (see plan section 1.2/1.3).
 //
 // Anchor colours (bg, surface, text, accent, the five status colours, the 16
@@ -61,6 +62,13 @@ export interface Theme {
   termCursorFg: string
   /** Selection wash. Carries alpha, so the selected text stays readable. */
   termSelection: string
+  /**
+   * xterm's `minimumContrastRatio`: any text colour below it against the
+   * terminal background is darkened or lightened until it clears. 1 = off.
+   */
+  termMinContrast: number
+  /** `-webkit-font-smoothing` for terminal text. */
+  termFontSmoothing: 'auto' | 'antialiased'
   ansi: Ansi16
 }
 
@@ -187,6 +195,17 @@ function build(seed: ThemeSeed): Theme {
     // already publishes, so every theme gets them and none hand-picks more hex.
     termCursorFg: bg,
     termSelection: withAlpha(accent, 0.3),
+    // Light themes: Claude Code prints some text (file paths among it) in
+    // fixed 24-bit colours tuned for dark terminals, which no ANSI palette
+    // here can remap, so the pale pink came out near-invisible on white.
+    // xterm's contrast floor catches those as well as the palette's own
+    // colours. Dark themes keep their exact colours (Claude Code's dim
+    // greys there are deliberate).
+    termMinContrast: isDark ? 1 : 4.5,
+    // The app renders text with grayscale smoothing, which draws dark text
+    // on a light ground noticeably thin. `auto` lets macOS thicken strokes
+    // as it does in its own terminals; dark themes stay as they were.
+    termFontSmoothing: isDark ? 'antialiased' : 'auto',
     ansi: seed.ansi
   }
 }
@@ -573,6 +592,341 @@ const seeds: ThemeSeed[] = [
       brightMagenta: '#6c71c4',
       brightCyan: '#93a1a1',
       brightWhite: '#fdf6e3'
+    }
+  },
+  {
+    id: 'rose-pine',
+    name: 'Rosé Pine',
+    isDark: true,
+    bg: '#191724', // base
+    surface: '#26233a', // overlay
+    text: '#e0def4', // text
+    textMuted: '#908caa', // subtle
+    textFaint: '#6e6a86', // muted
+    accent: '#c4a7e7', // iris
+    accentFg: '#191724',
+    status: {
+      working: '#9ccfd8', // foam
+      attention: '#f6c177', // gold
+      done: '#31748f', // pine
+      idle: '#6e6a86', // muted
+      error: '#eb6f92' // love
+    },
+    ansi: {
+      black: '#26233a',
+      red: '#eb6f92',
+      green: '#31748f',
+      yellow: '#f6c177',
+      blue: '#9ccfd8',
+      magenta: '#c4a7e7',
+      cyan: '#ebbcba',
+      white: '#e0def4',
+      brightBlack: '#6e6a86',
+      brightRed: '#eb6f92',
+      brightGreen: '#31748f',
+      brightYellow: '#f6c177',
+      brightBlue: '#9ccfd8',
+      brightMagenta: '#c4a7e7',
+      brightCyan: '#ebbcba',
+      brightWhite: '#e0def4'
+    }
+  },
+  {
+    id: 'monokai-pro',
+    name: 'Monokai Pro',
+    isDark: true,
+    bg: '#2d2a2e', // background
+    surface: '#403e41', // dimmed5
+    text: '#fcfcfa', // text
+    textMuted: '#939293', // dimmed2
+    textFaint: '#727072', // dimmed3
+    accent: '#ffd866', // yellow
+    accentFg: '#2d2a2e',
+    status: {
+      working: '#78dce8', // cyan
+      attention: '#fc9867', // orange
+      done: '#a9dc76', // green
+      idle: '#727072', // dimmed3
+      error: '#ff6188' // red
+    },
+    ansi: {
+      black: '#403e41',
+      red: '#ff6188',
+      green: '#a9dc76',
+      yellow: '#ffd866',
+      blue: '#fc9867',
+      magenta: '#ab9df2',
+      cyan: '#78dce8',
+      white: '#fcfcfa',
+      brightBlack: '#727072',
+      brightRed: '#ff6188',
+      brightGreen: '#a9dc76',
+      brightYellow: '#ffd866',
+      brightBlue: '#fc9867',
+      brightMagenta: '#ab9df2',
+      brightCyan: '#78dce8',
+      brightWhite: '#fcfcfa'
+    }
+  },
+  {
+    id: 'kanagawa',
+    name: 'Kanagawa',
+    isDark: true,
+    bg: '#1f1f28', // sumiInk3
+    surface: '#2a2a37', // sumiInk4
+    text: '#dcd7ba', // fujiWhite
+    textMuted: '#c8c093', // oldWhite
+    textFaint: '#727169', // fujiGray
+    accent: '#7e9cd8', // crystalBlue
+    accentFg: '#1f1f28',
+    status: {
+      working: '#7fb4ca', // springBlue
+      attention: '#e6c384', // carpYellow
+      done: '#98bb6c', // springGreen
+      idle: '#727169', // fujiGray
+      error: '#e82424' // samuraiRed
+    },
+    ansi: {
+      black: '#16161d',
+      red: '#c34043',
+      green: '#76946a',
+      yellow: '#c0a36e',
+      blue: '#7e9cd8',
+      magenta: '#957fb8',
+      cyan: '#6a9589',
+      white: '#c8c093',
+      brightBlack: '#727169',
+      brightRed: '#e82424',
+      brightGreen: '#98bb6c',
+      brightYellow: '#e6c384',
+      brightBlue: '#7fb4ca',
+      brightMagenta: '#938aa9',
+      brightCyan: '#7aa89f',
+      brightWhite: '#dcd7ba'
+    }
+  },
+  {
+    id: 'everforest-dark',
+    name: 'Everforest Dark',
+    isDark: true,
+    bg: '#2d353b', // bg0
+    surface: '#3d484d', // bg2
+    text: '#d3c6aa', // fg
+    textMuted: '#9da9a0', // grey2
+    textFaint: '#7a8478', // grey0
+    accent: '#a7c080', // green
+    accentFg: '#2d353b',
+    status: {
+      working: '#7fbbb3', // blue
+      attention: '#dbbc7f', // yellow
+      done: '#a7c080', // green
+      idle: '#7a8478', // grey0
+      error: '#e67e80' // red
+    },
+    ansi: {
+      black: '#475258',
+      red: '#e67e80',
+      green: '#a7c080',
+      yellow: '#dbbc7f',
+      blue: '#7fbbb3',
+      magenta: '#d699b6',
+      cyan: '#83c092',
+      white: '#d3c6aa',
+      brightBlack: '#7a8478',
+      brightRed: '#e67e80',
+      brightGreen: '#a7c080',
+      brightYellow: '#dbbc7f',
+      brightBlue: '#7fbbb3',
+      brightMagenta: '#d699b6',
+      brightCyan: '#83c092',
+      brightWhite: '#d3c6aa'
+    }
+  },
+  {
+    id: 'catppuccin-latte',
+    name: 'Catppuccin Latte',
+    isDark: false,
+    bg: '#eff1f5', // base
+    surface: '#e6e9ef', // mantle
+    border: '#ccd0da', // surface0
+    borderStrong: '#acb0be', // surface2
+    text: '#4c4f69', // text
+    textMuted: '#6c6f85', // subtext0
+    textFaint: '#9ca0b0', // overlay0
+    accent: '#8839ef', // mauve
+    accentFg: '#eff1f5',
+    status: {
+      working: '#04a5e5', // sky
+      attention: '#df8e1d', // yellow
+      done: '#40a02b', // green
+      idle: '#9ca0b0', // overlay0
+      error: '#d20f39' // red
+    },
+    ansi: {
+      black: '#5c5f77',
+      red: '#d20f39',
+      green: '#40a02b',
+      yellow: '#df8e1d',
+      blue: '#1e66f5',
+      magenta: '#ea76cb',
+      cyan: '#179299',
+      white: '#acb0be',
+      brightBlack: '#6c6f85',
+      brightRed: '#d20f39',
+      brightGreen: '#40a02b',
+      brightYellow: '#df8e1d',
+      brightBlue: '#1e66f5',
+      brightMagenta: '#ea76cb',
+      brightCyan: '#179299',
+      brightWhite: '#bcc0cc'
+    }
+  },
+  {
+    id: 'one-light',
+    name: 'One Light',
+    isDark: false,
+    bg: '#fafafa',
+    surface: '#f0f0f1',
+    text: '#383a42',
+    textMuted: '#696c77',
+    textFaint: '#a0a1a7',
+    accent: '#4078f2', // blue
+    accentFg: '#fafafa',
+    status: {
+      working: '#0184bc', // cyan
+      attention: '#c18401', // yellow
+      done: '#50a14f', // green
+      idle: '#a0a1a7',
+      error: '#e45649' // red
+    },
+    ansi: {
+      black: '#383a42',
+      red: '#e45649',
+      green: '#50a14f',
+      yellow: '#c18401',
+      blue: '#4078f2',
+      magenta: '#a626a4',
+      cyan: '#0184bc',
+      white: '#a0a1a7',
+      brightBlack: '#696c77',
+      brightRed: '#e45649',
+      brightGreen: '#50a14f',
+      brightYellow: '#c18401',
+      brightBlue: '#4078f2',
+      brightMagenta: '#a626a4',
+      brightCyan: '#0184bc',
+      brightWhite: '#383a42'
+    }
+  },
+  {
+    id: 'tokyo-night-day',
+    name: 'Tokyo Night Day',
+    isDark: false,
+    bg: '#e1e2e7', // bg
+    surface: '#d0d5e3', // bg_dark
+    text: '#3760bf', // fg
+    textMuted: '#6172b0', // fg_dark
+    textFaint: '#848cb5', // comment
+    accent: '#2e7de9', // blue
+    accentFg: '#e1e2e7',
+    status: {
+      working: '#007197', // cyan
+      attention: '#8c6c3e', // yellow
+      done: '#587539', // green
+      idle: '#848cb5', // comment
+      error: '#f52a65' // red
+    },
+    ansi: {
+      black: '#e9e9ed',
+      red: '#f52a65',
+      green: '#587539',
+      yellow: '#8c6c3e',
+      blue: '#2e7de9',
+      magenta: '#9854f1',
+      cyan: '#007197',
+      white: '#6172b0',
+      brightBlack: '#a1a6c5',
+      brightRed: '#f52a65',
+      brightGreen: '#587539',
+      brightYellow: '#8c6c3e',
+      brightBlue: '#2e7de9',
+      brightMagenta: '#9854f1',
+      brightCyan: '#007197',
+      brightWhite: '#3760bf'
+    }
+  },
+  {
+    id: 'rose-pine-dawn',
+    name: 'Rosé Pine Dawn',
+    isDark: false,
+    bg: '#faf4ed', // base
+    surface: '#f2e9e1', // overlay
+    text: '#575279', // text
+    textMuted: '#797593', // subtle
+    textFaint: '#9893a5', // muted
+    accent: '#286983', // pine
+    accentFg: '#faf4ed',
+    status: {
+      working: '#56949f', // foam
+      attention: '#ea9d34', // gold
+      done: '#286983', // pine
+      idle: '#9893a5', // muted
+      error: '#b4637a' // love
+    },
+    ansi: {
+      black: '#f2e9e1',
+      red: '#b4637a',
+      green: '#286983',
+      yellow: '#ea9d34',
+      blue: '#56949f',
+      magenta: '#907aa9',
+      cyan: '#d7827e',
+      white: '#575279',
+      brightBlack: '#9893a5',
+      brightRed: '#b4637a',
+      brightGreen: '#286983',
+      brightYellow: '#ea9d34',
+      brightBlue: '#56949f',
+      brightMagenta: '#907aa9',
+      brightCyan: '#d7827e',
+      brightWhite: '#575279'
+    }
+  },
+  {
+    id: 'gruvbox-light',
+    name: 'Gruvbox Light',
+    isDark: false,
+    bg: '#fbf1c7', // bg0
+    surface: '#ebdbb2', // bg1
+    text: '#3c3836', // fg
+    textMuted: '#7c6f64', // fg4
+    textFaint: '#928374', // gray
+    accent: '#076678', // faded blue
+    accentFg: '#fbf1c7',
+    status: {
+      working: '#076678', // faded blue
+      attention: '#b57614', // faded yellow
+      done: '#79740e', // faded green
+      idle: '#928374', // gray
+      error: '#9d0006' // faded red
+    },
+    ansi: {
+      black: '#fbf1c7',
+      red: '#cc241d',
+      green: '#98971a',
+      yellow: '#d79921',
+      blue: '#458588',
+      magenta: '#b16286',
+      cyan: '#689d6a',
+      white: '#7c6f64',
+      brightBlack: '#928374',
+      brightRed: '#9d0006',
+      brightGreen: '#79740e',
+      brightYellow: '#b57614',
+      brightBlue: '#076678',
+      brightMagenta: '#8f3f71',
+      brightCyan: '#427b58',
+      brightWhite: '#3c3836'
     }
   }
 ]

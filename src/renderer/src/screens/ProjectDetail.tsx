@@ -26,12 +26,12 @@ import { formatHomePath } from '../lib/format-path'
 import { revealProjectInFinder } from '../api-projects'
 import {
   createSession,
-  listProjectWorktrees,
+  listAllWorktrees,
   adoptWorktree,
   removeWorktree,
   listSessionRecordsForProject,
   updateWorktreeDefaults,
-  type UnattachedWorktree,
+  type ProjectWorktree,
   type WorktreeDefaultsPatch
 } from '../api'
 
@@ -206,13 +206,16 @@ function OverviewTab({
   const [confirmNode, confirm] = useConfirm()
   const [worktreeMode] = useWorktreeChoice()
   const [busy, setBusy] = useState(false)
-  const [worktrees, setWorktrees] = useState<UnattachedWorktree[]>([])
+  // Every worktree on disk but the main checkout: the ones with a session
+  // and the ones without. Listing only the unattached ones said "None yet"
+  // to someone with two dozen.
+  const [worktrees, setWorktrees] = useState<ProjectWorktree[]>([])
   const [records, setRecords] = useState<SessionRecord[]>([])
   const [worktreesOpen, setWorktreesOpen] = useState(false)
   const [cleanupOpen, setCleanupOpen] = useState(false)
 
   const refreshWorktrees = (): void => {
-    listProjectWorktrees(project.id).then(setWorktrees)
+    listAllWorktrees(project.id).then((all) => setWorktrees(all.filter((w) => !w.isMainCheckout)))
   }
 
   // History reads this list, so anything that changes a record has to call it.
@@ -351,15 +354,17 @@ function OverviewTab({
       <section className="overview-section">
         <Disclosure
           label="Worktrees"
-          hint={
-            worktrees.length === 0
-              ? 'None yet: a session makes one when you start it on a new worktree'
-              : `${worktrees.length} on disk, with no agent attached`
-          }
+          hint={(() => {
+            if (worktrees.length === 0)
+              return 'None yet: a session makes one when you start it on a new worktree'
+            const idle = worktrees.filter((w) => !w.sessionId).length
+            const total = `${worktrees.length} on disk`
+            return idle ? `${total}, ${idle} with no session` : total
+          })()}
           open={worktreesOpen}
           onToggle={setWorktreesOpen}
         >
-          <Row justify="flex-end" className="overview-worktrees-actions">
+          <Row justify="flex-start" className="overview-worktrees-actions">
             <Button variant="outlined" size="compact" onClick={() => setCleanupOpen(true)}>
               Clean up worktrees
             </Button>
@@ -370,14 +375,34 @@ function OverviewTab({
                 <div className="cr-worktree-card-path" title={w.path}>
                   <bdi>{formatHomePath(w.path, worktreeHomeDir)}</bdi>
                 </div>
-                <div className="cr-worktree-card-branch">{w.branch ?? 'detached'}</div>
+                <div className="cr-worktree-card-branch">
+                  {w.branch ?? 'detached'}
+                  {w.dirty && <span className="cr-worktree-card-dirty">uncommitted changes</span>}
+                </div>
                 <div className="cr-worktree-card-actions">
-                  <button type="button" onClick={() => handleAdopt(w.path)}>
-                    Start agent
-                  </button>
-                  <button type="button" onClick={() => handleRemoveWorktree(w.path)}>
-                    Remove
-                  </button>
+                  {w.sessionId ? (
+                    // In use: open its session. Removing it here would pull the
+                    // worktree out from under a running agent.
+                    (() => {
+                      const live = findLiveKey(w.sessionId)
+                      return live ? (
+                        <button type="button" onClick={() => onOpenSession(live)}>
+                          Open session
+                        </button>
+                      ) : (
+                        <span className="cr-worktree-card-note">Session ended</span>
+                      )
+                    })()
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => handleAdopt(w.path)}>
+                        Start agent
+                      </button>
+                      <button type="button" onClick={() => handleRemoveWorktree(w.path)}>
+                        Remove
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}

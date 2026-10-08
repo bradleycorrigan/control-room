@@ -66,7 +66,11 @@ import {
   hasUncommittedChanges,
   listBranchesForCheckout,
   resolveRemoteBranch,
-  getDefaultBranch
+  getDefaultBranch,
+  prStatesForBranches,
+  lastCommitTime,
+  commitTimesSince,
+  remoteTrackingRefExists
 } from './exec/git'
 import {
   isWithinRoots,
@@ -98,6 +102,7 @@ import {
   addComment,
   moveToStatus,
   assignIssue,
+  assignablePeople,
   setParent,
   moveToSprint,
   setPriority,
@@ -159,8 +164,130 @@ function resolveFilesRoot(project: Project, sessionId?: string): string | null {
   return isWithinRoots([project.repoPath, project.worktreeRoot], session.worktreePath)
 }
 
+// ---- Projects list tidy-up strip -----------------------------------------
+// One summary per project for the Projects list: what is left lying around
+// (open PRs, branches never pushed, idle worktrees) and how many commits
+// landed on each of the last seven days.
+
+export interface ProjectTidy {
+  openPrs: number
+  neverPushed: number
+  idleWorktrees: number
+  /** Seven local days, oldest first, ending today. */
+  activity: number[]
+}
+
+const TIDY_CACHE_MS = 2 * 60 * 1000
+const IDLE_AFTER_MS = 14 * 24 * 60 * 60 * 1000
+const tidyCache = new Map<string, { at: number; result: ProjectTidy }>()
+const tidyInFlight = new Map<string, Promise<ProjectTidy>>()
+
+const emptyTidy = (): ProjectTidy => ({
+  openPrs: 0,
+  neverPushed: 0,
+  idleWorktrees: 0,
+  activity: [0, 0, 0, 0, 0, 0, 0]
+})
+
+/** Runs `fn` over `items`, at most `limit` at a time. */
+async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+  let next = 0
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const i = next++
+      results[i] = await fn(items[i])
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
+/** Buckets commit times into the seven local days ending today, oldest first. */
+function activityByDay(times: number[], now = new Date()): number[] {
+  const starts = Array.from({ length: 7 }, (_, i) =>
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6 + i).getTime()
+  )
+  const counts = [0, 0, 0, 0, 0, 0, 0]
+  for (const t of times) {
+    if (t < starts[0]) continue
+    let day = 6
+    while (day > 0 && t < starts[day]) day--
+    counts[day]++
+  }
+  return counts
+}
+
+async function computeProjectTidy(project: Project): Promise<ProjectTidy> {
+  const [worktrees, prStates, commitTimes] = await Promise.all([
+    listWorktrees(project.repoPath),
+    prStatesForBranches(project.repoPath),
+    commitTimesSince(project.repoPath, 7)
+  ])
+  const attached = new Set(getState().sessions.map((s) => s.worktreePath))
+  const now = Date.now()
+  const others = worktrees.filter((w) => w.path !== project.repoPath && !w.bare)
+
+  const perWorktree = await mapLimit(others, 4, async (w) => {
+    const branch = w.branch?.replace(/^refs\/heads\//, '') ?? null
+    const openPr = branch !== null && prStates.get(branch) === 'OPEN'
+    let neverPushed = false
+    if (branch !== null && !w.prunable) {
+      const status = await gitStatus(w.path)
+      neverPushed =
+        status.upstream === null && !(await remoteTrackingRefExists(project.repoPath, branch))
+    }
+    let idle = false
+    if (!attached.has(w.path) && !w.prunable) {
+      const last = await lastCommitTime(w.path)
+      idle = last !== null && now - last > IDLE_AFTER_MS
+    }
+    return { openPr, neverPushed, idle }
+  })
+
+  return {
+    openPrs: perWorktree.filter((w) => w.openPr).length,
+    neverPushed: perWorktree.filter((w) => w.neverPushed).length,
+    idleWorktrees: perWorktree.filter((w) => w.idle).length,
+    activity: activityByDay(commitTimes)
+  }
+}
+
+/** Cached for two minutes per project; `force` skips the cache (after a cleanup). Never throws. */
+async function projectTidy(projectId: string, force = false): Promise<ProjectTidy> {
+  const project = getState().projects.find((p) => p.id === projectId)
+  if (!project) return emptyTidy()
+  const cached = tidyCache.get(projectId)
+  if (!force && cached && Date.now() - cached.at < TIDY_CACHE_MS) return cached.result
+  const pending = tidyInFlight.get(projectId)
+  if (pending) return pending
+  const job = computeProjectTidy(project)
+    .catch((err) => {
+      log.warn('projects:tidy failed', {
+        projectId,
+        error: err instanceof Error ? err.message : String(err)
+      })
+      return emptyTidy()
+    })
+    .then((result) => {
+      tidyCache.set(projectId, { at: Date.now(), result })
+      return result
+    })
+    .finally(() => tidyInFlight.delete(projectId))
+  tidyInFlight.set(projectId, job)
+  return job
+}
+
 /** Every ipcMain.handle lives here. */
 export function registerIpcHandlers(): void {
+  ipcMain.handle('projects:tidy', (_evt, projectId: string, force?: boolean) =>
+    projectTidy(projectId, force === true)
+  )
+
   registerBacklogIpc()
   registerSessionsIpc()
   registerProjectsIpc()
@@ -609,9 +736,19 @@ export function registerIpcHandlers(): void {
     (_evt, key: string, patch: { summary?: string; descriptionWiki?: string }) =>
       updateIssueText(key, patch)
   )
-  ipcMain.handle('jira:comment', (_evt, key: string, body: string) => addComment(key, body))
+  ipcMain.handle('jira:comment', (_evt, key: string, body: string, internal?: boolean) =>
+    addComment(key, body, internal === true)
+  )
   ipcMain.handle('jira:move', (_evt, key: string, status: string) => moveToStatus(key, status))
-  ipcMain.handle('jira:assign', (_evt, key: string, toMe: boolean) => assignIssue(key, toMe))
+  ipcMain.handle('jira:assign', (_evt, key: string, who: boolean | string) => assignIssue(key, who))
+  ipcMain.handle('jira:assignable', () => assignablePeople())
+  // A screen that crashed, from the renderer's ScreenBoundary.
+  ipcMain.handle(
+    'log:rendererError',
+    (_evt, detail: { screen: string; message: string; stack?: string; component?: string }) => {
+      log.error('renderer: screen crashed', detail)
+    }
+  )
   ipcMain.handle('jira:parent', (_evt, key: string, parent: string | null) =>
     setParent(key, parent)
   )

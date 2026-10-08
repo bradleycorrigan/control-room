@@ -140,6 +140,9 @@
 .cr-ticket-card {
   display: flex;
   flex-direction: column;
+  /* The whole card's height (the wrap is a flex column), so its foot can
+     sit at the bottom. */
+  flex: 1;
   gap: var(--space-8);
   width: 100%;
   min-width: 0;
@@ -158,11 +161,9 @@
   outline-offset: -2px;
 }
 
+/* The title and top row are the session card's own classes, so the two
+   cards can't drift apart; this only keeps the top row clear of View. */
 .cr-ticket-card-top {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  /* Clear of the View button in the corner. */
   padding-right: var(--space-32);
 }
 
@@ -172,18 +173,10 @@
   color: var(--text-muted);
 }
 
-.cr-ticket-card-title {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  font-size: var(--text-body-size);
-  line-height: var(--text-body-line);
-  color: var(--text);
-}
-
 .cr-ticket-card-foot {
+  /* At the card's foot, wherever the title ends, so the PR chip pinned to
+     the bottom corner lines up with it. */
+  margin-top: auto;
   display: flex;
   align-items: center;
   gap: var(--space-8);
@@ -199,4 +192,50 @@
   position: absolute;
   top: var(--space-16);
   right: var(--space-16);
+}
+
+/* Work state on the foot row: the ticket's pull request, when Jira knows of
+   one. Its own button over the card's bottom-right corner (the card is one
+   button, and buttons don't nest), on the foot row's line. Colour and word,
+   as every status is. */
+
+.cr-ticket-card-pr {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  cursor: pointer;
+}
+
+/* The card behind it already lifts on hover, so the chip answers with its edge. */
+.cr-ticket-card-pr:hover {
+  border-color: var(--text-faint);
+}
+
+.cr-ticket-card-pr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cr-ticket-card-pr-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  flex-shrink: 0;
+}
+
+.cr-ticket-card-pr--open .cr-ticket-card-pr-dot {
+  background: var(--status-done);
+}
+
+.cr-ticket-card-pr--merged .cr-ticket-card-pr-dot {
+  background: var(--accent);
 }

@@ -22,7 +22,6 @@ interface Props {
   onInstallHooks: () => void
   onOpenDataFolder: () => void
   onNewSession: () => void
-  onToggleHistory: () => void
   onViewSessions: () => void
   /** Show only the sessions waiting on the user. */
   /** The bell: open the list with Unread only on. */
@@ -46,7 +45,6 @@ export default function AppShell({
   onInstallHooks,
   onOpenDataFolder,
   onNewSession,
-  onToggleHistory,
   onViewSessions,
   onShowUnread,
   onToggleSidebar,
@@ -69,7 +67,6 @@ export default function AppShell({
   // Unread — the same count as the house tab's badge. The bell used to count
   // "needs you" while the house counted unread: two numbers that nearly agreed.
   const unreadCount = sessions.filter((s) => s.unread).length
-  const historyCount = sessions.length // For now, use total session count as history
 
   return (
     <div className="app-titlebar">
@@ -108,7 +105,7 @@ export default function AppShell({
               { value: 'home' as MainView, label: 'Home' },
               { value: 'projects' as MainView, label: 'Projects' },
               { value: 'sessions' as MainView, label: 'Sessions' },
-              { value: 'backlog' as MainView, label: 'Backlog' }
+              { value: 'backlog' as MainView, label: 'Tickets' }
             ]}
             // Home is where the app starts, and until now nothing could get
             // back to it — the switcher offered only the other two, so the
@@ -151,20 +148,6 @@ export default function AppShell({
           title="Create new session"
           onClick={onNewSession}
         />
-
-        {historyCount > 0 && (
-          <div className="app-titlebar-icon-group app-titlebar-no-drag">
-            <IconButton
-              icon="History"
-              label="History"
-              size={36}
-              variant="ghost"
-              tooltip={`${historyCount} total`}
-              onClick={onToggleHistory}
-            />
-            <span className="app-titlebar-icon-count">{historyCount}</span>
-          </div>
-        )}
 
         {unreadCount > 0 && (
           <div className="app-titlebar-icon-group app-titlebar-no-drag app-titlebar-attention">
