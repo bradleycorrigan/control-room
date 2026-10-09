@@ -791,6 +791,13 @@ function App(): React.JSX.Element {
       setView('backlog')
       await new Promise((r) => setTimeout(r, 800))
     })
+    registerShotScreen('backlog-plan', async () => {
+      setPaletteOpen(false)
+      setView('backlog')
+      await new Promise((r) => setTimeout(r, 800))
+      document.querySelector<HTMLButtonElement>('[aria-label="Plan kestrel"]')?.click()
+      await new Promise((r) => setTimeout(r, 500))
+    })
     registerShotScreen('backlog-board', async () => {
       setPaletteOpen(false)
       setView('backlog')

@@ -800,7 +800,8 @@ import type {
   JiraCreateInput,
   BacklogPrefs,
   BlockDirection,
-  JiraPerson
+  JiraPerson,
+  JiraSprint
 } from '../../main/exec/jira'
 import type { PullRequestInfo } from '../../main/exec/pullRequests'
 
@@ -875,6 +876,21 @@ export function setJiraSprint(
   sprintId: number | null
 ): Promise<JiraResult<JiraIssue>> {
   return window.api.invoke<JiraResult<JiraIssue>>('jira:sprint', key, sprintId)
+}
+
+/** Creates a future cycle on a board in Jira. Starting it stays in Jira. */
+export function createJiraSprint(input: {
+  boardId: number
+  name: string
+  startDate: string
+  endDate: string
+  goal?: string
+}): Promise<JiraResult<JiraSprint>> {
+  return window.api.invoke<JiraResult<JiraSprint>>('jira:createSprint', input)
+}
+
+export function setJiraSprintGoal(sprintId: number, goal: string): Promise<JiraResult<JiraSprint>> {
+  return window.api.invoke<JiraResult<JiraSprint>>('jira:sprintGoal', sprintId, goal)
 }
 
 export function setJiraPriority(key: string, priority: string): Promise<JiraResult<JiraIssue>> {

@@ -2132,8 +2132,18 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   await click($('[aria-label="Plan kestrel"]'))
   await check(
     'the hover action on a cycle row opens its planning view',
-    await until(() => $('.cr-modal-title')?.textContent === 'Plan kestrel'),
-    $('.cr-modal-title')?.textContent ?? 'no modal'
+    await until(() => $('.cycle-plan-title')?.textContent === 'Plan kestrel'),
+    $('.cycle-plan-title')?.textContent ?? 'no planner'
+  )
+  await check(
+    'planning shows the backlog, the current cycle and the next one side by side',
+    /honey-buzzard/.test($('[data-cycle-plan-column="current"] h3')?.textContent ?? '') &&
+      Boolean($('[data-cycle-plan-column="current"] [data-issue="DSD-101"]')) &&
+      /kestrel/.test($('[data-cycle-plan-column="next"] h3')?.textContent ?? '') &&
+      Boolean($('[data-cycle-plan-column="backlog"]')),
+    $$('[data-cycle-plan-column] h3')
+      .map((h) => h.textContent)
+      .join(' | ')
   )
   {
     // Titles get their own line (two, before an ellipsis), not what's left
@@ -2148,9 +2158,9 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         ? `cut off: ${cut.map((t) => t.textContent).join(' | ')}`
         : `${$$('.cycle-plan-row-summary').length} titles, none cut off`
     )
-    const modal = $('.cr-modal')?.getBoundingClientRect()
+    const modal = $('.cycle-plan')?.getBoundingClientRect()
     await check(
-      'and the dialog fits the window',
+      'and the planner fits the window',
       Boolean(modal) && modal!.left >= 0 && modal!.right <= window.innerWidth,
       `${Math.round(modal?.left ?? 0)} to ${Math.round(modal?.right ?? 0)} of ${window.innerWidth}`
     )
@@ -2183,9 +2193,9 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   if (dsd103WasOut) {
     await planDrag(
       $('[data-cycle-plan-column="backlog"] [data-issue="DSD-103"]'),
-      $('[data-cycle-plan-column="cycle"]')
+      $('[data-cycle-plan-column="next"]')
     )
-    await until(() => Boolean($('[data-cycle-plan-column="cycle"] [data-issue="DSD-103"]')))
+    await until(() => Boolean($('[data-cycle-plan-column="next"] [data-issue="DSD-103"]')))
   }
   await check(
     "capacity starts at DSD-103's own 4h (0.5d) of the no-dates default (10d)",
@@ -2193,18 +2203,18 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       capacityDays() === '10' &&
       $$('.cycle-plan-capacity-row').length === 1,
     `${capacityUsed()} / ${capacityDays()}d; in cycle: ${$$(
-      '[data-cycle-plan-column="cycle"] [data-issue]'
+      '[data-cycle-plan-column="next"] [data-issue]'
     )
       .map((el) => el.dataset.issue)
       .join(', ')}`
   )
   await planDrag(
     $('[data-cycle-plan-column="backlog"] [data-issue="TEAMDATA-202"]'),
-    $('[data-cycle-plan-column="cycle"]')
+    $('[data-cycle-plan-column="next"]')
   )
   await check(
     'dragging a backlog ticket into the cycle column moves it in',
-    await until(() => Boolean($('[data-cycle-plan-column="cycle"] [data-issue="TEAMDATA-202"]')))
+    await until(() => Boolean($('[data-cycle-plan-column="next"] [data-issue="TEAMDATA-202"]')))
   )
   await check(
     'capacity updates once a ticket with no estimate joins the cycle',
@@ -2213,9 +2223,19 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     ),
     $('.cycle-plan-capacity-note')?.textContent ?? 'no "no estimate" note'
   )
+  await click($('button.cycle-plan-capacity-note'))
+  await check(
+    'clicking "no estimate" narrows the columns to tickets with no estimate',
+    !$('[data-issue="DSD-101"]') &&
+      Boolean($('[data-cycle-plan-column="next"] [data-issue="TEAMDATA-202"]')),
+    $$('.cycle-plan [data-issue]')
+      .map((el) => el.dataset.issue)
+      .join(', ')
+  )
+  await click($('button.cycle-plan-capacity-note'))
   // Undo the drag — leave TEAMDATA-202 back in the backlog for later rounds.
   await planDrag(
-    $('[data-cycle-plan-column="cycle"] [data-issue="TEAMDATA-202"]'),
+    $('[data-cycle-plan-column="next"] [data-issue="TEAMDATA-202"]'),
     $('[data-cycle-plan-column="backlog"]')
   )
   await check(
@@ -2224,7 +2244,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   )
   if (dsd103WasOut) {
     await planDrag(
-      $('[data-cycle-plan-column="cycle"] [data-issue="DSD-103"]'),
+      $('[data-cycle-plan-column="next"] [data-issue="DSD-103"]'),
       $('[data-cycle-plan-column="backlog"]')
     )
     await until(() => Boolean($('[data-cycle-plan-column="backlog"] [data-issue="DSD-103"]')))
@@ -2246,8 +2266,8 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     await click($('.backlog-menu-cycle-row [aria-label^="Plan "]'))
     await check(
       'clicking it opens planning with no sidebar in the way',
-      await until(() => Boolean($('.cr-modal-title')?.textContent?.startsWith('Plan '))),
-      $('.cr-modal-title')?.textContent ?? 'no modal'
+      await until(() => Boolean($('.cycle-plan-title')?.textContent?.startsWith('Plan '))),
+      $('.cycle-plan-title')?.textContent ?? 'no planner'
     )
     await key('Escape')
   } finally {

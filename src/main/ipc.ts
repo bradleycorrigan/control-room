@@ -106,6 +106,8 @@ import {
   searchPeople,
   setParent,
   moveToSprint,
+  createSprint,
+  setSprintGoal,
   setPriority,
   setLabels,
   addBlockLink,
@@ -760,6 +762,16 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('jira:links', () => sessionTicketLinks())
   ipcMain.handle('jira:link', (_evt, recordId: string, issueKey: string | null) =>
     linkSessionToTicket(recordId, issueKey)
+  )
+  ipcMain.handle(
+    'jira:createSprint',
+    (
+      _evt,
+      input: { boardId: number; name: string; startDate: string; endDate: string; goal?: string }
+    ) => createSprint(input)
+  )
+  ipcMain.handle('jira:sprintGoal', (_evt, sprintId: number, goal: string) =>
+    setSprintGoal(sprintId, typeof goal === 'string' ? goal.slice(0, 1000) : '')
   )
   ipcMain.handle('jira:sprint', (_evt, key: string, sprintId: number | null) =>
     moveToSprint(key, sprintId)

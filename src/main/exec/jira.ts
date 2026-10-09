@@ -43,6 +43,10 @@ export interface JiraSprint {
   state: 'active' | 'future' | 'closed' | string
   startDate?: string
   endDate?: string
+  /** What the cycle is for, as set in Jira. */
+  goal?: string
+  /** The board the cycle belongs to: where a next cycle gets created. */
+  boardId?: number
 }
 
 /** A board column: a name, and the statuses that land in it. */
@@ -991,16 +995,17 @@ async function loadBoardFresh(conn: Conn): Promise<JiraResult<JiraBoardData>> {
         const boardIds = new Set([...boardIdsFromTickets, ...(await projectBoardsP).flat()])
         return mapLimit([...boardIds], 4, async (id) => {
           try {
-            const body = await callJson<{ values?: JiraSprint[] }>(
-              conn,
-              `/rest/agile/1.0/board/${id}/sprint?state=active,future&maxResults=50`
-            )
+            const body = await callJson<{
+              values?: Array<JiraSprint & { originBoardId?: number }>
+            }>(conn, `/rest/agile/1.0/board/${id}/sprint?state=active,future&maxResults=50`)
             return (body.values ?? []).map((s) => ({
               id: s.id,
               name: s.name,
               state: s.state,
               startDate: s.startDate,
-              endDate: s.endDate
+              endDate: s.endDate,
+              goal: s.goal || undefined,
+              boardId: s.originBoardId ?? id
             }))
           } catch {
             return []
@@ -2036,6 +2041,97 @@ export async function moveToSprint(
       { method: 'POST', body: { issues: [key] } }
     )
     return loadIssue(conn, key)
+  })
+}
+
+/**
+ * Creates a future cycle on a board, the way Jira's "Create sprint" does. It
+ * isn't started: starting and completing cycles stays in Jira.
+ */
+export async function createSprint(input: {
+  boardId: number
+  name: string
+  startDate: string
+  endDate: string
+  goal?: string
+}): Promise<JiraResult<JiraSprint>> {
+  const name = input.name.trim()
+  if (!name) return { ok: false, error: 'a cycle needs a name' }
+  const store = fixtureStore()
+  if (store) {
+    const sprint: JiraSprint = {
+      id: Math.max(0, ...store.sprints.map((sp) => sp.id)) + 1,
+      name,
+      state: 'future',
+      startDate: input.startDate,
+      endDate: input.endDate,
+      goal: input.goal?.trim() || undefined,
+      boardId: input.boardId
+    }
+    store.sprints.push(sprint)
+    return { ok: true, value: { ...sprint } }
+  }
+  const conn = connection()
+  if ('error' in conn) return { ok: false, error: conn.error }
+  return attempt(async () => {
+    const s = await callJson<JiraSprint & { originBoardId?: number }>(
+      conn,
+      '/rest/agile/1.0/sprint',
+      {
+        method: 'POST',
+        body: {
+          name,
+          originBoardId: input.boardId,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          ...(input.goal?.trim() ? { goal: input.goal.trim() } : {})
+        }
+      }
+    )
+    boardCache = null
+    return {
+      id: s.id,
+      name: s.name,
+      state: s.state,
+      startDate: s.startDate,
+      endDate: s.endDate,
+      goal: s.goal || undefined,
+      boardId: s.originBoardId ?? input.boardId
+    }
+  })
+}
+
+/** Sets a cycle's goal in Jira (empty clears it). */
+export async function setSprintGoal(
+  sprintId: number,
+  goal: string
+): Promise<JiraResult<JiraSprint>> {
+  const store = fixtureStore()
+  if (store) {
+    const sprint = store.sprints.find((sp) => sp.id === sprintId)
+    if (!sprint) return { ok: false, error: `no cycle ${sprintId}` }
+    sprint.goal = goal.trim() || undefined
+    return { ok: true, value: { ...sprint } }
+  }
+  const conn = connection()
+  if ('error' in conn) return { ok: false, error: conn.error }
+  return attempt(async () => {
+    // POST is Jira's partial update; PUT would replace every field.
+    const s = await callJson<JiraSprint & { originBoardId?: number }>(
+      conn,
+      `/rest/agile/1.0/sprint/${sprintId}`,
+      { method: 'POST', body: { goal: goal.trim() } }
+    )
+    boardCache = null
+    return {
+      id: s.id,
+      name: s.name,
+      state: s.state,
+      startDate: s.startDate,
+      endDate: s.endDate,
+      goal: s.goal || undefined,
+      boardId: s.originBoardId
+    }
   })
 }
 

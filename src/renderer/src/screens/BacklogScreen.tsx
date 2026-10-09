@@ -45,6 +45,8 @@ import {
   setJiraParent,
   setJiraPriority,
   setJiraSprint,
+  createJiraSprint,
+  setJiraSprintGoal,
   updateJiraText,
   type BacklogPrefs,
   type BlockDirection,
@@ -1838,6 +1840,59 @@ export default function BacklogScreen({
     )
   }
 
+  // Planning takes the whole screen: three columns need the width.
+  if (planningSprintId !== null && board) {
+    const planned = board.sprints.find((sp) => sp.id === planningSprintId) ?? null
+    // From the current cycle's Plan action, plan the cycle after it.
+    const next =
+      planned && planned.state !== 'active'
+        ? planned
+        : ([...board.sprints]
+            .filter((sp) => sp.state === 'future')
+            .sort((x, y) => (x.startDate ?? '9').localeCompare(y.startDate ?? '9'))[0] ?? null)
+    return (
+      <CyclePlanning
+        current={activeSprint}
+        next={next}
+        sprints={board.sprints}
+        allTickets={allTickets}
+        prefs={prefs}
+        onSavePrefs={(patch) => void saveBacklogPrefs(patch).then(setPrefs)}
+        onMove={(issue, sprintId) => void actions.cycle(issue, sprintId)}
+        onEstimate={(issue, estimate) => void actions.estimate(issue, estimate)}
+        onCreateNext={async (input) => {
+          const r = await createJiraSprint(input)
+          if (!r.ok) {
+            pushToast?.(`Jira: ${r.error}`)
+            return false
+          }
+          await load(true)
+          setPlanningSprintId(r.value.id)
+          return true
+        }}
+        onSetGoal={async (sprintId, goal) => {
+          const r = await setJiraSprintGoal(sprintId, goal)
+          if (!r.ok) {
+            pushToast?.(`Jira: ${r.error}`)
+            return false
+          }
+          setBoard((b) =>
+            b
+              ? {
+                  ...b,
+                  sprints: b.sprints.map((sp) =>
+                    sp.id === sprintId ? { ...sp, goal: r.value.goal } : sp
+                  )
+                }
+              : b
+          )
+          return true
+        }}
+        onClose={() => setPlanningSprintId(null)}
+      />
+    )
+  }
+
   return (
     <div
       className="backlog-layout"
@@ -1921,23 +1976,6 @@ export default function BacklogScreen({
             onSave={(cols) => void saveBacklogPrefs({ columns: cols }).then(setPrefs)}
             onReset={() => void saveBacklogPrefs({ columns: null }).then(setPrefs)}
             onClose={() => setEditingColumns(false)}
-          />
-        )}
-        {planningSprintId !== null && board && (
-          <CyclePlanning
-            sprint={
-              board.sprints.find((sp) => sp.id === planningSprintId) ?? {
-                id: planningSprintId,
-                name: 'Cycle',
-                state: 'future'
-              }
-            }
-            sprints={board.sprints}
-            allTickets={allTickets}
-            prefs={prefs}
-            onSavePrefs={(patch) => void saveBacklogPrefs(patch).then(setPrefs)}
-            onMove={(issue, sprintId) => void actions.cycle(issue, sprintId)}
-            onClose={() => setPlanningSprintId(null)}
           />
         )}
         {picker && <Picker {...picker} onClose={() => setPicker(null)} />}
@@ -4965,9 +5003,7 @@ function IssueDrawer({
               // An @ at the start or after a space, then the name so far.
               const upTo = e.target.value.slice(0, e.target.selectionStart ?? 0)
               const m = /(^|\s)@([^\s@]{0,30})$/.exec(upTo)
-              setMention(
-                m ? { query: m[2], start: upTo.length - m[2].length - 1, index: 0 } : null
-              )
+              setMention(m ? { query: m[2], start: upTo.length - m[2].length - 1, index: 0 } : null)
             }}
             onKeyDown={(e) => {
               if (mention && mentionMatches.length) {
