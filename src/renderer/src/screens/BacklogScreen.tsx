@@ -354,9 +354,20 @@ export default function BacklogScreen({
   // to go back to.
   const [planning, setPlanning] = useState<{
     nextId: number | null
-    restore: { grouping: GroupBy[]; view: View; cycleSet: CycleFilter[]; collapsed: string[] }
+    restore: {
+      grouping: GroupBy[]
+      view: View
+      cycleSet: CycleFilter[]
+      who: Who
+      assignees: string[]
+    }
   } | null>(null)
   const [planningSince] = useState(() => Date.now())
+  // Planning's folds, kept apart from your saved ones so leaving planning any
+  // way at all (quitting, switching screen) leaves your view as it was. The
+  // current cycle starts folded: its unfinished tickets are listed in the
+  // next one, so the cycle being planned comes first.
+  const [planFolds, setPlanFolds] = useState<Record<string, boolean>>({})
   // Planning's "N without an estimate": only tickets with no estimate.
   const [noEstimateOnly, setNoEstimateOnly] = useState(false)
   // While a ticket is being dragged, empty groups show too, as drop targets.
@@ -1883,11 +1894,12 @@ export default function BacklogScreen({
     const nextId = picked && picked.state !== 'active' ? picked.id : (firstUpcoming?.id ?? null)
     setPlanning((p) => ({
       nextId,
-      restore: p?.restore ?? { grouping, view, cycleSet, collapsed }
+      restore: p?.restore ?? { grouping, view, cycleSet, who, assignees }
     }))
-    // The current cycle starts folded: its unfinished tickets already count
-    // in the next one's load, so the cycle being planned comes first.
-    if (!collapsed.includes('current')) setCollapsed([...collapsed, 'current'])
+    // A cycle is the team's: plan it with everyone's tickets in view.
+    setWho('all')
+    setAssignees([])
+    setPlanFolds({ current: true })
     setGrouping(['cycle'])
     setView('list')
     setCycleSet([])
@@ -1897,12 +1909,40 @@ export default function BacklogScreen({
     setGrouping(planning.restore.grouping)
     setView(planning.restore.view)
     setCycleSet(planning.restore.cycleSet)
-    if (!planning.restore.collapsed.includes('current')) {
-      setCollapsed(collapsed.filter((id) => id !== 'current'))
-    }
+    setWho(planning.restore.who)
+    setAssignees(planning.restore.assignees)
     setNoEstimateOnly(false)
     setPlanning(null)
   }
+  // Planning's numbers are the whole cycle's, never just what the filters
+  // leave on screen: the totals say what's in Jira.
+  const topLevel = allTickets.filter((i) => !i.isSubtask)
+  const inCycle = (sprintId: number | null): JiraIssue[] =>
+    topLevel.filter((i) =>
+      sprintId === null
+        ? (!i.sprint || !sprints.some((sp) => sp.id === i.sprint!.id)) &&
+          i.statusCategory !== 'done'
+        : i.sprint?.id === sprintId
+    )
+  // The current cycle's unfinished tickets: Jira moves them to the next one
+  // when the current one is completed, so planning lists them there too.
+  const carryingAll =
+    planning && activeSprint && planningNext
+      ? inCycle(activeSprint.id).filter((i) => i.statusCategory !== 'done')
+      : []
+  const carryKeys = new Set(carryingAll.map((i) => i.key))
+  /** The lane as planning shows it: the next cycle lists what carries over. */
+  const planningLane = (lane: Lane): Lane =>
+    planning &&
+    groupBy === 'cycle' &&
+    lane.value?.kind === 'cycle' &&
+    lane.value.sprintId !== null &&
+    lane.value.sprintId === planningNext?.id
+      ? {
+          ...lane,
+          items: [...lane.items, ...visible.filter((i) => carryKeys.has(i.key) && !i.isSubtask)]
+        }
+      : lane
   // Under each cycle group's title while planning.
   const planningStrip = (lane: Lane): React.ReactNode => {
     if (!planning || groupBy !== 'cycle' || lane.value?.kind !== 'cycle') return null
@@ -1916,17 +1956,18 @@ export default function BacklogScreen({
           : cycle?.id === planningNext?.id
             ? ('next' as const)
             : ('other' as const)
-    const carrying =
-      kind === 'next' && activeSprint
-        ? visible.filter((i) => i.sprint?.id === activeSprint.id && i.statusCategory !== 'done')
-        : []
+    const all = inCycle(sprintId)
     return (
       <CycleStrip
         kind={kind}
         cycle={cycle}
         next={planningNext}
-        items={lane.items}
-        carrying={carrying}
+        items={all}
+        carrying={kind === 'next' ? carryingAll : []}
+        hidden={Math.max(
+          0,
+          all.length + (kind === 'next' ? carryingAll.length : 0) - planningLane(lane).items.length
+        )}
         now={planningSince}
         prefs={prefs}
         onSavePrefs={(patch) => void saveBacklogPrefs(patch).then(setPrefs)}
@@ -2303,9 +2344,12 @@ export default function BacklogScreen({
 
         {board && view === 'list' && visible.length > 0 && (
           <div className="backlog-list">
-            {shownLanes.map((lane) => {
+            {shownLanes.map((shownLane) => {
+              const lane = planningLane(shownLane)
               const subs = subLanesFor(lane)
-              const isCollapsed = collapsed.includes(lane.id)
+              const isCollapsed = planning
+                ? (planFolds[lane.id] ?? false)
+                : collapsed.includes(lane.id)
               return (
                 <DropGroup
                   key={lane.id}
@@ -2314,13 +2358,15 @@ export default function BacklogScreen({
                   extra={planningStrip(lane)}
                   collapsed={isCollapsed}
                   onToggle={() =>
-                    lane.items.length === 0 && !isCollapsed
-                      ? dismiss(lane.id)
-                      : setCollapsed(
-                          isCollapsed
-                            ? collapsed.filter((id) => id !== lane.id)
-                            : [...collapsed, lane.id]
-                        )
+                    planning
+                      ? setPlanFolds((f) => ({ ...f, [lane.id]: !isCollapsed }))
+                      : lane.items.length === 0 && !isCollapsed
+                        ? dismiss(lane.id)
+                        : setCollapsed(
+                            isCollapsed
+                              ? collapsed.filter((id) => id !== lane.id)
+                              : [...collapsed, lane.id]
+                          )
                   }
                   onDropIssue={(key, values) => void dropInto(key, values)}
                 >
@@ -2361,11 +2407,24 @@ export default function BacklogScreen({
                             )
                           })
                         : lane.items.map((issue) => (
-                            <IssueRow key={issue.key} issue={issue} {...rowProps} />
+                            <IssueRow
+                              key={issue.key}
+                              issue={issue}
+                              {...rowProps}
+                              carriesOver={
+                                lane !== shownLane &&
+                                carryKeys.has(issue.key) &&
+                                issue.sprint?.id === activeSprint?.id
+                              }
+                            />
                           ))}
                       {lane.items.length === 0 && (
                         <p className="backlog-empty-lane">
-                          {dragging ? 'Drop here' : 'No tickets'}
+                          {dragging
+                            ? 'Drop here'
+                            : planning && lane.value?.kind === 'cycle'
+                              ? 'Drag tickets here'
+                              : 'No tickets'}
                         </p>
                       )}
                     </div>
@@ -2633,7 +2692,17 @@ function LaneTitle({
       )}
       <LaneMark lane={lane} />
       <span className="backlog-group-name">{lane.title}</span>
-      {lane.hint && <span className="backlog-group-hint">{lane.hint}</span>}
+      {lane.hint && (
+        <span
+          className={
+            lane.value?.kind === 'cycle'
+              ? 'backlog-group-hint backlog-group-hint--name'
+              : 'backlog-group-hint'
+          }
+        >
+          {lane.hint}
+        </span>
+      )}
       <span className="backlog-group-count">{lane.items.length}</span>
     </Tag>
   )
@@ -2968,7 +3037,15 @@ function IssuePills({
   )
 }
 
-function IssueRow({ issue, ...p }: { issue: JiraIssue } & RowActions): React.JSX.Element {
+function IssueRow({
+  issue,
+  carriesOver = false,
+  ...p
+}: {
+  issue: JiraIssue
+  /** Planning: still in the current cycle, and Jira moves it here when that's completed. */
+  carriesOver?: boolean
+} & RowActions): React.JSX.Element {
   const entries = p.sessionsFor(issue)
   const selected = p.openKey === issue.key
   const picked = p.selected.includes(issue.key)
@@ -3010,6 +3087,14 @@ function IssueRow({ issue, ...p }: { issue: JiraIssue } & RowActions): React.JSX
         <Editable label={`Status: ${issue.status}`} onEdit={edit('status')}>
           <StatusGlyph name={issue.status} category={issue.statusCategory} />
         </Editable>
+        {carriesOver && (
+          <span
+            className="backlog-row-carry"
+            title="Still in the current cycle. Jira moves it here when that cycle is completed."
+          >
+            Carries over
+          </span>
+        )}
         <span className="backlog-row-summary" title={issue.summary}>
           {issue.summary}
         </span>

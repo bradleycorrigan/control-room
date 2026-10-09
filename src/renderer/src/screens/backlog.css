@@ -326,7 +326,8 @@
 
 .backlog-row-summary {
   flex: 1 1 160px;
-  min-width: 0;
+  /* The title keeps a fair share before the pills get any. */
+  min-width: min(30%, 220px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -345,7 +346,12 @@
 }
 
 .backlog-row-meta .backlog-pills {
-  flex-wrap: nowrap;
+  /* Pills that don't fit drop out whole (they wrap onto a line that's cut
+     off) instead of being sliced through: "cked" was "Blocked", cut. */
+  flex-wrap: wrap;
+  max-height: 28px;
+  /* Far enough that no edge of a dropped pill shows under the row. */
+  row-gap: 40px;
   overflow: hidden;
   justify-content: flex-end;
 }
@@ -3047,7 +3053,12 @@
   margin-bottom: var(--space-12);
   padding: var(--space-8) var(--space-12);
   border-radius: var(--radius-lg);
-  background: var(--accent-soft);
+  /* Quiet: the grouped list already says you're planning. One accent edge,
+     and New ticket stays the screen's one solid accent. */
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px var(--border),
+    inset 3px 0 0 var(--accent);
 }
 
 .planning-bar-title {
@@ -3086,7 +3097,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
-  padding: 0 var(--space-12) var(--space-8) var(--space-32);
+  padding: 0 var(--space-12) var(--space-8) var(--space-48);
 }
 
 .cycle-strip-facts {
@@ -3206,4 +3217,35 @@
   color: var(--text);
   font-size: var(--text-meta-size);
   text-align: right;
+}
+
+/* A cycle's name beside its group title: a name, so the body face, not the
+   monospace kept for keys. */
+.backlog-group-hint--name {
+  font-family: inherit;
+}
+
+/* Planning: a ticket listed in the next cycle that's still in the current one. */
+.backlog-row-carry {
+  flex: none;
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+}
+
+/* When a row is short of room, pills drop from the end of the line: so the
+   epic stays longest, then the status, and the request type goes first. */
+.backlog-row-meta .backlog-pills > * {
+  order: 3;
+}
+
+.backlog-row-meta .backlog-pills > .backlog-pill--accent {
+  order: 1;
+}
+
+.backlog-row-meta .backlog-pills > .backlog-pill--status {
+  order: 2;
+}
+
+.backlog-row-meta .backlog-pills > .backlog-pill--type {
+  order: 4;
 }

@@ -864,6 +864,9 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     Boolean($('.backlog-group[data-lane="TEAMDATA-60"] [data-issue="TEAMDATA-202"]'))
   )
   await groupBy('Cycle')
+  // Folds are remembered between runs; an older build left the current
+  // cycle folded after planning. Start from it open.
+  await click($('[aria-label="Expand Current cycle"]'))
   await drag(row('TEAMDATA-202'), () => $('.backlog-group[data-lane="current"]'))
   await check(
     'dropping a ticket on the current cycle adds it',
@@ -2204,6 +2207,17 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     ),
     $('[data-cycle-strip="current"]')?.textContent ?? 'no strip'
   )
+  {
+    const next = group('sprint-2')
+    const shownRows = next?.querySelectorAll('.backlog-row').length ?? 0
+    const titleCount = Number(next?.querySelector('.backlog-group-count')?.textContent ?? -1)
+    await check(
+      'the next cycle lists what carries over, and its count matches its rows',
+      Boolean(next?.querySelector('[data-issue="DSD-101"] .backlog-row-carry')) &&
+        titleCount === shownRows,
+      `title ${titleCount}, rows ${shownRows}`
+    )
+  }
   const capacityRows = (): HTMLElement[] => $$('[data-cycle-strip="next"] .cycle-plan-capacity-row')
   await check(
     'the next cycle shows everyone’s load, carry-over included, against the 10-day default',

@@ -221,7 +221,11 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
   const keyOf = (c: HTMLElement | undefined): string | null =>
     c?.closest('[data-session-key]')?.getAttribute('data-session-key') ?? null
   const cardFor = (k: string | null): HTMLElement | undefined => cards().find((c) => keyOf(c) === k)
-  const [firstKey, secondKey] = [keyOf(cards()[1]), keyOf(cards()[2])]
+  // And two that aren't open already: opening an open one adds no tab, which
+  // is what this flaked on when the one tab left was one of them.
+  const [firstKey, secondKey] = cards()
+    .map(keyOf)
+    .filter((k): k is string => Boolean(k) && !stored().includes(k!))
   await click(cardFor(firstKey) ?? null, 'left', ['meta'])
   await click(cardFor(secondKey) ?? null, 'middle')
   const toast = [...document.querySelectorAll('.toast, [class*="toast"]')].some((t) =>

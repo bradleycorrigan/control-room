@@ -61,6 +61,7 @@ export function CycleStrip({
   next,
   items,
   carrying,
+  hidden,
   now,
   prefs,
   onSavePrefs,
@@ -75,6 +76,8 @@ export function CycleStrip({
   items: JiraIssue[]
   /** The current cycle's unfinished tickets: Jira moves them to the next one. */
   carrying: JiraIssue[]
+  /** How many of this cycle's tickets the filters keep off screen. */
+  hidden: number
   now: number
   prefs: BacklogPrefs
   onSavePrefs: (patch: Partial<BacklogPrefs>) => void
@@ -102,7 +105,8 @@ export function CycleStrip({
         <div className="cycle-strip-facts">
           {dates && <span>{dates}</span>}
           {daysLeft !== null && <span>{daysLeft} days left</span>}
-          <Facts issues={items} />
+          <Facts issues={items} onNoEstimate={onNoEstimate} />
+          {hidden > 0 && <span>{hidden} hidden by filters</span>}
         </div>
         {kind === 'current' && next && unfinished > 0 && (
           <p className="cycle-strip-note">
@@ -138,6 +142,7 @@ export function CycleStrip({
         {dates && <span>{dates}</span>}
         <Facts issues={planned} onNoEstimate={onNoEstimate} />
         {carrying.length > 0 && <span>incl. {carrying.length} carrying over</span>}
+        {hidden > 0 && <span>{hidden} hidden by filters</span>}
         {!cycle.goal && goalDraft === null && (
           <button type="button" className="cycle-strip-link" onClick={() => setGoalDraft('')}>
             Add goal
@@ -346,7 +351,7 @@ export function PlanningBar({
           </Button>
         </form>
       )}
-      <Button variant="filled" size="compact" onClick={onDone}>
+      <Button variant="outlined" size="compact" onClick={onDone}>
         Done planning
       </Button>
     </div>
