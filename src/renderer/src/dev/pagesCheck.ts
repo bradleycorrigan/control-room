@@ -374,6 +374,25 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     !byText('.backlog-empty-lane', 'Drop here'),
     `${$$('.backlog-empty-lane').length} drop targets still showing`
   )
+  {
+    // The drop leaves emptied groups holding their place. Collapsing one
+    // removes it, as an empty group would anywhere else.
+    const emptiedGroups = (): HTMLElement[] =>
+      $$('.backlog-subgroup').filter((g) => /Nothing left here/.test(g.textContent ?? ''))
+    const where = (g: HTMLElement): string =>
+      `${g.closest('.backlog-group')?.getAttribute('data-lane')}/${g.getAttribute('data-lane')}`
+    const before = emptiedGroups().map(where)
+    const first = emptiedGroups()[0]
+    const firstAt = first ? where(first) : ''
+    await click(first?.querySelector('[aria-label^="Collapse"]'))
+    const after = emptiedGroups().map(where)
+    const gone = !$$('.backlog-subgroup').some((g) => where(g) === firstAt)
+    await check(
+      'collapsing a group you just emptied removes it',
+      Boolean(first) && gone,
+      `emptied before: ${before.join(', ') || 'none'}; after: ${after.join(', ') || 'none'}`
+    )
+  }
   await groupBy('Status', 'Epic')
   await click($('.backlog-menu-button[aria-label^="Display"]'))
   await click($('.backlog-display-menu [aria-label^="Swap order"]'))

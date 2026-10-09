@@ -1065,6 +1065,22 @@ export default function BacklogScreen({
     settleKey
   )
   const keptLaneIds = useMemo(() => new Set(keptLaneOrder), [keptLaneOrder])
+  // Emptied groups you collapsed: hidden until the view changes. Kept apart
+  // from the stored collapsed list, so the group comes back open when it
+  // next has tickets.
+  const [dismissedFor, setDismissedFor] = useState<{ key: string; ids: string[] }>({
+    key: '',
+    ids: []
+  })
+  const dismissed = useMemo(
+    () => new Set(dismissedFor.key === settleKey ? dismissedFor.ids : []),
+    [dismissedFor, settleKey]
+  )
+  const dismiss = (id: string): void =>
+    setDismissedFor((d) => ({
+      key: settleKey,
+      ids: d.key === settleKey ? [...d.ids, id] : [id]
+    }))
   const keptSubLaneOrder = useSettledOrder(
     subGroup
       ? lanes.flatMap((lane) =>
@@ -1083,25 +1099,29 @@ export default function BacklogScreen({
         ? groupInto(lane.items, subGroup).filter(
             (l) =>
               l.items.length > 0 ||
-              keptSubLaneIds.has(`${lane.id}/${l.id}`) ||
+              (keptSubLaneIds.has(`${lane.id}/${l.id}`) &&
+                !dismissed.has(subLaneId(lane, l)) &&
+                !collapsed.includes(subLaneId(lane, l))) ||
               (dragging && l.value)
           )
         : null,
-    [groupInto, subGroup, dragging, keptSubLaneIds]
+    [groupInto, subGroup, dragging, keptSubLaneIds, dismissed, collapsed]
   )
 
   // What the list shows: empty groups only while something is being dragged
-  // (as drop targets), except the two cycle groups, which always show.
+  // (as drop targets), except the two cycle groups, which always show. A
+  // group you just emptied holds its place until the view changes, unless
+  // it's collapsed: then it goes, as an empty group would anywhere else.
   const shownLanes = useMemo(
     () =>
       lanes.filter(
         (l) =>
           l.items.length > 0 ||
           groupBy === 'cycle' ||
-          keptLaneIds.has(l.id) ||
+          (keptLaneIds.has(l.id) && !dismissed.has(l.id) && !collapsed.includes(l.id)) ||
           (dragging && l.value)
       ),
-    [lanes, groupBy, dragging, keptLaneIds]
+    [lanes, groupBy, dragging, keptLaneIds, dismissed, collapsed]
   )
   const boardLanes = useMemo(
     () =>
@@ -2177,11 +2197,13 @@ export default function BacklogScreen({
                   values={[lane.value]}
                   collapsed={isCollapsed}
                   onToggle={() =>
-                    setCollapsed(
-                      isCollapsed
-                        ? collapsed.filter((id) => id !== lane.id)
-                        : [...collapsed, lane.id]
-                    )
+                    lane.items.length === 0 && !isCollapsed
+                      ? dismiss(lane.id)
+                      : setCollapsed(
+                          isCollapsed
+                            ? collapsed.filter((id) => id !== lane.id)
+                            : [...collapsed, lane.id]
+                        )
                   }
                   onDropIssue={(key, values) => void dropInto(key, values)}
                 >
@@ -2199,11 +2221,13 @@ export default function BacklogScreen({
                                 nested
                                 collapsed={subCollapsed}
                                 onToggle={() =>
-                                  setCollapsed(
-                                    subCollapsed
-                                      ? collapsed.filter((id) => id !== subId)
-                                      : [...collapsed, subId]
-                                  )
+                                  sub.items.length === 0 && !subCollapsed
+                                    ? dismiss(subId)
+                                    : setCollapsed(
+                                        subCollapsed
+                                          ? collapsed.filter((id) => id !== subId)
+                                          : [...collapsed, subId]
+                                      )
                                 }
                                 onDropIssue={(key, values) => void dropInto(key, values)}
                               >
