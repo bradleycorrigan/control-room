@@ -1243,7 +1243,6 @@
   opacity: 1;
 }
 
-
 .backlog-row--picked,
 .backlog-row--picked:hover {
   background: var(--accent-soft);
@@ -2404,229 +2403,6 @@
   opacity: 1;
 }
 
-/* ---- Cycle planning modal ---- */
-
-.cycle-plan {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
-  max-height: 70vh;
-}
-
-.cycle-plan-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--space-16);
-  min-height: 0;
-}
-
-.cycle-plan-column {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: inset 0 0 0 1px var(--border);
-}
-
-.cycle-plan-column--over {
-  box-shadow: inset 0 0 0 2px var(--accent);
-  background: var(--accent-soft);
-}
-
-.cycle-plan-column-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  padding: var(--space-12) var(--space-16);
-  border-bottom: 1px solid var(--border);
-}
-
-.cycle-plan-column-header h3 {
-  flex: 1;
-  min-width: 0;
-  margin: 0;
-  font-size: var(--text-label-size);
-  font-weight: var(--text-label-weight);
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cycle-plan-column-count {
-  font-size: var(--text-meta-size);
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.cycle-plan-column-list {
-  flex: 1;
-  min-height: 120px;
-  max-height: 320px;
-  overflow-y: auto;
-  padding: var(--space-8);
-}
-
-.cycle-plan-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-12);
-  padding: var(--space-8);
-  border-radius: var(--radius-row);
-  cursor: grab;
-}
-
-.cycle-plan-row:hover {
-  background: var(--surface-raised);
-}
-
-.cycle-plan-row-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.cycle-plan-row-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  min-width: 0;
-}
-
-.cycle-plan-row-key {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: var(--text-caption-size);
-  color: var(--text-muted);
-}
-
-.cycle-plan-row-summary {
-  /* Up to two lines, then an ellipsis; the tooltip has the rest. */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  font-size: var(--text-body-size);
-  line-height: var(--text-body-line);
-  color: var(--text);
-}
-
-.cycle-plan-row-estimate {
-  flex: none;
-  font-size: var(--text-meta-size);
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.cycle-plan-row-cycle {
-  flex: none;
-  max-width: 140px;
-  margin-left: auto;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: var(--text-meta-size);
-}
-
-.cycle-plan-row-move {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-
-.cycle-plan-row-move:hover {
-  background: var(--surface-raised);
-  color: var(--text);
-}
-
-.cycle-plan-capacity {
-  border-top: 1px solid var(--border);
-  padding-top: var(--space-16);
-}
-
-.cycle-plan-capacity-title {
-  margin: 0 0 var(--space-8);
-  font-size: var(--text-label-size);
-  font-weight: var(--text-label-weight);
-  color: var(--text-muted);
-}
-
-.cycle-plan-capacity-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  padding: var(--space-4) 0;
-}
-
-.cycle-plan-capacity-name {
-  flex: none;
-  width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--text-body-size);
-  color: var(--text);
-}
-
-.cycle-plan-capacity-bar {
-  flex: 1;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--border);
-  overflow: hidden;
-}
-
-.cycle-plan-capacity-fill {
-  display: block;
-  height: 100%;
-  background: var(--status-done);
-}
-
-.cycle-plan-capacity-fill--over {
-  display: block;
-  height: 100%;
-  background: var(--status-attention);
-}
-
-.cycle-plan-capacity-numbers {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
-  min-width: 110px;
-  font-size: var(--text-meta-size);
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.cycle-plan-capacity-input {
-  width: 40px;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  background: transparent;
-  color: var(--text);
-  font-size: var(--text-meta-size);
-  text-align: right;
-}
-
-.cycle-plan-capacity-note {
-  margin: var(--space-8) 0 0;
-  font-size: var(--text-meta-size);
-  color: var(--text-muted);
-}
-
 /* The saved view you're in, changed since you opened it: a dot on its tab,
    and Save (over it) or Reset (back as saved) beside it. */
 .backlog-view-tab-changed {
@@ -3044,7 +2820,7 @@
 }
 
 .backlog-drawer-crumb::after {
-  content: "›";
+  content: '›';
   margin-left: var(--space-4);
   color: var(--text-faint);
 }
@@ -3261,20 +3037,23 @@
   outline: none;
 }
 
-/* ---- Cycle planning: full screen, backlog / current / next ---- */
+/* ---- Cycle planning: one page of stacked sections, as Jira's backlog and
+   Linear's cycles lay it out. One-line rows; the page scrolls, not columns. */
 
 .cycle-plan {
+  display: flex;
+  flex-direction: column;
   height: 100%;
-  max-height: none;
-  padding: var(--space-16) var(--space-24);
+  min-height: 0;
   box-sizing: border-box;
-  overflow: hidden;
 }
 
 .cycle-plan-header {
   display: flex;
   align-items: center;
   gap: var(--space-12);
+  padding: var(--space-16) var(--space-24) var(--space-12);
+  border-bottom: 1px solid var(--border);
 }
 
 .cycle-plan-title {
@@ -3288,19 +3067,21 @@
 
 .cycle-plan-search {
   width: 220px;
-  padding: var(--space-4) var(--space-8);
+  height: 28px;
+  padding: 0 var(--space-8);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--text);
-  font-size: var(--text-body-size);
+  font-size: var(--text-meta-size);
 }
 
 .cycle-plan-filter-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-4);
-  padding: var(--space-4) var(--space-8);
+  height: 24px;
+  padding: 0 var(--space-8);
   border: none;
   border-radius: var(--radius-pill);
   background: var(--accent-soft);
@@ -3309,84 +3090,130 @@
   cursor: pointer;
 }
 
-.cycle-plan .cycle-plan-columns {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.cycle-plan-body {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-12) var(--space-24) var(--space-24);
 }
 
-.cycle-plan .cycle-plan-column-list {
-  max-height: none;
-  min-height: 0;
+.cycle-plan-section {
+  margin-bottom: var(--space-12);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
-.cycle-plan-column-sub {
-  font-size: var(--text-meta-size);
-  color: var(--text-muted);
-  white-space: nowrap;
+.cycle-plan-section--over {
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
-.cycle-plan-column-actions,
-.cycle-plan-goal {
-  padding: var(--space-8) var(--space-16);
-  border-bottom: 1px solid var(--border);
-}
-
-.cycle-plan-goal-input,
-.cycle-plan-create input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: var(--space-4) var(--space-8);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg);
-  color: var(--text);
-  font-size: var(--text-body-size);
-}
-
-.cycle-plan-create {
+.cycle-plan-section-header {
+  position: sticky;
+  top: calc(-1 * var(--space-12));
+  z-index: var(--layer-raised);
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: var(--space-12);
-  padding: var(--space-8);
+  min-height: 40px;
+  padding: 0 var(--space-12);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: var(--surface);
 }
 
-.cycle-plan-create label {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  font-size: var(--text-meta-size);
-  color: var(--text-muted);
-}
-
-.cycle-plan-done-toggle {
+.cycle-plan-section-toggle {
   display: inline-flex;
   align-items: center;
   gap: var(--space-4);
-  margin: var(--space-8);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.cycle-plan-section-toggle h3,
+.cycle-plan-section-title {
+  margin: 0;
+  font-size: var(--text-label-size);
+  font-weight: var(--text-label-weight);
+  color: var(--text);
+}
+
+.cycle-plan-section-meta {
+  flex: 1;
+  display: flex;
+  gap: var(--space-12);
+  min-width: 0;
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.cycle-plan-list {
+  padding: 0 var(--space-4) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.cycle-plan-hint {
+  margin: 0;
+  padding: var(--space-8) var(--space-8);
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+}
+
+.cycle-plan-fold {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--space-8);
   border: none;
   background: transparent;
   color: var(--text-muted);
   font-size: var(--text-meta-size);
+  text-align: left;
   cursor: pointer;
 }
 
-input.cycle-plan-row-estimate {
-  width: 64px;
-  padding: 0 var(--space-4);
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
+/* One line: status, key, title, then the facts on the right. */
+.cycle-plan-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 34px;
+  padding: 0 var(--space-8);
+  border-radius: var(--radius-row);
+  cursor: grab;
 }
 
-input.cycle-plan-row-estimate:hover,
-input.cycle-plan-row-estimate:focus {
-  border-color: var(--border);
+.cycle-plan-row:hover {
+  background: var(--surface-raised);
+}
+
+.cycle-plan-row--quiet .cycle-plan-row-summary {
+  color: var(--text-muted);
+}
+
+.cycle-plan-row-key {
+  flex: none;
+  width: 104px;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.cycle-plan-row-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body-size);
   color: var(--text);
-}
-
-.cycle-plan-row-estimate--missing::placeholder {
-  color: var(--status-attention);
 }
 
 .cycle-plan-flag {
@@ -3398,28 +3225,159 @@ input.cycle-plan-row-estimate:focus {
   font-size: var(--text-caption-size);
 }
 
-.cycle-plan-capacity-notes {
-  display: flex;
-  align-items: center;
-  gap: var(--space-12);
-  margin-top: var(--space-8);
+/* The cycle picker only shows on the row you're pointing at. */
+.cycle-plan-row-cycle {
+  flex: none;
+  max-width: 130px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-meta-size);
+  opacity: 0;
 }
 
-button.cycle-plan-capacity-note {
-  margin: 0;
+.cycle-plan-row:hover .cycle-plan-row-cycle,
+.cycle-plan-row-cycle:focus {
+  opacity: 1;
+}
+
+.cycle-plan-row-estimate {
+  flex: none;
+  width: 44px;
+  height: 22px;
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-meta-size);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.cycle-plan-row-estimate:hover,
+.cycle-plan-row-estimate:focus {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.cycle-plan-row-estimate--missing::placeholder {
+  color: var(--status-attention);
+}
+
+/* Next cycle: its goal and everyone's load, above its tickets. */
+.cycle-plan-next-top {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12) var(--space-12);
+  border-top: 1px solid var(--border);
+}
+
+.cycle-plan-goal-input,
+.cycle-plan-create input {
+  height: 28px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--text-body-size);
+}
+
+.cycle-plan-capacity {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--space-4) var(--space-24);
+}
+
+.cycle-plan-capacity-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 28px;
+}
+
+.cycle-plan-capacity-name {
+  flex: none;
+  width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-meta-size);
+  color: var(--text);
+}
+
+.cycle-plan-capacity-bar {
+  flex: 1;
+  display: flex;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--border);
+  overflow: hidden;
+}
+
+.cycle-plan-capacity-fill,
+.cycle-plan-capacity-fill--over,
+.cycle-plan-capacity-fill--carry {
+  display: block;
+  height: 100%;
+}
+
+.cycle-plan-capacity-fill {
+  background: var(--status-done);
+}
+
+.cycle-plan-capacity-fill--over {
+  background: var(--status-attention);
+}
+
+/* What carries over from the current cycle: the same load, lighter. */
+.cycle-plan-capacity-fill--carry {
+  background: var(--text-faint);
+}
+
+.cycle-plan-capacity-numbers {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cycle-plan-capacity-input {
+  width: 36px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-meta-size);
+  text-align: right;
+}
+
+.cycle-plan-capacity-note {
+  justify-self: start;
   padding: 0;
   border: none;
   background: transparent;
+  color: var(--status-attention);
+  font-size: var(--text-meta-size);
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
 }
 
-button.cycle-plan-capacity-note[aria-pressed='true'] {
+.cycle-plan-capacity-note[aria-pressed='true'] {
   color: var(--text);
 }
 
-.cycle-plan-capacity-fact {
-  font-size: var(--text-meta-size);
-  color: var(--text-muted);
+.cycle-plan-create {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12) var(--space-12);
+  border-top: 1px solid var(--border);
 }

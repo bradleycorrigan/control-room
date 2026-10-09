@@ -798,6 +798,15 @@ function App(): React.JSX.Element {
       document.querySelector<HTMLButtonElement>('[aria-label="Plan kestrel"]')?.click()
       await new Promise((r) => setTimeout(r, 500))
     })
+    // The planner at real volume: 60 more tickets in the fixture first.
+    registerShotScreen('backlog-plan-full', async () => {
+      setPaletteOpen(false)
+      await window.api.invoke('dev:jira-filler', 60)
+      setView('backlog')
+      await new Promise((r) => setTimeout(r, 1000))
+      document.querySelector<HTMLButtonElement>('[aria-label="Plan kestrel"]')?.click()
+      await new Promise((r) => setTimeout(r, 500))
+    })
     registerShotScreen('backlog-board', async () => {
       setPaletteOpen(false)
       setView('backlog')

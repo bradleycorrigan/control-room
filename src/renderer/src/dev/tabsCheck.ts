@@ -220,8 +220,7 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
   // the cards, and the second click then landed on one already open.
   const keyOf = (c: HTMLElement | undefined): string | null =>
     c?.closest('[data-session-key]')?.getAttribute('data-session-key') ?? null
-  const cardFor = (k: string | null): HTMLElement | undefined =>
-    cards().find((c) => keyOf(c) === k)
+  const cardFor = (k: string | null): HTMLElement | undefined => cards().find((c) => keyOf(c) === k)
   const [firstKey, secondKey] = [keyOf(cards()[1]), keyOf(cards()[2])]
   await click(cardFor(firstKey) ?? null, 'left', ['meta'])
   await click(cardFor(secondKey) ?? null, 'middle')

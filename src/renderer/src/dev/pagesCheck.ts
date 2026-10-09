@@ -2140,6 +2140,36 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   // ticket in, capacity updates.
   await ctx.goTo('backlog')
   await wait(600)
+  const refreshTickets = async (): Promise<void> => {
+    await click($('.backlog button[aria-label="More"]'))
+    await click(byText('.backlog-menu .cr-popover-item', 'Refresh from Jira'))
+    await wait(600)
+  }
+  {
+    // At real volume (60 more tickets): one-line rows, and the page scrolls
+    // as a whole, with nothing drawn over anything else.
+    await api.invoke('dev:jira-filler', 60)
+    await refreshTickets()
+    await click($('[aria-label="Plan kestrel"]'))
+    await until(() => $$('.cycle-plan-row').length > 40, 3000)
+    const body = $('.cycle-plan-body')
+    const rows = $$('.cycle-plan-row')
+    const tall = rows.filter((r) => r.getBoundingClientRect().height > 40)
+    const sections = $$('.cycle-plan-section').map((el) => el.getBoundingClientRect())
+    const overlap = sections.some((r, i) => i > 0 && r.top < sections[i - 1].bottom - 1)
+    await check(
+      'with 60 more tickets, planning keeps one-line rows and scrolls as one page',
+      rows.length > 40 &&
+        tall.length === 0 &&
+        Boolean(body) &&
+        body!.scrollHeight > body!.clientHeight &&
+        !overlap,
+      `${rows.length} rows, ${tall.length} taller than one line, scrolls ${body?.scrollHeight}/${body?.clientHeight}, overlap ${overlap}`
+    )
+    await key('Escape')
+    await api.invoke('dev:jira-filler', 0)
+    await refreshTickets()
+  }
   await click($('[aria-label="Plan kestrel"]'))
   await check(
     'the hover action on a cycle row opens its planning view',
@@ -2147,43 +2177,22 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     $('.cycle-plan-title')?.textContent ?? 'no planner'
   )
   await check(
-    'planning shows the backlog, the current cycle and the next one side by side',
+    'planning shows the current cycle, the next one and the backlog',
     /honey-buzzard/.test($('[data-cycle-plan-column="current"] h3')?.textContent ?? '') &&
-      Boolean($('[data-cycle-plan-column="current"] [data-issue="DSD-101"]')) &&
       /kestrel/.test($('[data-cycle-plan-column="next"] h3')?.textContent ?? '') &&
       Boolean($('[data-cycle-plan-column="backlog"]')),
     $$('[data-cycle-plan-column] h3')
       .map((h) => h.textContent)
       .join(' | ')
   )
-  {
-    // Titles get their own line (two, before an ellipsis), not what's left
-    // beside the key, priority, estimate, assignee and cycle.
-    const cut = $$<HTMLElement>('.cycle-plan-row-summary').filter(
-      (t) => t.scrollHeight > t.clientHeight + 1 || t.scrollWidth > t.clientWidth + 1
-    )
-    await check(
-      'the planning view shows ticket titles in full',
-      $$('.cycle-plan-row-summary').length > 0 && cut.length === 0,
-      cut.length
-        ? `cut off: ${cut.map((t) => t.textContent).join(' | ')}`
-        : `${$$('.cycle-plan-row-summary').length} titles, none cut off`
-    )
-    const modal = $('.cycle-plan')?.getBoundingClientRect()
-    await check(
-      'and the planner fits the window',
-      Boolean(modal) && modal!.left >= 0 && modal!.right <= window.innerWidth,
-      `${Math.round(modal?.left ?? 0)} to ${Math.round(modal?.right ?? 0)} of ${window.innerWidth}`
-    )
-  }
-  // DSD-103 starts assigned to "Someone Else", but the Backlog round's
-  // "Assign to me" lands on it — so find its row by whoever it belongs to
-  // now: it's the only ticket in kestrel, so the only capacity row.
-  const capacityRow = (): HTMLElement | null => $('.cycle-plan-capacity-row')
-  const capacityUsed = (): string =>
-    capacityRow()?.querySelector('.cycle-plan-capacity-numbers')?.textContent ?? ''
-  const capacityDays = (): string =>
-    capacityRow()?.querySelector<HTMLInputElement>('.cycle-plan-capacity-input')?.value ?? ''
+  await check(
+    'the current cycle’s unfinished tickets show as carrying over, not moved',
+    Boolean($('[data-cycle-plan-column="next"] [data-carry-over] [data-issue="DSD-101"]')) &&
+      /when you complete honey-buzzard/.test(
+        $('[data-cycle-plan-column="next"]')?.textContent ?? ''
+      ),
+    $('[data-cycle-plan-column="next"]')?.textContent?.slice(0, 120) ?? 'no next section'
+  )
   const planDrag = async (el: Element | null | undefined, onto: Element | null): Promise<void> => {
     const data = new DataTransfer()
     el?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: data }))
@@ -2208,17 +2217,27 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     )
     await until(() => Boolean($('[data-cycle-plan-column="next"] [data-issue="DSD-103"]')))
   }
+  // Capacity counts the next cycle's own tickets plus what carries over
+  // from the current one; with no dates, everyone defaults to 10 days.
+  const capacityRows = (): HTMLElement[] => $$('.cycle-plan-capacity-row')
   await check(
-    "capacity starts at DSD-103's own 4h (0.5d) of the no-dates default (10d)",
-    (await until(() => capacityUsed().includes('0.5d'))) &&
-      capacityDays() === '10' &&
-      $$('.cycle-plan-capacity-row').length === 1,
-    `${capacityUsed()} / ${capacityDays()}d; in cycle: ${$$(
-      '[data-cycle-plan-column="next"] [data-issue]'
-    )
-      .map((el) => el.dataset.issue)
-      .join(', ')}`
+    'capacity counts the next cycle and what carries over, against the 10-day default',
+    (await until(() => capacityRows().length > 0)) &&
+      capacityRows().every(
+        (r) => r.querySelector<HTMLInputElement>('.cycle-plan-capacity-input')?.value === '10'
+      ) &&
+      Boolean($('[data-cycle-plan-column="next"] [data-carry-over] [data-issue="DSD-101"]')),
+    capacityRows()
+      .map((r) => r.textContent)
+      .join(' | ')
   )
+  const noEstimate = (): number =>
+    Number(
+      /(\d+) tickets? ha(?:s|ve) no estimate/.exec(
+        $('.cycle-plan-capacity-note')?.textContent ?? ''
+      )?.[1] ?? 0
+    )
+  const noEstimateBefore = noEstimate()
   await planDrag(
     $('[data-cycle-plan-column="backlog"] [data-issue="TEAMDATA-202"]'),
     $('[data-cycle-plan-column="next"]')
@@ -2229,9 +2248,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   )
   await check(
     'capacity updates once a ticket with no estimate joins the cycle',
-    await until(() =>
-      /1 ticket has no estimate/.test($('.cycle-plan-capacity-note')?.textContent ?? '')
-    ),
+    await until(() => noEstimate() === noEstimateBefore + 1),
     $('.cycle-plan-capacity-note')?.textContent ?? 'no "no estimate" note'
   )
   await click($('button.cycle-plan-capacity-note'))
