@@ -861,6 +861,11 @@ export function loadAssignablePeople(): Promise<JiraResult<JiraPerson[]>> {
   return window.api.invoke<JiraResult<JiraPerson[]>>('jira:assignable')
 }
 
+/** Anyone on the Jira site matching a name or email, for @-mentions. */
+export function searchJiraPeople(query: string): Promise<JiraResult<JiraPerson[]>> {
+  return window.api.invoke<JiraResult<JiraPerson[]>>('jira:searchPeople', query)
+}
+
 export function setJiraParent(key: string, parent: string | null): Promise<JiraResult<JiraIssue>> {
   return window.api.invoke<JiraResult<JiraIssue>>('jira:parent', key, parent)
 }

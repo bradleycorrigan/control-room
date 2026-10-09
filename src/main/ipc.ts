@@ -103,6 +103,7 @@ import {
   moveToStatus,
   assignIssue,
   assignablePeople,
+  searchPeople,
   setParent,
   moveToSprint,
   setPriority,
@@ -742,6 +743,9 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('jira:move', (_evt, key: string, status: string) => moveToStatus(key, status))
   ipcMain.handle('jira:assign', (_evt, key: string, who: boolean | string) => assignIssue(key, who))
   ipcMain.handle('jira:assignable', () => assignablePeople())
+  ipcMain.handle('jira:searchPeople', (_evt, query: string) =>
+    searchPeople(typeof query === 'string' ? query.slice(0, 100) : '')
+  )
   // A screen that crashed, from the renderer's ScreenBoundary.
   ipcMain.handle(
     'log:rendererError',

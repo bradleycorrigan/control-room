@@ -144,6 +144,12 @@ export interface JiraIssueDetail {
   attachments: { name: string; url: string }[]
   /** Names for the people tagged in the text ([~accountid:…] → display name). */
   people?: Record<string, string>
+  /**
+   * Everyone on the ticket — who raised it, who has it, who has commented —
+   * for @-mentions. The person who raised a service desk ticket usually
+   * can't be assigned it, so the assignable list alone left them out.
+   */
+  participants?: JiraPerson[]
 }
 
 export interface JiraBoardData {
@@ -487,7 +493,12 @@ function fixtureStore(): FixtureStore | null {
       descriptionWiki: i.description,
       comments: [],
       links: i.links,
-      attachments: []
+      attachments: [],
+      // Rae raised the ticket and can't be assigned it: only this list has her.
+      participants: [
+        { accountId: 'fixture-rae', name: 'Rae Reporter' },
+        { accountId: 'fixture-someone', name: 'Someone Else' }
+      ]
     }
   }
   // A comment that tags someone, the way Jira stores it, and the name it
@@ -1131,17 +1142,28 @@ export async function loadIssueDetail(key: string): Promise<JiraResult<JiraIssue
         description?: string | null
         updated?: string
         attachment?: Array<{ filename?: string; content?: string }>
+        reporter?: JiraUserRef | null
+        assignee?: JiraUserRef | null
       }
-    }>(conn, `/rest/api/2/issue/${encodeURIComponent(key)}?fields=description,updated,attachment`)
+    }>(
+      conn,
+      `/rest/api/2/issue/${encodeURIComponent(key)}?fields=description,updated,attachment,reporter,assignee`
+    )
     const comments = await callJson<{
       comments?: Array<{
         id: string
-        author?: { displayName?: string }
+        author?: JiraUserRef
         created?: string
         body?: string
         jsdPublic?: boolean
       }>
     }>(conn, `/rest/api/2/issue/${encodeURIComponent(key)}/comment?orderBy=created&maxResults=100`)
+    // Who raised it first, then the latest commenters, then who has it.
+    const participants = toPeople([
+      issue.fields?.reporter,
+      ...(comments.comments ?? []).map((c) => c.author).reverse(),
+      issue.fields?.assignee
+    ])
     // Tags are stored as [~accountid:…]; look the names up once each.
     const texts = [
       issue.fields?.description ?? '',
@@ -1175,6 +1197,7 @@ export async function loadIssueDetail(key: string): Promise<JiraResult<JiraIssue
     return {
       key,
       people,
+      participants,
       descriptionWiki: issue.fields?.description ?? '',
       comments: (comments.comments ?? []).map((c) => ({
         id: c.id,
@@ -1307,6 +1330,52 @@ export async function moveToStatus(key: string, status: string): Promise<JiraRes
 export interface JiraPerson {
   accountId: string
   name: string
+}
+
+/** A user as Jira returns one inside an issue, comment or search. */
+interface JiraUserRef {
+  accountId?: string
+  displayName?: string
+  active?: boolean
+  accountType?: string
+}
+
+/** Real people only (no apps or deactivated accounts), each once, in order. */
+function toPeople(users: Array<JiraUserRef | null | undefined>): JiraPerson[] {
+  const seen = new Set<string>()
+  const people: JiraPerson[] = []
+  for (const u of users) {
+    if (!u?.accountId || u.active === false || u.accountType === 'app') continue
+    if (seen.has(u.accountId)) continue
+    seen.add(u.accountId)
+    people.push({ accountId: u.accountId, name: u.displayName ?? u.accountId })
+  }
+  return people
+}
+
+/**
+ * Anyone on the Jira site whose name or email matches — for @-mentioning
+ * someone who isn't on the ticket and can't be assigned tickets.
+ */
+export async function searchPeople(query: string): Promise<JiraResult<JiraPerson[]>> {
+  const q = query.trim()
+  if (!q) return { ok: true, value: [] }
+  if (fixtureStore()) {
+    const everyone = [{ accountId: 'fixture-sam', name: 'Sam Elsewhere' }]
+    return {
+      ok: true,
+      value: everyone.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()))
+    }
+  }
+  const conn = connection()
+  if ('error' in conn) return { ok: false, error: conn.error }
+  return attempt(async () => {
+    const users = await callJson<JiraUserRef[]>(
+      conn,
+      `/rest/api/3/user/search?query=${encodeURIComponent(q)}&maxResults=20`
+    )
+    return toPeople(users)
+  })
 }
 
 const assignableCache: { at: number; people: JiraPerson[] } = { at: 0, people: [] }

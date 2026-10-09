@@ -25,6 +25,7 @@ import {
   type TicketPullRequest,
   assignJiraIssue,
   loadAssignablePeople,
+  searchJiraPeople,
   configureJira,
   disconnectJira,
   getAppSettings,
@@ -3979,7 +3980,7 @@ function IssueDrawer({
 }: {
   issue: JiraIssue
   board: JiraBoardData
-  /** Everyone the ticket can be assigned to. */
+  /** Everyone the ticket can be assigned to; @-mentions add the ticket's own people. */
   people: JiraPerson[]
   myName: string
   sessions: LiveSession[]
@@ -4020,9 +4021,42 @@ function IssueDrawer({
   const [mention, setMention] = useState<{ query: string; start: number; index: number } | null>(
     null
   )
-  const mentionMatches = mention
-    ? people.filter((p) => p.name.toLowerCase().includes(mention.query.toLowerCase())).slice(0, 6)
-    : []
+  // Anyone on the Jira site matching what's typed after @, looked up once
+  // the typing pauses.
+  const [found, setFound] = useState<{ query: string; people: JiraPerson[] }>({
+    query: '',
+    people: []
+  })
+  const mentionQuery = mention?.query ?? null
+  useEffect(() => {
+    if (mentionQuery === null || mentionQuery.length < 2) return
+    let live = true
+    const t = setTimeout(() => {
+      void searchJiraPeople(mentionQuery).then((r) => {
+        if (live && r.ok) setFound({ query: mentionQuery, people: r.value })
+      })
+    }, 250)
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+  }, [mentionQuery])
+  // Who @ offers: everyone on this ticket first (the person who raised it
+  // usually can't be assigned it, so the team list alone missed them), then
+  // the team, then whoever the site search found.
+  const mentionMatches = ((): JiraPerson[] => {
+    if (!mention) return []
+    const q = mention.query.toLowerCase()
+    const named = (p: JiraPerson): boolean => p.name.toLowerCase().includes(q)
+    const candidates = [
+      ...(detail?.participants ?? []).filter(named),
+      ...people.filter(named),
+      ...(found.query === mention.query ? found.people : [])
+    ]
+    return candidates
+      .filter((p, i) => candidates.findIndex((x) => x.accountId === p.accountId) === i)
+      .slice(0, 6)
+  })()
   const pickMention = (person: JiraPerson, el: HTMLTextAreaElement | null): void => {
     if (!mention) return
     const end = mention.start + 1 + mention.query.length
@@ -4908,9 +4942,7 @@ function IssueDrawer({
               const upTo = e.target.value.slice(0, e.target.selectionStart ?? 0)
               const m = /(^|\s)@([^\s@]{0,30})$/.exec(upTo)
               setMention(
-                m && people.length
-                  ? { query: m[2], start: upTo.length - m[2].length - 1, index: 0 }
-                  : null
+                m ? { query: m[2], start: upTo.length - m[2].length - 1, index: 0 } : null
               )
             }}
             onKeyDown={(e) => {

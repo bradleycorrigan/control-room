@@ -731,6 +731,31 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         .map((c) => c.textContent?.slice(0, 60))
         .join(' | ')
     )
+
+    // People who can't be assigned tickets: the one who raised this ticket
+    // (from the ticket itself), and anyone else on the site (by search).
+    const offered = async (typed: string, name: string): Promise<boolean> => {
+      setText(box, typed)
+      const ok = await until(() =>
+        $$('.backlog-mention-option').some((o) => o.textContent?.includes(name))
+      )
+      setText(box, '')
+      return ok
+    }
+    await check(
+      '@ offers the person who raised the ticket, though they can’t be assigned it',
+      await offered('Thanks @Ra', 'Rae Reporter'),
+      $$('.backlog-mention-option')
+        .map((o) => o.textContent)
+        .join(' | ')
+    )
+    await check(
+      '@ finds anyone else on the Jira site by name',
+      await offered('cc @Sam', 'Sam Elsewhere'),
+      $$('.backlog-mention-option')
+        .map((o) => o.textContent)
+        .join(' | ')
+    )
   }
   await check(
     'the panel shows reporter, labels, estimate and why it matters',
