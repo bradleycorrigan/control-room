@@ -3249,3 +3249,25 @@
 .backlog-row-meta .backlog-pills > .backlog-pill--type {
   order: 4;
 }
+
+.planning-bar-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+/* The cycle you're planning: reads as the title, opens as a picker. */
+.planning-bar-pick {
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.planning-bar-pick:hover,
+.planning-bar-pick:focus {
+  border-color: var(--border);
+}

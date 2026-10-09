@@ -1889,9 +1889,9 @@ export default function BacklogScreen({
   const planningNext = planning
     ? (sprints.find((sp) => sp.id === planning.nextId) ?? firstUpcoming)
     : null
+  // Plans the cycle you picked: the current one too, while it has time left.
   const startPlanning = (sprintId: number): void => {
-    const picked = sprints.find((sp) => sp.id === sprintId)
-    const nextId = picked && picked.state !== 'active' ? picked.id : (firstUpcoming?.id ?? null)
+    const nextId = sprints.some((sp) => sp.id === sprintId) ? sprintId : (firstUpcoming?.id ?? null)
     setPlanning((p) => ({
       nextId,
       restore: p?.restore ?? { grouping, view, cycleSet, who, assignees }
@@ -1927,7 +1927,7 @@ export default function BacklogScreen({
   // The current cycle's unfinished tickets: Jira moves them to the next one
   // when the current one is completed, so planning lists them there too.
   const carryingAll =
-    planning && activeSprint && planningNext
+    planning && activeSprint && planningNext && planningNext.state !== 'active'
       ? inCycle(activeSprint.id).filter((i) => i.statusCategory !== 'done')
       : []
   const carryKeys = new Set(carryingAll.map((i) => i.key))
@@ -1951,10 +1951,10 @@ export default function BacklogScreen({
     const kind =
       sprintId === null
         ? ('backlog' as const)
-        : cycle?.state === 'active'
-          ? ('current' as const)
-          : cycle?.id === planningNext?.id
-            ? ('next' as const)
+        : cycle?.id === planningNext?.id
+          ? ('next' as const)
+          : cycle?.state === 'active'
+            ? ('current' as const)
             : ('other' as const)
     const all = inCycle(sprintId)
     return (
@@ -2274,6 +2274,13 @@ export default function BacklogScreen({
               await load(true)
               setPlanning((p) => (p ? { ...p, nextId: r.value.id } : p))
               return true
+            }}
+            cycles={sprints}
+            onPick={(id) => {
+              setPlanning((p) => (p ? { ...p, nextId: id } : p))
+              setPlanFolds(
+                sprints.find((sp) => sp.id === id)?.state === 'active' ? {} : { current: true }
+              )
             }}
             onDone={stopPlanning}
           />

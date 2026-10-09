@@ -2191,7 +2191,11 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   await click($('[aria-label="Plan kestrel"]'))
   await check(
     'Plan opens planning in the list: grouped by cycle, current folded, with the planning bar',
-    (await until(() => /Planning kestrel/.test($('.planning-bar')?.textContent ?? ''))) &&
+    (await until(
+      () =>
+        $<HTMLSelectElement>('.planning-bar select[aria-label="Cycle to plan"]')?.selectedOptions[0]
+          ?.text === 'kestrel'
+    )) &&
       Boolean(group('current')) &&
       Boolean(group('sprint-2')) &&
       Boolean(group('backlog')) &&
@@ -2277,6 +2281,17 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   }
   await dragTo('TEAMDATA-202', 'backlog')
   await check('and back to the backlog', await until(() => inGroup('backlog', 'TEAMDATA-202')))
+  // Any open cycle can be planned, the current one too.
+  setSelect($<HTMLSelectElement>('.planning-bar select[aria-label="Cycle to plan"]'), '1')
+  await check(
+    'the planning bar can switch to planning the current cycle, with no carry-over',
+    (await until(() => Boolean(group('current')?.querySelector('[data-cycle-strip="next"]')))) &&
+      !$('.backlog-row-carry') &&
+      /days left/.test(
+        group('current')?.querySelector('[data-cycle-strip="next"]')?.textContent ?? ''
+      ),
+    group('current')?.querySelector('.cycle-strip')?.textContent?.slice(0, 120) ?? 'no strip'
+  )
   await donePlanning()
   await check(
     'Done planning puts the list back how it was',

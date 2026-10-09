@@ -68,7 +68,7 @@ export function CycleStrip({
   onNoEstimate,
   onSetGoal
 }: {
-  /** current: the active cycle; next: the one being planned; other: any other cycle. */
+  /** next: the cycle being planned (the current one, or one coming up); current: the active one when it isn't. */
   kind: 'current' | 'next' | 'other' | 'backlog'
   cycle: Cycle | null
   /** The cycle being planned, for the current cycle's carry-over line. */
@@ -94,7 +94,7 @@ export function CycleStrip({
   }
   const dates = cycle ? cycleDates(cycle) : null
   const daysLeft =
-    kind === 'current' && cycle?.endDate
+    cycle?.state === 'active' && cycle?.endDate
       ? Math.max(0, Math.ceil((new Date(cycle.endDate).getTime() - now) / DAY_MS))
       : null
 
@@ -120,7 +120,11 @@ export function CycleStrip({
 
   // The cycle being planned: its own tickets plus what carries over, per person.
   const planned = [...items, ...carrying]
-  const defaultDays = workingDays(cycle.startDate, cycle.endDate)
+  // Planning the current cycle: what's left of it is what anyone has.
+  const defaultDays =
+    cycle.state === 'active'
+      ? workingDays(new Date(now).toISOString(), cycle.endDate)
+      : workingDays(cycle.startDate, cycle.endDate)
   const capacity = prefs.capacity[String(cycle.id)] ?? {}
   const load = new Map<string, { own: JiraIssue[]; carry: JiraIssue[] }>()
   for (const [list, part] of [
@@ -140,6 +144,7 @@ export function CycleStrip({
     <div className="cycle-strip" data-cycle-strip="next">
       <div className="cycle-strip-facts">
         {dates && <span>{dates}</span>}
+        {daysLeft !== null && <span>{daysLeft} days left</span>}
         <Facts issues={planned} onNoEstimate={onNoEstimate} />
         {carrying.length > 0 && <span>incl. {carrying.length} carrying over</span>}
         {hidden > 0 && <span>{hidden} hidden by filters</span>}
@@ -262,12 +267,17 @@ export function PlanningBar({
   next,
   current,
   boardId,
+  cycles,
+  onPick,
   onCreate,
   onDone
 }: {
   next: Cycle | null
   current: Cycle | null
   boardId: number | null
+  /** Every open cycle: any of them can be planned. */
+  cycles: Cycle[]
+  onPick: (sprintId: number) => void
   onCreate: (input: {
     boardId: number
     name: string
@@ -292,7 +302,24 @@ export function PlanningBar({
   return (
     <div className="planning-bar" role="region" aria-label="Planning">
       <span className="planning-bar-title">
-        {next ? `Planning ${next.name}` : 'Planning the next cycle'}
+        Planning
+        {next ? (
+          <select
+            aria-label="Cycle to plan"
+            className="planning-bar-pick"
+            value={String(next.id)}
+            onChange={(e) => onPick(Number(e.target.value))}
+          >
+            {cycles.map((c) => (
+              <option key={c.id} value={String(c.id)}>
+                {c.name}
+                {c.state === 'active' ? ' (current)' : ''}
+              </option>
+            ))}
+          </select>
+        ) : (
+          ' the next cycle'
+        )}
       </span>
       <span className="planning-bar-hint">
         Drag tickets between cycles, or onto a cycle in the sidebar.
