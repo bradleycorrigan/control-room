@@ -2136,67 +2136,19 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     `${workingDays('2026-09-14T00:00:00.000Z', '2026-09-18T00:00:00.000Z')}, ${workingDays(undefined, undefined)}`
   )
 
-  // Cycle planning view: opened from the sidebar's hover action, drag a
-  // ticket in, capacity updates.
+  // Planning: a mode of the Tickets list, grouped by cycle, opened from a
+  // cycle's Plan action. Tickets open, filter and drag as anywhere in Tickets.
   await ctx.goTo('backlog')
   await wait(600)
-  const refreshTickets = async (): Promise<void> => {
-    await click($('.backlog button[aria-label="More"]'))
-    await click(byText('.backlog-menu .cr-popover-item', 'Refresh from Jira'))
-    await wait(600)
-  }
-  {
-    // At real volume (60 more tickets): one-line rows, and the page scrolls
-    // as a whole, with nothing drawn over anything else.
-    await api.invoke('dev:jira-filler', 60)
-    await refreshTickets()
-    await click($('[aria-label="Plan kestrel"]'))
-    await until(() => $$('.cycle-plan-row').length > 40, 3000)
-    const body = $('.cycle-plan-body')
-    const rows = $$('.cycle-plan-row')
-    const tall = rows.filter((r) => r.getBoundingClientRect().height > 40)
-    const sections = $$('.cycle-plan-section').map((el) => el.getBoundingClientRect())
-    const overlap = sections.some((r, i) => i > 0 && r.top < sections[i - 1].bottom - 1)
-    await check(
-      'with 60 more tickets, planning keeps one-line rows and scrolls as one page',
-      rows.length > 40 &&
-        tall.length === 0 &&
-        Boolean(body) &&
-        body!.scrollHeight > body!.clientHeight &&
-        !overlap,
-      `${rows.length} rows, ${tall.length} taller than one line, scrolls ${body?.scrollHeight}/${body?.clientHeight}, overlap ${overlap}`
-    )
-    await key('Escape')
-    await api.invoke('dev:jira-filler', 0)
-    await refreshTickets()
-  }
-  await click($('[aria-label="Plan kestrel"]'))
-  await check(
-    'the hover action on a cycle row opens its planning view',
-    await until(() => $('.cycle-plan-title')?.textContent === 'Plan kestrel'),
-    $('.cycle-plan-title')?.textContent ?? 'no planner'
-  )
-  await check(
-    'planning shows the current cycle, the next one and the backlog',
-    /honey-buzzard/.test($('[data-cycle-plan-column="current"] h3')?.textContent ?? '') &&
-      /kestrel/.test($('[data-cycle-plan-column="next"] h3')?.textContent ?? '') &&
-      Boolean($('[data-cycle-plan-column="backlog"]')),
-    $$('[data-cycle-plan-column] h3')
-      .map((h) => h.textContent)
-      .join(' | ')
-  )
-  await check(
-    'the current cycle’s unfinished tickets show as carrying over, not moved',
-    Boolean($('[data-cycle-plan-column="next"] [data-carry-over] [data-issue="DSD-101"]')) &&
-      /when you complete honey-buzzard/.test(
-        $('[data-cycle-plan-column="next"]')?.textContent ?? ''
-      ),
-    $('[data-cycle-plan-column="next"]')?.textContent?.slice(0, 120) ?? 'no next section'
-  )
-  const planDrag = async (el: Element | null | undefined, onto: Element | null): Promise<void> => {
+  const group = (lane: string): HTMLElement | null => $(`.backlog-group[data-lane="${lane}"]`)
+  const inGroup = (lane: string, key: string): boolean =>
+    Boolean(group(lane)?.querySelector(`[data-issue="${key}"]`))
+  const dragTo = async (key: string, lane: string): Promise<void> => {
     const data = new DataTransfer()
+    const el = $(`.backlog-row[data-issue="${key}"]`)
     el?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: data }))
     await wait(200)
+    const onto = group(lane)
     onto?.dispatchEvent(
       new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data })
     )
@@ -2206,78 +2158,119 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     el?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: data }))
     await wait(500)
   }
-  // The fixture puts DSD-103 in kestrel, but the Backlog round above moves
-  // it to the current cycle and back out to the backlog. Put it back in
-  // kestrel for the capacity check, and restore it after.
-  const dsd103WasOut = Boolean($('[data-cycle-plan-column="backlog"] [data-issue="DSD-103"]'))
-  if (dsd103WasOut) {
-    await planDrag(
-      $('[data-cycle-plan-column="backlog"] [data-issue="DSD-103"]'),
-      $('[data-cycle-plan-column="next"]')
-    )
-    await until(() => Boolean($('[data-cycle-plan-column="next"] [data-issue="DSD-103"]')))
+  const refreshTickets = async (): Promise<void> => {
+    await click($('.backlog button[aria-label="More"]'))
+    await click(byText('.backlog-menu .cr-popover-item', 'Refresh from Jira'))
+    await wait(600)
   }
-  // Capacity counts the next cycle's own tickets plus what carries over
-  // from the current one; with no dates, everyone defaults to 10 days.
-  const capacityRows = (): HTMLElement[] => $$('.cycle-plan-capacity-row')
+  const donePlanning = async (): Promise<void> => {
+    await click(byText('.planning-bar button', 'Done planning'))
+    await until(() => !$('.planning-bar'))
+  }
+  {
+    // At real volume (60 more tickets): nothing drawn over anything else.
+    await api.invoke('dev:jira-filler', 60)
+    await refreshTickets()
+    await click($('[aria-label="Plan kestrel"]'))
+    await until(() => Boolean($('.planning-bar')), 3000)
+    const groups = $$('.backlog-group').map((g) => g.getBoundingClientRect())
+    const overlap = groups.some((r, i) => i > 0 && r.top < groups[i - 1].bottom - 1)
+    await check(
+      'with 60 more tickets, planning lays the cycles out without overlap',
+      groups.length >= 3 && !overlap && $$('.backlog-row').length > 20,
+      `${groups.length} groups, ${$$('.backlog-row').length} rows, overlap ${overlap}`
+    )
+    await donePlanning()
+    await api.invoke('dev:jira-filler', 0)
+    await refreshTickets()
+  }
+
+  await click($('[aria-label="Plan kestrel"]'))
   await check(
-    'capacity counts the next cycle and what carries over, against the 10-day default',
-    (await until(() => capacityRows().length > 0)) &&
+    'Plan opens planning in the list: grouped by cycle, current folded, with the planning bar',
+    (await until(() => /Planning kestrel/.test($('.planning-bar')?.textContent ?? ''))) &&
+      Boolean(group('current')) &&
+      Boolean(group('sprint-2')) &&
+      Boolean(group('backlog')) &&
+      !inGroup('current', 'DSD-101'),
+    $$('.backlog-group')
+      .map((g) => g.getAttribute('data-lane'))
+      .join(', ')
+  )
+  await check(
+    'the current cycle says its unfinished tickets carry over when completed in Jira',
+    /carry over to kestrel when you complete honey-buzzard in Jira/.test(
+      $('[data-cycle-strip="current"]')?.textContent ?? ''
+    ),
+    $('[data-cycle-strip="current"]')?.textContent ?? 'no strip'
+  )
+  const capacityRows = (): HTMLElement[] => $$('[data-cycle-strip="next"] .cycle-plan-capacity-row')
+  await check(
+    'the next cycle shows everyone’s load, carry-over included, against the 10-day default',
+    capacityRows().length > 0 &&
       capacityRows().every(
         (r) => r.querySelector<HTMLInputElement>('.cycle-plan-capacity-input')?.value === '10'
       ) &&
-      Boolean($('[data-cycle-plan-column="next"] [data-carry-over] [data-issue="DSD-101"]')),
-    capacityRows()
-      .map((r) => r.textContent)
-      .join(' | ')
+      /carrying over/.test($('[data-cycle-strip="next"]')?.textContent ?? ''),
+    $('[data-cycle-strip="next"]')?.textContent?.slice(0, 160) ?? 'no strip'
   )
   const noEstimate = (): number =>
     Number(
-      /(\d+) tickets? ha(?:s|ve) no estimate/.exec(
-        $('.cycle-plan-capacity-note')?.textContent ?? ''
-      )?.[1] ?? 0
+      /(\d+) without an estimate/.exec($('[data-cycle-strip="next"]')?.textContent ?? '')?.[1] ?? 0
     )
-  const noEstimateBefore = noEstimate()
-  await planDrag(
-    $('[data-cycle-plan-column="backlog"] [data-issue="TEAMDATA-202"]'),
-    $('[data-cycle-plan-column="next"]')
-  )
+  const before = noEstimate()
+  await dragTo('TEAMDATA-202', 'sprint-2')
   await check(
-    'dragging a backlog ticket into the cycle column moves it in',
-    await until(() => Boolean($('[data-cycle-plan-column="next"] [data-issue="TEAMDATA-202"]')))
+    'dragging a backlog ticket into the next cycle moves it, and its load updates',
+    (await until(() => inGroup('sprint-2', 'TEAMDATA-202'))) &&
+      (await until(() => noEstimate() === before + 1)),
+    `in kestrel: ${inGroup('sprint-2', 'TEAMDATA-202')}; without an estimate ${before} → ${noEstimate()}`
   )
+  await click(byText('[data-cycle-strip="next"] .cycle-strip-link', `${noEstimate()} without`))
   await check(
-    'capacity updates once a ticket with no estimate joins the cycle',
-    await until(() => noEstimate() === noEstimateBefore + 1),
-    $('.cycle-plan-capacity-note')?.textContent ?? 'no "no estimate" note'
-  )
-  await click($('button.cycle-plan-capacity-note'))
-  await check(
-    'clicking "no estimate" narrows the columns to tickets with no estimate',
-    !$('[data-issue="DSD-101"]') &&
-      Boolean($('[data-cycle-plan-column="next"] [data-issue="TEAMDATA-202"]')),
-    $$('.cycle-plan [data-issue]')
-      .map((el) => el.dataset.issue)
+    '"without an estimate" filters the list to those tickets',
+    (await until(() => Boolean($('[data-filter-chip="no-estimate"]')))) &&
+      !inGroup('sprint-2', 'DSD-103') &&
+      inGroup('sprint-2', 'TEAMDATA-202'),
+    $$('.backlog-row')
+      .map((r) => r.dataset.issue)
       .join(', ')
   )
-  await click($('button.cycle-plan-capacity-note'))
-  // Undo the drag — leave TEAMDATA-202 back in the backlog for later rounds.
-  await planDrag(
-    $('[data-cycle-plan-column="next"] [data-issue="TEAMDATA-202"]'),
-    $('[data-cycle-plan-column="backlog"]')
-  )
+  await click($('[data-filter-chip="no-estimate"] button'))
+  await click($('.backlog-row[data-issue="TEAMDATA-202"]'))
   await check(
-    'moving it back out restores the backlog column',
-    await until(() => Boolean($('[data-cycle-plan-column="backlog"] [data-issue="TEAMDATA-202"]')))
+    'clicking a ticket while planning opens it',
+    await until(() => Boolean($('.backlog-drawer'))),
+    'no panel'
   )
-  if (dsd103WasOut) {
-    await planDrag(
-      $('[data-cycle-plan-column="next"] [data-issue="DSD-103"]'),
-      $('[data-cycle-plan-column="backlog"]')
-    )
-    await until(() => Boolean($('[data-cycle-plan-column="backlog"] [data-issue="DSD-103"]')))
-  }
   await key('Escape')
+  await until(() => !$('.backlog-drawer'))
+  {
+    // Goals are rarely used: a small link, and a field only while editing.
+    const hadField = Boolean($('.cycle-strip-goal-input'))
+    await click(byText('[data-cycle-strip="next"] .cycle-strip-link', 'Add goal'))
+    const openAfterClick = await until(() => Boolean($('.cycle-strip-goal-input')))
+    await typeText('Ship the partner reports')
+    await key('Enter')
+    await check(
+      'the goal is a small "Add goal" link, and what you type saves as a quiet line',
+      !hadField &&
+        (await until(() =>
+          /Ship the partner reports/.test($('.cycle-strip-goal')?.textContent ?? '')
+        )),
+      `field ${$<HTMLInputElement>('.cycle-strip-goal-input')?.value ?? 'gone'}; focus ${document.activeElement?.tagName}.${document.activeElement?.className}; open after click ${openAfterClick}`
+    )
+  }
+  await dragTo('TEAMDATA-202', 'backlog')
+  await check('and back to the backlog', await until(() => inGroup('backlog', 'TEAMDATA-202')))
+  await donePlanning()
+  await check(
+    'Done planning puts the list back how it was',
+    !$('.planning-bar') && !group('sprint-2') && Boolean(row('DSD-101')),
+    $$('.backlog-group')
+      .map((g) => g.getAttribute('data-lane'))
+      .join(', ')
+  )
 
   // Plan cycle with the sidebar hidden: the sidebar row's hover action isn't
   // there, so the Filter menu's cycle list carries its own "Plan" action.
@@ -2294,10 +2287,11 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     await click($('.backlog-menu-cycle-row [aria-label^="Plan "]'))
     await check(
       'clicking it opens planning with no sidebar in the way',
-      await until(() => Boolean($('.cycle-plan-title')?.textContent?.startsWith('Plan '))),
-      $('.cycle-plan-title')?.textContent ?? 'no planner'
+      await until(() => Boolean($('.planning-bar'))),
+      'no planning bar'
     )
     await key('Escape')
+    await donePlanning()
   } finally {
     // Never leave the sidebar hidden for later rounds' checks.
     await click($('[aria-label="Show sidebar"]'))

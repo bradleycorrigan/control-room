@@ -76,7 +76,7 @@ import {
 import { DRAG_TYPE } from './backlogStatus'
 import { ColumnsEditor } from './backlog/ColumnsEditor'
 import { CreateTicket } from './backlog/CreateTicket'
-import { CyclePlanning } from './backlog/CyclePlanning'
+import { CycleStrip, PlanningBar } from './backlog/CyclePlanning'
 import { Picker, type PickerOption } from './backlog/Picker'
 import {
   branchFor,
@@ -349,7 +349,16 @@ export default function BacklogScreen({
   const [offeredPrs, setOfferedPrs] = useStoredState<string[]>('backlog-pr-offered', [])
   const [editingColumns, setEditingColumns] = useState(false)
   // The cycle open in the planning view, or null when it's closed.
-  const [planningSprintId, setPlanningSprintId] = useState<number | null>(null)
+  // Planning: the list grouped by cycle, with each cycle's facts and the next
+  // one's load under its title. Holds the cycle being planned and the view
+  // to go back to.
+  const [planning, setPlanning] = useState<{
+    nextId: number | null
+    restore: { grouping: GroupBy[]; view: View; cycleSet: CycleFilter[]; collapsed: string[] }
+  } | null>(null)
+  const [planningSince] = useState(() => Date.now())
+  // Planning's "N without an estimate": only tickets with no estimate.
+  const [noEstimateOnly, setNoEstimateOnly] = useState(false)
   // While a ticket is being dragged, empty groups show too, as drop targets.
   const [dragging, setDragging] = useState(false)
   const loadedAt = useRef(0)
@@ -937,9 +946,13 @@ export default function BacklogScreen({
   const narrowedAnyone = useMemo(
     () =>
       tickets.filter(
-        (i) => matches(i, q) && !hidden.includes(columnNameOf(i.status)) && inCycles(i, cycles)
+        (i) =>
+          matches(i, q) &&
+          !hidden.includes(columnNameOf(i.status)) &&
+          inCycles(i, cycles) &&
+          (!noEstimateOnly || !i.estimate)
       ),
-    [tickets, cycles, q, hidden, columnNameOf]
+    [tickets, cycles, q, hidden, columnNameOf, noEstimateOnly]
   )
   const narrowedAnyEpic = useMemo(
     () => narrowedAnyone.filter((i) => assignedTo(i, people)),
@@ -1653,6 +1666,7 @@ export default function BacklogScreen({
   // Every filter narrowing the list, as a chip you can see and clear. The tab
   // you're on is shown by the tabs themselves.
   const clearFilters = (): void => {
+    setNoEstimateOnly(false)
     setCycle('all')
     setHidden([])
     setAssignees([])
@@ -1676,6 +1690,14 @@ export default function BacklogScreen({
       label: `Cycle: ${cycles.map(nameOf).join(' + ')}`,
       clearLabel: 'Clear the cycle filter',
       clear: () => setCycle('all')
+    })
+  }
+  if (noEstimateOnly) {
+    filterChips.push({
+      id: 'no-estimate',
+      label: 'No estimate',
+      clearLabel: 'Show tickets with an estimate too',
+      clear: () => setNoEstimateOnly(false)
     })
   }
   if (hideDone) {
@@ -1847,38 +1869,70 @@ export default function BacklogScreen({
     )
   }
 
-  // Planning takes the whole screen: three columns need the width.
-  if (planningSprintId !== null && board) {
-    const planned = board.sprints.find((sp) => sp.id === planningSprintId) ?? null
-    // From the current cycle's Plan action, plan the cycle after it.
-    const next =
-      planned && planned.state !== 'active'
-        ? planned
-        : ([...board.sprints]
-            .filter((sp) => sp.state === 'future')
-            .sort((x, y) => (x.startDate ?? '9').localeCompare(y.startDate ?? '9'))[0] ?? null)
+  // The cycle being planned: the one picked, or from the current cycle's
+  // Plan action, the first upcoming one.
+  const firstUpcoming =
+    [...sprints]
+      .filter((sp) => sp.state === 'future')
+      .sort((x, y) => (x.startDate ?? '9').localeCompare(y.startDate ?? '9'))[0] ?? null
+  const planningNext = planning
+    ? (sprints.find((sp) => sp.id === planning.nextId) ?? firstUpcoming)
+    : null
+  const startPlanning = (sprintId: number): void => {
+    const picked = sprints.find((sp) => sp.id === sprintId)
+    const nextId = picked && picked.state !== 'active' ? picked.id : (firstUpcoming?.id ?? null)
+    setPlanning((p) => ({
+      nextId,
+      restore: p?.restore ?? { grouping, view, cycleSet, collapsed }
+    }))
+    // The current cycle starts folded: its unfinished tickets already count
+    // in the next one's load, so the cycle being planned comes first.
+    if (!collapsed.includes('current')) setCollapsed([...collapsed, 'current'])
+    setGrouping(['cycle'])
+    setView('list')
+    setCycleSet([])
+  }
+  const stopPlanning = (): void => {
+    if (!planning) return
+    setGrouping(planning.restore.grouping)
+    setView(planning.restore.view)
+    setCycleSet(planning.restore.cycleSet)
+    if (!planning.restore.collapsed.includes('current')) {
+      setCollapsed(collapsed.filter((id) => id !== 'current'))
+    }
+    setNoEstimateOnly(false)
+    setPlanning(null)
+  }
+  // Under each cycle group's title while planning.
+  const planningStrip = (lane: Lane): React.ReactNode => {
+    if (!planning || groupBy !== 'cycle' || lane.value?.kind !== 'cycle') return null
+    const sprintId = lane.value.sprintId
+    const cycle = sprints.find((sp) => sp.id === sprintId) ?? null
+    const kind =
+      sprintId === null
+        ? ('backlog' as const)
+        : cycle?.state === 'active'
+          ? ('current' as const)
+          : cycle?.id === planningNext?.id
+            ? ('next' as const)
+            : ('other' as const)
+    const carrying =
+      kind === 'next' && activeSprint
+        ? visible.filter((i) => i.sprint?.id === activeSprint.id && i.statusCategory !== 'done')
+        : []
     return (
-      <CyclePlanning
-        current={activeSprint}
-        next={next}
-        sprints={board.sprints}
-        allTickets={allTickets}
+      <CycleStrip
+        kind={kind}
+        cycle={cycle}
+        next={planningNext}
+        items={lane.items}
+        carrying={carrying}
+        now={planningSince}
         prefs={prefs}
         onSavePrefs={(patch) => void saveBacklogPrefs(patch).then(setPrefs)}
-        onMove={(issue, sprintId) => void actions.cycle(issue, sprintId)}
-        onEstimate={(issue, estimate) => void actions.estimate(issue, estimate)}
-        onCreateNext={async (input) => {
-          const r = await createJiraSprint(input)
-          if (!r.ok) {
-            pushToast?.(`Jira: ${r.error}`)
-            return false
-          }
-          await load(true)
-          setPlanningSprintId(r.value.id)
-          return true
-        }}
-        onSetGoal={async (sprintId, goal) => {
-          const r = await setJiraSprintGoal(sprintId, goal)
+        onNoEstimate={() => setNoEstimateOnly(true)}
+        onSetGoal={async (id, goal) => {
+          const r = await setJiraSprintGoal(id, goal)
           if (!r.ok) {
             pushToast?.(`Jira: ${r.error}`)
             return false
@@ -1888,14 +1942,13 @@ export default function BacklogScreen({
               ? {
                   ...b,
                   sprints: b.sprints.map((sp) =>
-                    sp.id === sprintId ? { ...sp, goal: r.value.goal } : sp
+                    sp.id === id ? { ...sp, goal: r.value.goal } : sp
                   )
                 }
               : b
           )
           return true
         }}
-        onClose={() => setPlanningSprintId(null)}
       />
     )
   }
@@ -1935,7 +1988,7 @@ export default function BacklogScreen({
           epicFilter={epicFilter}
           onEpic={setEpicFilter}
           onDrop={(key, value) => void dropInto(key, [value])}
-          onPlanCycle={setPlanningSprintId}
+          onPlanCycle={startPlanning}
           width={sidebarWidth}
           onResizeStart={onSidebarResizeStart}
           onResizeReset={onSidebarResizeReset}
@@ -2100,7 +2153,7 @@ export default function BacklogScreen({
               onCycles={(next) => setCycleSet(next)}
               sprintName={activeSprint?.name ?? null}
               activeSprintId={activeSprint?.id ?? null}
-              onPlanCycle={setPlanningSprintId}
+              onPlanCycle={startPlanning}
               upcoming={sprints.filter((sp) => sp.state !== 'active')}
               columns={columns.map((c) => ({
                 name: c.name,
@@ -2166,6 +2219,24 @@ export default function BacklogScreen({
           </div>
         </div>
 
+        {planning && board && (
+          <PlanningBar
+            next={planningNext}
+            current={activeSprint}
+            boardId={(activeSprint?.boardId ?? sprints.find((sp) => sp.boardId)?.boardId) || null}
+            onCreate={async (input) => {
+              const r = await createJiraSprint(input)
+              if (!r.ok) {
+                pushToast?.(`Jira: ${r.error}`)
+                return false
+              }
+              await load(true)
+              setPlanning((p) => (p ? { ...p, nextId: r.value.id } : p))
+              return true
+            }}
+            onDone={stopPlanning}
+          />
+        )}
         {filterChips.length > 0 && (
           <div className="backlog-filter-bar" role="group" aria-label="Active filters">
             {filterChips.map((c) => (
@@ -2240,6 +2311,7 @@ export default function BacklogScreen({
                   key={lane.id}
                   lane={lane}
                   values={[lane.value]}
+                  extra={planningStrip(lane)}
                   collapsed={isCollapsed}
                   onToggle={() =>
                     lane.items.length === 0 && !isCollapsed
@@ -2583,9 +2655,12 @@ function DropGroup({
   collapsed,
   onToggle,
   onDropIssue,
+  extra,
   children
 }: {
   lane: Lane
+  /** Under the title: planning's facts and load for a cycle. */
+  extra?: React.ReactNode
   /** Everything a ticket dropped here becomes: the group's, and its parent group's. */
   values: LaneValue[]
   nested?: boolean
@@ -2632,6 +2707,7 @@ function DropGroup({
       }}
     >
       <LaneTitle lane={lane} nested={nested} collapsed={collapsed} onToggle={onToggle} />
+      {extra}
       {children}
     </section>
   )
