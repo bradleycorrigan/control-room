@@ -418,8 +418,15 @@ export default function BacklogScreen({
   // A drag always ends, however it ends. After a drop the dragged row moves
   // to its new group — a different element — so its own dragend never
   // bubbles up here, and the empty "Drop here" groups stayed on screen.
+  //
+  // Cleared after the drop has been handled, not before: this listener runs
+  // first (capture), and React re-renders in the gap before the group's own
+  // drop handler. The empty groups only exist while dragging, so the one
+  // under the pointer vanished and a drop onto it was lost.
   useEffect(() => {
-    const end = (): void => setDragging(false)
+    const end = (): void => {
+      setTimeout(() => setDragging(false), 0)
+    }
     window.addEventListener('dragend', end, true)
     window.addEventListener('drop', end, true)
     return () => {
