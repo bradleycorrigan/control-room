@@ -17,8 +17,17 @@ async function click(el: Element | null | undefined, modifiers: Modifier[] = [])
   if (!el) return false
   // Real input lands where the pointer is: bring the target on screen first
   // (a tall panel puts its lower controls below the fold).
-  el.scrollIntoView({ block: 'center', inline: 'center' })
-  await wait(100)
+  // Only wait for a scroll that actually happened.
+  const before = el.getBoundingClientRect()
+  const inView =
+    before.top >= 0 &&
+    before.bottom <= window.innerHeight &&
+    before.left >= 0 &&
+    before.right <= window.innerWidth
+  if (!inView) {
+    el.scrollIntoView({ block: 'center', inline: 'center' })
+    await wait(100)
+  }
   const r = el.getBoundingClientRect()
   // Past the leading controls a wide row starts with (the pick check, then
   // priority), onto its key and title; the middle of anything narrower.
@@ -27,7 +36,9 @@ async function click(el: Element | null | undefined, modifiers: Modifier[] = [])
   await input({ type: 'mouseMove', x, y, modifiers })
   await input({ type: 'mouseDown', x, y, button: 'left', clickCount: 1, modifiers })
   await input({ type: 'mouseUp', x, y, button: 'left', clickCount: 1, modifiers })
-  await wait(300)
+  // Long enough for React to render the click; anything slower (a Jira
+  // write, a dialog opening) is awaited with until() where it's checked.
+  await wait(150)
   return true
 }
 
@@ -46,7 +57,7 @@ function spills(root: Element | null): string[] {
 async function key(keyCode: string, modifiers: Modifier[] = []): Promise<void> {
   await input({ type: 'keyDown', keyCode, modifiers })
   await input({ type: 'keyUp', keyCode, modifiers })
-  await wait(300)
+  await wait(150)
 }
 
 async function typeText(text: string): Promise<void> {

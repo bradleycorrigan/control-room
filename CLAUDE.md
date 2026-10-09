@@ -30,6 +30,15 @@ npm run fixture          # (re)builds the seeded project/worktrees/sessions fixt
 npm run shot -- <screen> <theme-id> [width]   # writes a PNG; LOOK at it, in 2+ themes, one light
 ```
 
+The gate runs each interaction suite once, with no retry: a flaky check fails the gate and gets
+fixed. While iterating, run only the area you touched (`--only=pages` or `--only=tabs`); run the full
+gate once before merging.
+
+The fixture is small on purpose, so other checks keep exact counts. To see a screen at real volume
+(layout, scrolling, overflow), a check calls `api.invoke('dev:jira-filler', 60)` to add 60
+realistic tickets, refreshes the Tickets screen, checks, then calls it with `0` to remove them.
+Layout bugs that only appear with real numbers of tickets have shipped twice because nothing did this.
+
 `npm run gate` already treats the electron-builder → `@electron/rebuild` → `node-gyp` devDependency
 hit as known-and-non-blocking — do not re-investigate that finding, it is not a real regression.
 

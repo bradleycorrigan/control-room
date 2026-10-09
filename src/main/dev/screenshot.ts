@@ -76,6 +76,10 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
   // modifier — through Chromium's own input pipeline, so a test exercises
   // the same path a hand on the trackpad does (⌘W's before-input-event
   // included), not a synthetic DOM event that skips half of it.
+  ipcMain.handle('dev:jira-filler', async (_evt, count: number) => {
+    const { fixtureFiller } = await import('../exec/jira')
+    return fixtureFiller(Number(count) || 0)
+  })
   ipcMain.handle('dev:input', (_evt, input: Electron.InputEvent) => {
     win.webContents.sendInputEvent(input as Parameters<typeof win.webContents.sendInputEvent>[0])
   })

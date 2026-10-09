@@ -472,6 +472,56 @@ interface FixtureStore {
 
 let fixture: FixtureStore | null | undefined
 
+/**
+ * Dev only: fills the fixture with `count` realistic tickets (0 removes them),
+ * so a check can see a screen at real volume. The base fixture stays small so
+ * every other check keeps its exact numbers.
+ */
+export function fixtureFiller(count: number): boolean {
+  const store = fixtureStore()
+  if (!store) return false
+  const isFiller = (k: string): boolean => k.startsWith('FILL-')
+  store.issues = store.issues.filter((i) => !isFiller(i.key))
+  for (const k of Object.keys(store.details)) if (isFiller(k)) delete store.details[k]
+  const base = store.issues.find((i) => !i.isEpic && !i.isSubtask)
+  const active = store.sprints.find((sp) => sp.state === 'active') ?? null
+  if (!base) return false
+  const titles = [
+    'Backfill partner metrics after the warehouse migration so dashboards stop showing gaps',
+    'Exclude non-ICP orgs from the churn reports',
+    'Donation ageing percentiles',
+    'Could we get a dashboard for the new partner, as requested in the ticket above',
+    'Map the critical pipeline end to end'
+  ]
+  for (let n = 0; n < count; n++) {
+    const key = `FILL-${n + 1}`
+    store.issues.push({
+      ...structuredClone(base),
+      key,
+      url: `https://example.atlassian.net/browse/${key}`,
+      summary: `${titles[n % titles.length]} (${n + 1})`,
+      sprint: n % 3 === 2 || !active ? null : { ...active },
+      estimate: n % 4 === 0 ? null : ['4h', '1d', '2d'][n % 3],
+      assignee: n % 5 === 0 ? null : ['You', 'Someone Else'][n % 2],
+      assignedToMe: n % 2 === 0 && n % 5 !== 0,
+      status: n % 6 === 0 ? 'Done' : base.status,
+      statusCategory: n % 6 === 0 ? 'done' : base.statusCategory,
+      blockedBy: [],
+      blocking: [],
+      links: [],
+      subtasks: []
+    })
+    store.details[key] = {
+      key,
+      descriptionWiki: '',
+      comments: [],
+      links: [],
+      attachments: []
+    }
+  }
+  return true
+}
+
 function fixtureStore(): FixtureStore | null {
   if (fixture !== undefined) return fixture
   const path = !app.isPackaged ? process.env.CR_JIRA_FIXTURE : undefined

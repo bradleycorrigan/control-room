@@ -131,17 +131,10 @@ console.log('gate: interactions...')
       const summary = lines.find((l) => l.startsWith('SUMMARY'))
       return { lines, summary, ok: Boolean(summary) && / 0 failed/.test(summary) }
     }
-    let run = runOnce()
-    // Interaction checks drive a real window, and a few still flake. A run
-    // that finished with failures gets one more go: passing then means the
-    // failures were noise, and they're named as flaky rather than hidden.
-    // A run that hung isn't retried: that's never noise, and costs minutes.
-    let flaky = []
-    if (!run.ok && run.summary) {
-      const first = run.lines.filter((l) => l.startsWith('FAIL'))
-      run = runOnce()
-      if (run.ok) flaky = first
-    }
+    // One run, no retry. A retry doubled the time of every failing run and
+    // hid flaky checks; a check that flakes gets fixed instead.
+    const run = runOnce()
+    const flaky = []
     results.push({
       label: flaky.length ? `${label} (passed on retry)` : label,
       ok: run.ok,

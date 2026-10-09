@@ -216,8 +216,15 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
     ...document.querySelectorAll<HTMLElement>('.cr-session-card:not(.cr-session-card--new)')
   ]
   const storedBefore = stored().length
-  await click(cards()[1], 'left', ['meta'])
-  await click(cards()[2], 'middle')
+  // By session, not position: opening one in the background can re-order
+  // the cards, and the second click then landed on one already open.
+  const keyOf = (c: HTMLElement | undefined): string | null =>
+    c?.closest('[data-session-key]')?.getAttribute('data-session-key') ?? null
+  const cardFor = (k: string | null): HTMLElement | undefined =>
+    cards().find((c) => keyOf(c) === k)
+  const [firstKey, secondKey] = [keyOf(cards()[1]), keyOf(cards()[2])]
+  await click(cardFor(firstKey) ?? null, 'left', ['meta'])
+  await click(cardFor(secondKey) ?? null, 'middle')
   const toast = [...document.querySelectorAll('.toast, [class*="toast"]')].some((t) =>
     (t.textContent ?? '').includes('in a tab')
   )
