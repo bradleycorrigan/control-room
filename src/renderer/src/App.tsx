@@ -807,6 +807,16 @@ function App(): React.JSX.Element {
       document.querySelector<HTMLButtonElement>('[aria-label="Plan kestrel"]')?.click()
       await new Promise((r) => setTimeout(r, 500))
     })
+    // Completing a cycle: the ended-cycle prompt, then its review dialog.
+    registerShotScreen('backlog-complete', async () => {
+      setPaletteOpen(false)
+      setView('backlog')
+      await new Promise((r) => setTimeout(r, 1000))
+      ;[...document.querySelectorAll<HTMLButtonElement>('[data-cycle-ended] button')]
+        .find((b) => b.textContent?.includes('Complete it'))
+        ?.click()
+      await new Promise((r) => setTimeout(r, 500))
+    })
     registerShotScreen('backlog-board', async () => {
       setPaletteOpen(false)
       setView('backlog')

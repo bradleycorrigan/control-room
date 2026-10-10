@@ -47,6 +47,8 @@ import {
   setJiraSprint,
   createJiraSprint,
   setJiraSprintGoal,
+  completeJiraSprint,
+  startJiraSprint,
   updateJiraText,
   type BacklogPrefs,
   type BlockDirection,
@@ -56,6 +58,7 @@ import {
   type PullRequestInfo,
   type SavedView,
   type JiraIssue,
+  type JiraSprint,
   type JiraPerson,
   type JiraIssueDetail,
   type JiraResult,
@@ -77,6 +80,8 @@ import { DRAG_TYPE } from './backlogStatus'
 import { ColumnsEditor } from './backlog/ColumnsEditor'
 import { CreateTicket } from './backlog/CreateTicket'
 import { CycleStrip, PlanningBar } from './backlog/CyclePlanning'
+import { CompleteCycle } from './backlog/CompleteCycle'
+import { hoursToDays, parseEstimateHours } from './backlog/cyclePlan'
 import { Picker, type PickerOption } from './backlog/Picker'
 import {
   branchFor,
@@ -368,6 +373,17 @@ export default function BacklogScreen({
   // current cycle starts folded: its unfinished tickets are listed in the
   // next one, so the cycle being planned comes first.
   const [planFolds, setPlanFolds] = useState<Record<string, boolean>>({})
+  // The cycle being completed, in its review dialog.
+  const [completing, setCompleting] = useState<number | null>(null)
+  // The time, a minute at a time: a cycle that ends while the app is open
+  // asks to be completed then, not at the next launch.
+  const [minute, setMinute] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setMinute(Date.now()), 60_000)
+    return () => clearInterval(t)
+  }, [])
+  // "Later" on the ended-cycle prompt: hidden until tomorrow, per cycle.
+  const [laterFor, setLaterFor] = useStoredState<Record<string, string>>('cycle-ended-later', {})
   // Planning's "N without an estimate": only tickets with no estimate.
   const [noEstimateOnly, setNoEstimateOnly] = useState(false)
   // While a ticket is being dragged, empty groups show too, as drop targets.
@@ -1880,6 +1896,13 @@ export default function BacklogScreen({
     )
   }
 
+  // The current cycle past its end date: Jira won't close it by itself.
+  const endedCycle =
+    activeSprint?.endDate &&
+    new Date(activeSprint.endDate).getTime() < minute &&
+    laterFor[activeSprint.id] !== new Date(minute).toDateString()
+      ? activeSprint
+      : null
   // The cycle being planned: the one picked, or from the current cycle's
   // Plan action, the first upcoming one.
   const firstUpcoming =
@@ -1943,6 +1966,48 @@ export default function BacklogScreen({
           items: [...lane.items, ...visible.filter((i) => carryKeys.has(i.key) && !i.isSubtask)]
         }
       : lane
+  // The completion dialog's cycle, its tickets, and where they can go.
+  const completingCycle = sprints.find((sp) => sp.id === completing) ?? null
+  const completingAll = completingCycle ? inCycle(completingCycle.id) : []
+  const upcoming = [...sprints]
+    .filter((sp) => sp.state === 'future')
+    .sort((x, y) => (x.startDate ?? '9').localeCompare(y.startDate ?? '9'))
+  const upcomingLoad = Object.fromEntries(
+    upcoming.map((t) => [
+      t.id,
+      hoursToDays(inCycle(t.id).reduce((sum, i) => sum + parseEstimateHours(i.estimate), 0))
+    ])
+  )
+  // Completes a cycle after its review; returns an error to show, or null.
+  const finishCycle = async (
+    cycle: JiraSprint,
+    moves: { key: string; to: number | null }[],
+    start: Pick<JiraSprint, 'id' | 'name' | 'endDate'> | null
+  ): Promise<string | null> => {
+    const r = await completeJiraSprint(cycle.id, moves)
+    if (!r.ok) return r.error
+    if (start) {
+      // Jira needs dates to start a cycle: its own if it has
+      // them, else from today, as long as the one just closed.
+      const length =
+        cycle.startDate && cycle.endDate
+          ? new Date(cycle.endDate).getTime() - new Date(cycle.startDate).getTime()
+          : 14 * 24 * 60 * 60 * 1000
+      const from = new Date()
+      const to = start.endDate ? new Date(start.endDate) : new Date(from.getTime() + length)
+      const s2 = await startJiraSprint(start.id, from.toISOString(), to.toISOString())
+      if (!s2.ok)
+        pushToast?.(`${cycle.name} completed, but ${start.name} didn’t start: ${s2.error}`)
+    }
+    await load(true)
+    setCompleting(null)
+    if (planning) setPlanning((p) => (p ? { ...p, nextId: start?.id ?? p.nextId } : p))
+    pushToast?.(
+      `Completed ${cycle.name}${moves.length ? `: ${moves.length} moved` : ''}${start ? `, ${start.name} started` : ''}`
+    )
+    return null
+  }
+
   // Under each cycle group's title while planning.
   const planningStrip = (lane: Lane): React.ReactNode => {
     if (!planning || groupBy !== 'cycle' || lane.value?.kind !== 'cycle') return null
@@ -1972,6 +2037,7 @@ export default function BacklogScreen({
         prefs={prefs}
         onSavePrefs={(patch) => void saveBacklogPrefs(patch).then(setPrefs)}
         onNoEstimate={() => setNoEstimateOnly(true)}
+        onComplete={cycle?.state === 'active' ? () => setCompleting(cycle.id) : undefined}
         onSetGoal={async (id, goal) => {
           const r = await setJiraSprintGoal(id, goal)
           if (!r.ok) {
@@ -2260,6 +2326,42 @@ export default function BacklogScreen({
           </div>
         </div>
 
+        {endedCycle && (
+          <div className="cycle-ended" role="status" data-cycle-ended>
+            <Icon name="CalendarClock" size={14} className="cycle-ended-glyph" />
+            <span>
+              <strong>{endedCycle.name}</strong> ended{' '}
+              {new Date(endedCycle.endDate!).toLocaleDateString(undefined, {
+                day: 'numeric',
+                month: 'short'
+              })}
+              . Jira keeps it open until it&rsquo;s completed.
+            </span>
+            <Button variant="outlined" size="compact" onClick={() => setCompleting(endedCycle.id)}>
+              Complete it…
+            </Button>
+            <Button
+              variant="ghost"
+              size="compact"
+              onClick={() =>
+                setLaterFor({ ...laterFor, [endedCycle.id]: new Date(minute).toDateString() })
+              }
+            >
+              Later
+            </Button>
+          </div>
+        )}
+        {completingCycle && (
+          <CompleteCycle
+            cycle={completingCycle}
+            unfinished={completingAll.filter((i) => i.statusCategory !== 'done')}
+            done={completingAll.filter((i) => i.statusCategory === 'done').length}
+            targets={upcoming}
+            nextLoad={upcomingLoad}
+            onComplete={(moves, start) => finishCycle(completingCycle, moves, start)}
+            onClose={() => setCompleting(null)}
+          />
+        )}
         {planning && board && (
           <PlanningBar
             next={planningNext}

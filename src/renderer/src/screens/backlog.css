@@ -3050,15 +3050,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-12);
-  margin-bottom: var(--space-12);
-  padding: var(--space-8) var(--space-12);
-  border-radius: var(--radius-lg);
-  /* Quiet: the grouped list already says you're planning. One accent edge,
-     and New ticket stays the screen's one solid accent. */
-  background: var(--surface);
-  box-shadow:
-    inset 0 0 0 1px var(--border),
-    inset 3px 0 0 var(--accent);
+  /* A plain row, as Linear marks a mode: no box, no coloured edge. The
+     grouped list already says you're planning. */
+  margin-bottom: var(--space-8);
+  padding: var(--space-4) 0 var(--space-8);
+  border-bottom: 1px solid var(--border);
 }
 
 .planning-bar-title {
@@ -3258,6 +3254,8 @@
 
 /* The cycle you're planning: reads as the title, opens as a picker. */
 .planning-bar-pick {
+  /* As wide as the cycle's name, not the longest option. */
+  field-sizing: content;
   padding: 0 var(--space-4);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -3270,4 +3268,129 @@
 .planning-bar-pick:hover,
 .planning-bar-pick:focus {
   border-color: var(--border);
+}
+
+/* The current cycle has passed its end date: Jira won't close it by itself. */
+.cycle-ended {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  /* A plain line with a small glyph, not a callout box. */
+  margin-bottom: var(--space-8);
+  padding: var(--space-4) 0 var(--space-8);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+}
+
+.cycle-ended-glyph {
+  flex: none;
+  color: var(--status-attention);
+}
+
+.cycle-ended > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.cycle-ended strong {
+  color: var(--text);
+  font-weight: var(--text-label-weight);
+}
+
+/* ---- Complete a cycle ---- */
+
+.complete-cycle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.complete-cycle-summary,
+.complete-cycle-error {
+  margin: 0;
+  font-size: var(--text-body-size);
+  color: var(--text-muted);
+}
+
+.complete-cycle-error {
+  color: var(--status-error);
+}
+
+.complete-cycle-all,
+.complete-cycle-start {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+}
+
+.complete-cycle-list {
+  max-height: 46vh;
+  overflow-y: auto;
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.complete-cycle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 34px;
+  padding: 0 var(--space-12);
+}
+
+.complete-cycle-row + .complete-cycle-row {
+  box-shadow: inset 0 1px 0 var(--border);
+}
+
+.complete-cycle-key {
+  flex: none;
+  width: 104px;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.complete-cycle-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body-size);
+  color: var(--text);
+}
+
+.complete-cycle-estimate {
+  flex: none;
+  width: 32px;
+  text-align: right;
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+}
+
+.complete-cycle-row select,
+.complete-cycle-all select {
+  flex: none;
+  max-width: 150px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--text-meta-size);
+}
+
+.complete-cycle-preview {
+  margin: 0;
+  padding-left: var(--space-16);
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+}
+
+.complete-cycle-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
 }

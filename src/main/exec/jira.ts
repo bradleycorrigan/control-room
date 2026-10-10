@@ -2185,6 +2185,136 @@ export async function setSprintGoal(
   })
 }
 
+/** Where one unfinished ticket goes when its cycle is completed. */
+export interface CompletionMove {
+  key: string
+  /** A cycle's id, or null for the backlog. */
+  to: number | null
+}
+
+/**
+ * Completes a cycle in Jira, in the only safe order. Jira's own Complete
+ * dialog moves unfinished tickets for you; its API doesn't, and a closed
+ * cycle can't be reopened. So: move every unfinished ticket where it was
+ * asked to go, read the cycle back to confirm nothing unfinished is left in
+ * it, then close it, then confirm it closed. Any failure stops before the
+ * close, and says which tickets.
+ */
+export async function completeSprint(
+  sprintId: number,
+  moves: CompletionMove[]
+): Promise<JiraResult<{ closed: true; moved: number }>> {
+  const store = fixtureStore()
+  if (store) {
+    const sprint = store.sprints.find((sp) => sp.id === sprintId)
+    if (!sprint) return { ok: false, error: `no cycle ${sprintId}` }
+    for (const m of moves) {
+      const to = m.to === null ? null : store.sprints.find((sp) => sp.id === m.to)
+      if (m.to !== null && !to) return { ok: false, error: `no cycle ${m.to}` }
+      fixtureUpdate(m.key, (i) => {
+        i.sprint = to ? { ...to } : null
+      })
+    }
+    const left = store.issues.filter(
+      (i) => i.sprint?.id === sprintId && i.statusCategory !== 'done' && !i.isSubtask
+    )
+    if (left.length) {
+      return { ok: false, error: `not closed: ${left.map((i) => i.key).join(', ')} still in it` }
+    }
+    // Closed cycles aren't listed; done tickets keep it in their history.
+    store.sprints = store.sprints.filter((sp) => sp.id !== sprintId)
+    for (const i of store.issues) if (i.sprint?.id === sprintId) i.sprint = null
+    return { ok: true, value: { closed: true, moved: moves.length } }
+  }
+  const conn = connection()
+  if ('error' in conn) return { ok: false, error: conn.error }
+  return attempt(async () => {
+    // 1. Move, at most 50 tickets a call (Jira's limit), grouped by target.
+    const byTarget = new Map<number | null, string[]>()
+    for (const m of moves) byTarget.set(m.to, [...(byTarget.get(m.to) ?? []), m.key])
+    for (const [to, keys] of byTarget) {
+      for (let n = 0; n < keys.length; n += 50) {
+        await callJson(
+          conn,
+          to === null ? '/rest/agile/1.0/backlog/issue' : `/rest/agile/1.0/sprint/${to}/issue`,
+          { method: 'POST', body: { issues: keys.slice(n, n + 50) } }
+        )
+      }
+    }
+    // 2. Read the cycle back, every page: nothing unfinished may be left.
+    const left: string[] = []
+    for (let startAt = 0; ; startAt += 50) {
+      const page = await callJson<{
+        issues?: Array<{ key: string; fields?: { status?: { statusCategory?: { key?: string } } } }>
+        total?: number
+      }>(
+        conn,
+        `/rest/agile/1.0/sprint/${sprintId}/issue?fields=status&maxResults=50&startAt=${startAt}`
+      )
+      const issues = page.issues ?? []
+      for (const i of issues) {
+        if (i.fields?.status?.statusCategory?.key !== 'done') left.push(i.key)
+      }
+      if (issues.length < 50 || startAt + 50 >= (page.total ?? 0)) break
+    }
+    if (left.length) {
+      throw new JiraError(
+        `not closed: ${left.length} unfinished still in it (${left.slice(0, 5).join(', ')}${
+          left.length > 5 ? '…' : ''
+        }). Nothing was closed; move them and try again.`
+      )
+    }
+    // 3. Close (POST is a partial update), 4. confirm.
+    await callJson(conn, `/rest/agile/1.0/sprint/${sprintId}`, {
+      method: 'POST',
+      body: { state: 'closed' }
+    })
+    const after = await callJson<{ state?: string }>(conn, `/rest/agile/1.0/sprint/${sprintId}`)
+    if (after.state !== 'closed')
+      throw new JiraError(`Jira didn’t close it (it says ${after.state})`)
+    boardCache = null
+    return { closed: true as const, moved: moves.length }
+  })
+}
+
+/** Starts a future cycle in Jira. Jira needs its dates to start it. */
+export async function startSprint(
+  sprintId: number,
+  startDate: string,
+  endDate: string
+): Promise<JiraResult<JiraSprint>> {
+  const store = fixtureStore()
+  if (store) {
+    const sprint = store.sprints.find((sp) => sp.id === sprintId)
+    if (!sprint) return { ok: false, error: `no cycle ${sprintId}` }
+    if (store.sprints.some((sp) => sp.state === 'active')) {
+      return { ok: false, error: 'another cycle is still active' }
+    }
+    Object.assign(sprint, { state: 'active', startDate, endDate })
+    for (const i of store.issues) if (i.sprint?.id === sprintId) i.sprint = { ...sprint }
+    return { ok: true, value: { ...sprint } }
+  }
+  const conn = connection()
+  if ('error' in conn) return { ok: false, error: conn.error }
+  return attempt(async () => {
+    const s = await callJson<JiraSprint & { originBoardId?: number }>(
+      conn,
+      `/rest/agile/1.0/sprint/${sprintId}`,
+      { method: 'POST', body: { state: 'active', startDate, endDate } }
+    )
+    boardCache = null
+    return {
+      id: s.id,
+      name: s.name,
+      state: s.state,
+      startDate: s.startDate,
+      endDate: s.endDate,
+      goal: s.goal || undefined,
+      boardId: s.originBoardId
+    }
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Session ↔ ticket links, kept locally — Jira never hears about them. Keyed
 // by session record id, so a link survives restarts and renames.

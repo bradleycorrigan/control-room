@@ -1619,7 +1619,9 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
 
   // ---- Session: header, terminal find --------------------------------------
   await ctx.openFirstSession()
-  await wait(2000)
+  // Wait for the screen, not a fixed time: after twenty quick switches it
+  // can take longer than 2s to mount, and every header check below failed.
+  await until(() => Boolean($('.session-detail-header')), 6000)
   const header = $('.session-detail-header')
   await check(
     'the session header is rounded',
@@ -3384,6 +3386,51 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       misplaced.length === 0,
       misplaced.join('; ')
     )
+  }
+
+  // ---- Completing a cycle (last: it closes the fixture's current cycle) ----
+  {
+    await ctx.goTo('backlog')
+    await wait(600)
+    await check(
+      'a current cycle past its end date asks to be completed',
+      await until(() => /honey-buzzard/.test($('[data-cycle-ended]')?.textContent ?? '')),
+      $('[data-cycle-ended]')?.textContent ?? 'no prompt'
+    )
+    await click(byText('[data-cycle-ended] button', 'Complete it'))
+    const dialogRow = (key: string): HTMLElement | null =>
+      $(`.complete-cycle-row[data-issue="${key}"]`)
+    const destOf = (key: string): HTMLSelectElement | null =>
+      dialogRow(key)?.querySelector('select') ?? null
+    await check(
+      'the review lists every unfinished ticket, each going to the next cycle unless changed',
+      (await until(() => Boolean(dialogRow('DSD-101')))) &&
+        destOf('DSD-101')?.selectedOptions[0]?.text === 'kestrel' &&
+        !dialogRow('DSD-104'),
+      $$('.complete-cycle-row')
+        .map((r) => `${r.dataset.issue}→${r.querySelector('select')?.selectedOptions[0]?.text}`)
+        .join(', ')
+    )
+    setSelect(destOf('DSD-102'), 'backlog')
+    const startBox = $<HTMLInputElement>('.complete-cycle-start input')
+    if (startBox && !startBox.checked) await click(startBox)
+    await click(byText('.complete-cycle-actions button', 'Complete honey-buzzard'))
+    await until(() => !$('.complete-cycle'), 4000)
+    await groupBy('Cycle')
+    const lane = (id: string, key: string): boolean =>
+      Boolean($(`.backlog-group[data-lane="${id}"] [data-issue="${key}"]`))
+    await check(
+      'completing moves each ticket where chosen, closes the cycle and starts the next',
+      !$('.complete-cycle') &&
+        !$('[data-cycle-ended]') &&
+        /kestrel/.test($('.backlog-group[data-lane="current"]')?.textContent ?? '') &&
+        lane('current', 'DSD-101') &&
+        lane('backlog', 'DSD-102'),
+      `${$$('.backlog-group')
+        .map((g) => g.querySelector('.backlog-group-title')?.textContent)
+        .join(' | ')}`
+    )
+    await groupBy('Status')
   }
 
   await log(`SUMMARY ${passed} passed, ${failed} failed`)

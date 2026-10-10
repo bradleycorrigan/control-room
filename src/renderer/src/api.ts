@@ -889,6 +889,25 @@ export function createJiraSprint(input: {
   return window.api.invoke<JiraResult<JiraSprint>>('jira:createSprint', input)
 }
 
+/**
+ * Completes a cycle: moves its unfinished tickets as given, checks none are
+ * left, then closes it. Nothing is closed if any step fails.
+ */
+export function completeJiraSprint(
+  sprintId: number,
+  moves: { key: string; to: number | null }[]
+): Promise<JiraResult<{ closed: true; moved: number }>> {
+  return window.api.invoke('jira:completeSprint', sprintId, moves)
+}
+
+export function startJiraSprint(
+  sprintId: number,
+  startDate: string,
+  endDate: string
+): Promise<JiraResult<JiraSprint>> {
+  return window.api.invoke<JiraResult<JiraSprint>>('jira:startSprint', sprintId, startDate, endDate)
+}
+
 export function setJiraSprintGoal(sprintId: number, goal: string): Promise<JiraResult<JiraSprint>> {
   return window.api.invoke<JiraResult<JiraSprint>>('jira:sprintGoal', sprintId, goal)
 }

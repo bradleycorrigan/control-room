@@ -66,7 +66,8 @@ export function CycleStrip({
   prefs,
   onSavePrefs,
   onNoEstimate,
-  onSetGoal
+  onSetGoal,
+  onComplete
 }: {
   /** next: the cycle being planned (the current one, or one coming up); current: the active one when it isn't. */
   kind: 'current' | 'next' | 'other' | 'backlog'
@@ -83,6 +84,8 @@ export function CycleStrip({
   onSavePrefs: (patch: Partial<BacklogPrefs>) => void
   onNoEstimate: () => void
   onSetGoal: (sprintId: number, goal: string) => Promise<boolean>
+  /** The active cycle only: completes it in Jira, after a review. */
+  onComplete?: () => void
 }): React.JSX.Element {
   const [goalDraft, setGoalDraft] = useState<string | null>(null)
   const [capacityDraft, setCapacityDraft] = useState<Record<string, string>>({})
@@ -107,6 +110,11 @@ export function CycleStrip({
           {daysLeft !== null && <span>{daysLeft} days left</span>}
           <Facts issues={items} onNoEstimate={onNoEstimate} />
           {hidden > 0 && <span>{hidden} hidden by filters</span>}
+          {onComplete && (
+            <button type="button" className="cycle-strip-link" onClick={onComplete}>
+              Complete cycle…
+            </button>
+          )}
         </div>
         {kind === 'current' && next && unfinished > 0 && (
           <p className="cycle-strip-note">
@@ -148,6 +156,11 @@ export function CycleStrip({
         <Facts issues={planned} onNoEstimate={onNoEstimate} />
         {carrying.length > 0 && <span>incl. {carrying.length} carrying over</span>}
         {hidden > 0 && <span>{hidden} hidden by filters</span>}
+        {onComplete && (
+          <button type="button" className="cycle-strip-link" onClick={onComplete}>
+            Complete cycle…
+          </button>
+        )}
         {!cycle.goal && goalDraft === null && (
           <button type="button" className="cycle-strip-link" onClick={() => setGoalDraft('')}>
             Add goal
@@ -378,7 +391,7 @@ export function PlanningBar({
           </Button>
         </form>
       )}
-      <Button variant="outlined" size="compact" onClick={onDone}>
+      <Button variant="ghost" size="compact" onClick={onDone}>
         Done planning
       </Button>
     </div>

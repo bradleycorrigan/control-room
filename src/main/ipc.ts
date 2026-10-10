@@ -108,6 +108,8 @@ import {
   moveToSprint,
   createSprint,
   setSprintGoal,
+  completeSprint,
+  startSprint,
   setPriority,
   setLabels,
   addBlockLink,
@@ -769,6 +771,14 @@ export function registerIpcHandlers(): void {
       _evt,
       input: { boardId: number; name: string; startDate: string; endDate: string; goal?: string }
     ) => createSprint(input)
+  )
+  ipcMain.handle(
+    'jira:completeSprint',
+    (_evt, sprintId: number, moves: { key: string; to: number | null }[]) =>
+      completeSprint(sprintId, Array.isArray(moves) ? moves : [])
+  )
+  ipcMain.handle('jira:startSprint', (_evt, sprintId: number, start: string, end: string) =>
+    startSprint(sprintId, start, end)
   )
   ipcMain.handle('jira:sprintGoal', (_evt, sprintId: number, goal: string) =>
     setSprintGoal(sprintId, typeof goal === 'string' ? goal.slice(0, 1000) : '')
