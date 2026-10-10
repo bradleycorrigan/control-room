@@ -76,6 +76,15 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
   // modifier — through Chromium's own input pipeline, so a test exercises
   // the same path a hand on the trackpad does (⌘W's before-input-event
   // included), not a synthetic DOM event that skips half of it.
+  // Hidden sessions persist; a check that hides one resets them first, so the
+  // gate passes run after run on the same fixture.
+  ipcMain.handle('dev:unhide-sessions', async () => {
+    const { mutate } = await import('../store/store')
+    mutate((draft) => {
+      draft.hiddenSessionIds = []
+    })
+    return true
+  })
   ipcMain.handle('dev:jira-filler', async (_evt, count: number) => {
     const { fixtureFiller } = await import('../exec/jira')
     return fixtureFiller(Number(count) || 0)

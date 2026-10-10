@@ -490,6 +490,23 @@ export function registerIpcHandlers(): void {
     return sendKeys(paneId, text)
   })
 
+  // A session with no record (started in another terminal): opens the folder
+  // it's working in, looked up here by its Claude session id. Only inside a
+  // registered project; the renderer never hands over a path.
+  ipcMain.handle('session:openIdeByClaudeId', async (_evt, claudeSessionId: string) => {
+    const file = (await readSessionFiles()).find((f) => f.sessionId === claudeSessionId)
+    const cwd = file?.cwd ?? ''
+    const inProject = getState().projects.some(
+      (p) =>
+        p.id !== 'general' &&
+        [p.repoPath, p.worktreeRoot].some((root) => cwd === root || cwd.startsWith(`${root}/`))
+    )
+    if (!cwd || !inProject || !existsSync(cwd)) {
+      return { ok: false, error: 'its folder is gone or outside your projects' }
+    }
+    return openInCursor(cwd)
+  })
+
   ipcMain.handle('session:openIde', async (_evt, id: string) => {
     const record = getState().sessions.find((s) => s.id === id)
     if (!record) return { ok: false, error: 'session not found' }
@@ -658,6 +675,20 @@ export function registerIpcHandlers(): void {
   // `claude stop` can genuinely fail against a wedged background agent (its
   // own background service unresponsive) — this never claims the agent
   // itself stopped, only that Control Room stops showing it.
+  // Hides a Claude session for good, by its Claude session id: it stays out
+  // of every list even while its process runs on (see discovery).
+  ipcMain.handle('sessions:hide', (_evt, claudeSessionId: string) => {
+    if (typeof claudeSessionId !== 'string' || !claudeSessionId) {
+      return { ok: false, error: 'missing session id' }
+    }
+    mutate((draft) => {
+      draft.hiddenSessionIds ??= []
+      if (!draft.hiddenSessionIds.includes(claudeSessionId))
+        draft.hiddenSessionIds.push(claudeSessionId)
+    })
+    return { ok: true }
+  })
+
   ipcMain.handle('sessions:dismissBackgroundAgent', (_evt, agentId: string) => {
     invalidateAgentsCache()
     if (!agentId) return { ok: false, error: 'missing agent id' }

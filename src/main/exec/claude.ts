@@ -92,7 +92,20 @@ export async function stopBackgroundAgent(id: string): Promise<boolean> {
  */
 export function killProcess(pid: number): boolean {
   try {
+    // A session paused in its terminal (Ctrl+Z) can't act on SIGTERM until
+    // it's resumed, and one sent to the background pauses itself again the
+    // moment it touches the terminal on the way out. So: resume, ask, and if
+    // it's still there a few seconds later, insist.
+    process.kill(pid, 'SIGCONT')
     process.kill(pid, 'SIGTERM')
+    setTimeout(() => {
+      try {
+        process.kill(pid, 0)
+        process.kill(pid, 'SIGKILL')
+      } catch {
+        // Gone, as asked.
+      }
+    }, 3000)
     return true
   } catch (err) {
     return (err as NodeJS.ErrnoException).code === 'ESRCH'

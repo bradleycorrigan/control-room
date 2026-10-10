@@ -460,6 +460,7 @@ export async function discoverLiveSessions(): Promise<LiveSession[]> {
   // resolve to the same record (a shared claudeSessionId from a double
   // resume, or a mis-joined tmux pane) and render as identical rows.
   const claimedRecordIds = new Set<string>()
+  const hiddenSessionIds = new Set(state.hiddenSessionIds ?? [])
 
   for (const session of orderedSessionFiles) {
     if (!session.alive) continue // dead pids are dropped entirely, not shown as stale
@@ -483,6 +484,14 @@ export async function discoverLiveSessions(): Promise<LiveSession[]> {
       claimedRecordIds
     )
     if (record) claimedRecordIds.add(record.id)
+
+    // Hidden by the user: gone, even while its process runs on.
+    if (session.sessionId && hiddenSessionIds.has(session.sessionId)) continue
+    // A session Control Room didn't start shows only if it's working in one
+    // of your projects (a worktree opened in Cursor, say). Anywhere else it's
+    // someone else's business, and showing it read as noise you couldn't act
+    // on. General is left out of the test: its folder is your whole home.
+    if (!record && !insideAProject(session.cwd ?? '', state.projects)) continue
 
     // A path match is how a session started with `wta` in the terminal becomes first-class.
     if (record && session.cwd === record.worktreePath) {
@@ -705,4 +714,14 @@ export async function discoverLiveSessions(): Promise<LiveSession[]> {
   }
 
   return live
+}
+
+/** Whether a folder is inside one of the projects (their repo or worktrees), General aside. */
+function insideAProject(
+  cwd: string,
+  projects: { id: string; repoPath: string; worktreeRoot: string }[]
+): boolean {
+  if (!cwd) return false
+  const within = (root: string): boolean => cwd === root || cwd.startsWith(`${root}/`)
+  return projects.some((p) => p.id !== 'general' && (within(p.repoPath) || within(p.worktreeRoot)))
 }

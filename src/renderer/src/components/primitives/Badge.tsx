@@ -21,7 +21,7 @@ const WORDS: Record<SessionStatus, string> = {
   stopped: 'stopped',
   missing: 'missing',
   unknown: 'unknown',
-  external: 'external session'
+  external: 'another terminal'
 }
 
 export type BadgeVariant = 'chip' | 'bare'

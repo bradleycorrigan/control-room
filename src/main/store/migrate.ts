@@ -30,6 +30,7 @@ export function migrate(raw: unknown): StateFile {
     dismissedBackgroundAgentIds: Array.isArray(obj.dismissedBackgroundAgentIds)
       ? obj.dismissedBackgroundAgentIds
       : [],
+    hiddenSessionIds: Array.isArray(obj.hiddenSessionIds) ? obj.hiddenSessionIds : [],
     settings: {
       hookPort: 47821,
       pollIntervalMs: 2000,

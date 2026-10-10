@@ -951,6 +951,15 @@ export async function deleteSession(input: DeleteSessionInput): Promise<DeleteSe
       target.archivedAt = Date.now()
       target.deletedAt = Date.now()
     }
+    // Its Claude may run on in another terminal Control Room can't close (no
+    // tmux window of ours). Hidden, it stays deleted instead of coming back
+    // on the next poll as a session with no record.
+    if (!record.tmuxWindowId && record.claudeSessionId) {
+      draft.hiddenSessionIds ??= []
+      if (!draft.hiddenSessionIds.includes(record.claudeSessionId)) {
+        draft.hiddenSessionIds.push(record.claudeSessionId)
+      }
+    }
   })
 
   return { ok: true, warning }

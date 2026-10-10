@@ -330,19 +330,16 @@ export default function HomeScreen({
   // that is the whole point of marking one, and Home is the surface it has to
   // clear off.
   //
-  // External sessions are hidden unless you ask: Control Room can't show
-  // their terminal, so they are rarely what you came to Home to pick up.
+  // Sessions in another terminal show like any other: discovery only keeps
+  // ones working in your projects, so they're yours.
   const [homeFilter, setHomeFilter] = useStoredState<'all' | 'unread' | 'your-turn'>(
     'home-recent-filter',
     'all'
   )
-  const [showExternal, setShowExternal] = useStoredState('home-show-external', false)
   const resumable = sessions.filter(
     (s) => s.status !== 'stopped' && s.status !== 'missing' && !s.record?.archivedAt
   )
-  const externalCount = resumable.filter((s) => s.status === 'external').length
   const recent = resumable
-    .filter((s) => showExternal || s.status !== 'external')
     .filter((s) =>
       homeFilter === 'unread'
         ? s.unread
@@ -1206,15 +1203,6 @@ export default function HomeScreen({
                 >
                   Your turn
                 </Pill>
-                {externalCount > 0 && (
-                  <Pill
-                    active={showExternal}
-                    aria-pressed={showExternal}
-                    onClick={() => setShowExternal(!showExternal)}
-                  >
-                    External · {externalCount}
-                  </Pill>
-                )}
               </div>
               <button type="button" className="home-view-all" onClick={onViewAllSessions}>
                 View all
@@ -1226,7 +1214,7 @@ export default function HomeScreen({
                   ? 'Nothing unread.'
                   : homeFilter === 'your-turn'
                     ? 'Nothing is waiting on you.'
-                    : 'Only external sessions right now.'}
+                    : 'No sessions right now.'}
               </p>
             )}
             {/* The same card the project page's Active board uses — one shape

@@ -15,8 +15,7 @@ import {
   Badge,
   Pill,
   EmptyState,
-  Popover,
-  useConfirm
+  Popover
 } from '../components/primitives'
 import './session-detail.css'
 import { accentByCursorThemeName, themes } from '../theme/themes'
@@ -27,10 +26,6 @@ import {
   openSessionInIde,
   relaunchSession,
   getSessionContextWindow,
-  killSessionWindow,
-  stopBackgroundAgent,
-  dismissBackgroundAgent,
-  killSessionProcess,
   getJiraStatus,
   getSessionTicketLinks,
   linkSessionToTicket,
@@ -176,7 +171,6 @@ export default function SessionDetail({
   // the diff brings the panel back rather than leaving it dismissed.
   const shipReopenAfterDiff = useRef(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [confirmNode, confirm] = useConfirm()
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const [renameBusy, setRenameBusy] = useState(false)
@@ -363,90 +357,6 @@ export default function SessionDetail({
     }
   }
 
-  // A session found live in a terminal but never adopted has no record for
-  // the normal Delete confirm dialog to act on, but it always has a real
-  // tmux window — same mechanism as the session-row menu's Delete for this
-  // case (killSessionWindow), so Delete behaves consistently whether you're
-  // looking at a row or the full detail page for the same session.
-  const handleKillWindow = async (): Promise<void> => {
-    if (!session.tmux) return
-    const confirmed = await confirm({
-      title: 'End this session?',
-      body: `This closes its terminal window (${session.tmux.sessionName}:${session.tmux.windowName}) and stops the process running in it.`,
-      confirmLabel: 'End session',
-      danger: true
-    })
-    if (!confirmed) return
-    const result = await killSessionWindow(session.tmux.windowId)
-    if (!result.ok) {
-      pushToast?.(result.error ?? 'Failed to end the session.')
-      return
-    }
-    pushToast?.('Session ended.')
-    onDeleted()
-    onClose()
-  }
-
-  // A background agent has neither a tmux window nor a pid — its own agent
-  // id is the only handle. `claude stop` keeps the conversation, resumable
-  // later with `claude attach`, so this is closer to Archive than a kill.
-  const handleStopBackgroundAgent = async (): Promise<void> => {
-    if (!session.backgroundAgentId) return
-    const confirmed = await confirm({
-      title: 'Stop this background agent?',
-      body: 'Its conversation is kept - resume it later from the CLI with `claude attach`.',
-      confirmLabel: 'Stop agent',
-      danger: true
-    })
-    if (!confirmed) return
-    const result = await stopBackgroundAgent(session.backgroundAgentId)
-    if (!result.ok) {
-      // claude stop's own background service can be wedged — it fails to
-      // stop agents like this indefinitely. Offer the one thing that IS
-      // guaranteed to work: stop showing it here.
-      const hideAnyway = await confirm({
-        title: result.error ?? 'Failed to stop the agent.',
-        body: 'Hide it from this list instead? This does not stop the agent - only Control Room stops showing it.',
-        confirmLabel: 'Hide it'
-      })
-      if (!hideAnyway) return
-      const dismissed = await dismissBackgroundAgent(session.backgroundAgentId)
-      if (!dismissed.ok) {
-        pushToast?.(dismissed.error ?? 'Failed to hide the agent.')
-        return
-      }
-      pushToast?.('Agent hidden from the list.')
-      onDeleted()
-      onClose()
-      return
-    }
-    pushToast?.('Agent stopped.')
-    onDeleted()
-    onClose()
-  }
-
-  // Last resort: found live via a session file, no record, terminal
-  // confirmed gone, and not an `agents --json` background agent either —
-  // only the pid is left. SIGTERM, not a graceful `claude stop`.
-  const handleKillProcess = async (): Promise<void> => {
-    if (!session.claudePid) return
-    const confirmed = await confirm({
-      title: 'End this session?',
-      body: `Its terminal is already gone, so this stops the process directly (pid ${session.claudePid}) rather than closing a window.`,
-      confirmLabel: 'End session',
-      danger: true
-    })
-    if (!confirmed) return
-    const result = await killSessionProcess(session.claudePid)
-    if (!result.ok) {
-      pushToast?.(result.error ?? 'Failed to end the process.')
-      return
-    }
-    pushToast?.('Process ended.')
-    onDeleted()
-    onClose()
-  }
-
   // Resume relaunches a tmux window running `claude --resume <id>` (Part 3).
   // The main handler already guards "already resuming", "just
   // created/resumed", archived and no-session-id — this only adds its own
@@ -502,24 +412,11 @@ export default function SessionDetail({
   }
   const branch = session.record?.branch ?? null
 
-  const handleStopSession = (): void => {
-    if (session.record) {
-      setConfirmingDelete(true)
-    } else if (session.tmux) {
-      void handleKillWindow()
-    } else if (session.backgroundAgentId) {
-      void handleStopBackgroundAgent()
-    } else if (session.claudePid) {
-      void handleKillProcess()
-    }
-  }
-
   return (
     <div
       className={maximized ? 'session-detail session-detail-maximized' : 'session-detail'}
       style={{ '--session-accent': accent } as React.CSSProperties}
     >
-      {confirmNode}
       {ticketMenu && ticketBoard && ticketBoard !== 'loading' && (
         <Picker
           anchor={ticketMenu}
@@ -771,17 +668,14 @@ export default function SessionDetail({
             // "Write hand-off note…" is one of the shared actions from
             // useSessionActions now — it renders the same on this menu, the
             // sessions list rows and the session cards.
-            ...(sessionActions(session) ?? []),
-            // A session with no record has no shared menu (nothing stored to
-            // rename or delete) — but it can still be ended.
-            ...(!session.record && (session.tmux || session.backgroundAgentId || session.claudePid)
-              ? [{ label: 'End session…', onClick: handleStopSession, danger: true }]
-              : [])
+            ...sessionActions(session)
           ].map((action) => (
             <button
               key={action.label}
               role="menuitem"
               className={action.danger ? 'session-detail-menu-destructive' : undefined}
+              disabled={Boolean(action.disabled)}
+              title={action.disabled}
               onClick={() => {
                 setMenuOpen(false)
                 action.onClick()

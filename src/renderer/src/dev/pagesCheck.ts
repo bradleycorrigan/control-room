@@ -2331,6 +2331,48 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
 
   // ==== checks: sessions round — add this team's checks directly below ====
 
+  // Sessions Control Room didn't start: only ones in your projects show, every
+  // screen offers them the same actions, and Hide sticks.
+  {
+    await api.invoke('dev:unhide-sessions')
+    await ctx.goTo('sessions')
+    await until(() => /fixture-cursor/.test(document.body.textContent ?? ''), 4000)
+    await check(
+      'a session in another terminal shows only if it works in one of your projects',
+      /fixture-cursor/.test(document.body.textContent ?? '') &&
+        !/fixture-elsewhere/.test(document.body.textContent ?? ''),
+      'in project shown, outside every project hidden'
+    )
+    const menuLabels = async (button: Element | null | undefined): Promise<string[]> => {
+      await click(button)
+      await until(() => $$('[role="menuitem"]').length > 0, 2000)
+      const labels = $$('[role="menuitem"]').map((m) => m.textContent?.trim() ?? '')
+      await key('Escape')
+      await wait(200)
+      return labels.filter((l) => l !== 'Adopt')
+    }
+    const rowLabels = await menuLabels($('[aria-label="fixture-cursor actions"]'))
+    await ctx.goTo('home')
+    await wait(400)
+    const cardLabels = await menuLabels($('[aria-label="Actions for fixture-cursor"]'))
+    await check(
+      'Home and the Sessions list offer a session in another terminal the same actions',
+      rowLabels.length > 0 &&
+        rowLabels.join('|') === cardLabels.join('|') &&
+        rowLabels.includes('Hide') &&
+        rowLabels.includes('End session…'),
+      `row: ${rowLabels.join(', ')}; card: ${cardLabels.join(', ')}`
+    )
+    await click($('[aria-label="Actions for fixture-cursor"]'))
+    await click(byText('[role="menuitem"]', 'Hide'))
+    await wait(3000) // a poll or more: hidden must survive the list being rebuilt
+    await check(
+      'Hide removes it, and it stays gone after the list refreshes',
+      !$('[aria-label="Actions for fixture-cursor"]'),
+      'still on Home'
+    )
+  }
+
   // Opens the named session by its row title, not "whichever session is
   // first" (openFirstSession's order isn't guaranteed to match the fixture
   // record a check needs — see the Ship and hand-off notes below).

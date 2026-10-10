@@ -12,8 +12,15 @@ import {
   copyAttachCommand,
   focusSessionTerminal,
   acknowledgeSession,
-  markSessionUnread
+  markSessionUnread,
+  hideSession,
+  openSessionFolderInIde,
+  killSessionWindow,
+  stopBackgroundAgent,
+  dismissBackgroundAgent,
+  killSessionProcess
 } from '../api'
+import { useConfirm } from './primitives'
 import { setSessionPinned } from '../api-projects'
 
 interface Options {
@@ -61,24 +68,126 @@ export function useSessionActions({
   pushToast,
   onChanged,
   onRename
-}: Options): [React.ReactNode, (session: LiveSession) => SessionCardAction[] | undefined] {
+}: Options): [React.ReactNode, (session: LiveSession) => SessionCardAction[]] {
   const [deleting, setDeleting] = useState<LiveSession | null>(null)
   const [renaming, setRenaming] = useState<LiveSession | null>(null)
   const [writingHandoff, setWritingHandoff] = useState<LiveSession | null>(null)
 
-  const actionsFor = (session: LiveSession): SessionCardAction[] | undefined => {
+  const [confirmNode, confirm] = useConfirm()
+
+  // Every session gets this menu, in this order, on every screen: Home, the
+  // Sessions list and the session itself. An item that can never apply to a
+  // kind of session is left out; one that can't be used right now stays put,
+  // greyed, saying why.
+  const actionsFor = (session: LiveSession): SessionCardAction[] => {
     const record = session.record
-    if (!record) return undefined
-    return [readAction(session, onChanged), ...recordActions(session, record)]
+    return record
+      ? [readAction(session, onChanged), ...recordActions(session, record)]
+      : [readAction(session, onChanged), ...elsewhereActions(session)]
+  }
+
+  /**
+   * A session Control Room didn't start: running in another terminal (a
+   * worktree opened in Cursor, say), or a background agent. Nothing stored to
+   * rename or archive, so: open its folder, hide it, or end it.
+   */
+  const elsewhereActions = (session: LiveSession): SessionCardAction[] => {
+    const id = session.claudeSessionId
+    const actions: SessionCardAction[] = [
+      {
+        label: 'Open in IDE',
+        disabled: id ? undefined : 'It isn’t working in a folder Control Room can open',
+        onClick: () => {
+          if (!id) return
+          void openSessionFolderInIde(id).then((result) => {
+            if (!result.ok) pushToast?.(result.error ?? 'Could not open in Cursor.')
+          })
+        }
+      }
+    ]
+    if (!id && session.backgroundAgentId) {
+      const agentId = session.backgroundAgentId
+      actions.push({
+        label: 'Hide',
+        onClick: () => void dismissBackgroundAgent(agentId).then(() => onChanged())
+      })
+    }
+    if (id) {
+      actions.push({
+        label: 'Hide',
+        onClick: () => {
+          void hideSession(id).then((result) => {
+            pushToast?.(
+              result.ok
+                ? 'Hidden. It won’t come back, even while it keeps running.'
+                : (result.error ?? 'Could not hide it.')
+            )
+            if (result.ok) onChanged()
+          })
+        }
+      })
+    }
+    if (session.tmux || session.backgroundAgentId || session.claudePid) {
+      actions.push({
+        label: 'End session…',
+        danger: true,
+        onClick: () => void endElsewhere(session)
+      })
+    }
+    return actions
+  }
+
+  // Stops a session Control Room didn't start: its terminal window if it's in
+  // ours, `claude stop` for a background agent, else its process. Then hides
+  // it, so a process slow to go doesn't flicker back.
+  const endElsewhere = async (session: LiveSession): Promise<void> => {
+    const ok = await confirm({
+      title: session.backgroundAgentId ? 'Stop this background agent?' : 'End this session?',
+      body: session.tmux
+        ? `This closes its terminal window (${session.tmux.sessionName}:${session.tmux.windowName}) and stops Claude in it.`
+        : session.backgroundAgentId
+          ? 'Its conversation is kept: resume it later with `claude attach`.'
+          : 'Claude stops in the other terminal it runs in. Its conversation stays in Claude’s history.',
+      confirmLabel: session.backgroundAgentId ? 'Stop agent' : 'End session',
+      danger: true
+    })
+    if (!ok) return
+    const result = session.tmux
+      ? await killSessionWindow(session.tmux.windowId)
+      : session.backgroundAgentId
+        ? await stopBackgroundAgent(session.backgroundAgentId)
+        : session.claudePid
+          ? await killSessionProcess(session.claudePid)
+          : { ok: false, error: 'nothing to stop' }
+    if (!result.ok) {
+      // `claude stop`'s own background service can be wedged, and then it
+      // fails every time. Offer what always works: stop showing it.
+      if (session.backgroundAgentId) {
+        const hide = await confirm({
+          title: result.error ?? 'Couldn’t stop the agent.',
+          body: 'Hide it instead? It keeps running; Control Room stops showing it.',
+          confirmLabel: 'Hide it'
+        })
+        if (hide && (await dismissBackgroundAgent(session.backgroundAgentId)).ok) onChanged()
+        return
+      }
+      pushToast?.(result.error ?? 'Could not end it.')
+      return
+    }
+    if (session.claudeSessionId) await hideSession(session.claudeSessionId)
+    pushToast?.('Session ended.')
+    onChanged()
   }
 
   const recordActions = (
     session: LiveSession,
     record: NonNullable<LiveSession['record']>
   ): SessionCardAction[] => {
-    // A session with no record is one discovered in a terminal: there is
-    // nothing stored to rename, archive or delete. Adopting it is what gives
-    // it a record, and that lives on the session itself.
+    const noTerminal = session.tmux
+      ? undefined
+      : session.status === 'stopped' || session.status === 'missing'
+        ? 'It has no terminal: Claude isn’t running'
+        : 'Its terminal isn’t attached yet'
     const actions: SessionCardAction[] = [
       {
         label: record.pinned ? 'Unpin' : 'Pin',
@@ -120,20 +229,21 @@ export function useSessionActions({
               })
             }
           },
-      // Only with a pane to focus. Kept in list order rather than appended, so
-      // the menu reads the same way every time it appears.
-      ...(session.tmux
-        ? [
+      // Always in the same place. Without a pane it's greyed with why, rather
+      // than missing, which read as the menu changing for no reason.
+      ...(session.backgroundAgentId
+        ? []
+        : [
             {
               label: 'Focus terminal',
+              disabled: noTerminal,
               onClick: (): void => {
                 void focusSessionTerminal(record.id).then((result) => {
                   if (!result.ok) pushToast?.(result.error ?? 'Could not focus the terminal.')
                 })
               }
             }
-          ]
-        : []),
+          ]),
       {
         label: 'Open in IDE',
         onClick: () => {
@@ -157,11 +267,10 @@ export function useSessionActions({
       { label: 'Write hand-off note…', onClick: () => setWritingHandoff(session) }
     ]
 
-    // Only with a pane to attach to. The command would be a lie otherwise, and
-    // a menu entry that cannot work does not belong on screen at all.
-    if (session.tmux) {
+    if (!session.backgroundAgentId) {
       actions.push({
         label: 'Copy attach command',
+        disabled: noTerminal,
         onClick: () => {
           void copyAttachCommand(record.id).then((result) => {
             pushToast?.(
@@ -180,6 +289,7 @@ export function useSessionActions({
 
   const node = (
     <>
+      {confirmNode}
       {renaming?.record && (
         <RenameSessionDialog
           record={renaming.record}

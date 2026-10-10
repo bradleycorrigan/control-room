@@ -376,6 +376,29 @@ function sessionFile(name: string, body: Record<string, unknown>): void {
   writeFileSync(join(sessionsDir, `${name}.json`), JSON.stringify(body, null, 2))
 }
 
+// Two Claude sessions Control Room didn't start (no record, no tmux pane of
+// ours). One works in a project worktree, as one opened in Cursor would: it
+// shows, as "another terminal", with the shared actions. One works outside
+// every project: it doesn't show at all. pid 1 keeps both "alive".
+sessionFile('cursor', {
+  pid: 1,
+  sessionId: 'fixture-cursor',
+  cwd: join(worktreeRoot, 'feature-stray'),
+  startedAt: now - 20 * 60 * 1000,
+  status: 'idle',
+  statusUpdatedAt: now - 60_000,
+  name: 'fixture-cursor'
+})
+sessionFile('elsewhere', {
+  pid: 1,
+  sessionId: 'fixture-elsewhere',
+  cwd: '/tmp/cr-fixture-not-a-project',
+  startedAt: now - 20 * 60 * 1000,
+  status: 'idle',
+  statusUpdatedAt: now - 60_000,
+  name: 'fixture-elsewhere'
+})
+
 sessionFile('working', {
   pid: 1,
   sessionId: 'fixture-working',

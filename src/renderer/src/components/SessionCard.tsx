@@ -7,6 +7,12 @@ export interface SessionCardAction {
   label: string
   onClick: () => void
   danger?: boolean
+  /**
+   * Why it can't be used right now. The item stays where it always is,
+   * greyed, with this as its tooltip: an action that came and went with
+   * conditions you couldn't see read as broken.
+   */
+  disabled?: string
 }
 
 export interface SessionCardProps {
@@ -99,6 +105,8 @@ export default function SessionCard({
                 className={
                   action.danger ? 'cr-popover-item cr-popover-item--danger' : 'cr-popover-item'
                 }
+                disabled={Boolean(action.disabled)}
+                title={action.disabled}
                 onClick={() => {
                   setOpen(false)
                   action.onClick()

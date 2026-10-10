@@ -160,6 +160,11 @@ export interface StateFile {
   // Room's own view. This never claims the underlying agent is actually
   // stopped — only that we've stopped showing it.
   dismissedBackgroundAgentIds: string[]
+  // Claude sessions the user hid ("Hide" on a session Control Room didn't
+  // start, or one whose record they deleted while its process ran on in
+  // another terminal), by Claude session id. Without this they came back on
+  // the next poll, because the list is rebuilt from the live session files.
+  hiddenSessionIds: string[]
 }
 
 // Live status is never persisted — it is recomputed each poll into a view model.

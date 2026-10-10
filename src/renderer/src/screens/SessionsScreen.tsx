@@ -11,10 +11,9 @@ import DeleteSessionDialog from '../components/DeleteSessionDialog'
 import DeleteSessionsDialog from '../components/DeleteSessionsDialog'
 import { useDismissible } from '../keyboard'
 import { PickCheck, SelectionAction, SelectionBar } from '../components/selection'
-import { readAction, useSessionActions } from '../components/useSessionActions'
+import { useSessionActions } from '../components/useSessionActions'
 import {
   Button,
-  Modal,
   Badge,
   Icon,
   Popover,
@@ -28,10 +27,6 @@ import {
   updateProject,
   removeProject,
   renameSession,
-  killSessionWindow,
-  stopBackgroundAgent,
-  dismissBackgroundAgent,
-  killSessionProcess,
   getAppSettings
 } from '../api'
 import { useStoredState } from '../state/useStoredState'
@@ -281,7 +276,7 @@ const GROUP_LABEL: Record<GroupId, string> = {
   'your-turn': 'Your turn',
   working: 'Working',
   done: 'Done',
-  external: 'External sessions',
+  external: 'In other terminals',
   'found-in-terminal': 'Found in terminal',
   stopped: 'Stopped',
   other: 'Other'
@@ -432,6 +427,8 @@ interface OverflowAction {
   label: string
   onClick: () => void
   danger?: boolean
+  /** Why it can't be used right now: shown greyed, with this as its tooltip. */
+  disabled?: string
 }
 
 // Shared by the project container header and each session row — plan 5's
@@ -487,6 +484,8 @@ function OverflowMenu({
             className={
               action.danger ? 'overflow-menu-item overflow-menu-item-danger' : 'overflow-menu-item'
             }
+            disabled={Boolean(action.disabled)}
+            title={action.disabled}
             onClick={() => {
               setOpen(false)
               action.onClick()
@@ -527,12 +526,9 @@ function SessionListRow({
   session,
   onOpen,
   onAdopt,
-  onOpenInIde,
-  onFocusTerminal,
   onDeleted,
   onRenamed
 }: SessionListRowProps): React.JSX.Element {
-  const [confirmNode, confirm] = useConfirm()
   const title = sessionTitle(session)
   const selection = useContext(SessionSelection)
   const recordId = session.record?.id ?? null
@@ -549,9 +545,6 @@ function SessionListRow({
   const since = waitingSince(session)
   const longWait = since !== null && isLongWait(since)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [deleteConfirmType, setDeleteConfirmType] = useState<
-    'window' | 'background' | 'process' | null
-  >(null)
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const [renameBusy, setRenameBusy] = useState(false)
@@ -604,112 +597,16 @@ function SessionListRow({
     }
   }
 
-  // Found live in a terminal but never adopted into a project: no
-  // SessionRecord for sessions:delete to act on, but it always has a real
-  // tmux window — ending that window is how you delete one of these. A
-  // user must always be able to remove a session they can see, adopted or
-  // not (never leave "Delete" simply missing).
-  const handleKillWindow = async (): Promise<void> => {
-    if (!session.tmux) return
-    setDeleteConfirmType('window')
-  }
-
-  const confirmKillWindow = async (): Promise<void> => {
-    if (!session.tmux) return
-    setDeleteConfirmType(null)
-    const result = await killSessionWindow(session.tmux.windowId)
-    if (!result.ok) {
-      window.alert(result.error ?? 'Failed to end the session.')
-      return
-    }
-    onDeleted?.()
-  }
-
-  // A background agent (no tmux window at all, no pid we can act on) has
-  // only its own agent id as a handle — `claude stop` ends it and keeps
-  // the conversation, resumable later with `claude attach`.
-  const handleStopBackgroundAgent = async (): Promise<void> => {
-    if (!session.backgroundAgentId) return
-    setDeleteConfirmType('background')
-  }
-
-  const confirmStopBackgroundAgent = async (): Promise<void> => {
-    if (!session.backgroundAgentId) return
-    setDeleteConfirmType(null)
-    const result = await stopBackgroundAgent(session.backgroundAgentId)
-    if (!result.ok) {
-      // claude stop's own background service can be wedged — it fails to
-      // stop agents like this indefinitely. Offer the one thing that IS
-      // guaranteed to work: stop showing it here.
-      const hideAnyway = await confirm({
-        title: result.error ?? 'Failed to stop the agent.',
-        body: 'Hide it from this list instead? This does not stop the agent - only Control Room stops showing it.',
-        confirmLabel: 'Hide it'
-      })
-      if (!hideAnyway) return
-      const dismissed = await dismissBackgroundAgent(session.backgroundAgentId)
-      if (!dismissed.ok) {
-        window.alert(dismissed.error ?? 'Failed to hide the agent.')
-        return
-      }
-    }
-    onDeleted?.()
-  }
-
-  // Last resort: found live via a session file, no record, terminal
-  // confirmed gone, and not an `agents --json` background agent either —
-  // only the pid is left. SIGTERM, not a graceful `claude stop`.
-  const handleKillProcess = async (): Promise<void> => {
-    if (!session.claudePid) return
-    setDeleteConfirmType('process')
-  }
-
-  const confirmKillProcess = async (): Promise<void> => {
-    if (!session.claudePid) return
-    setDeleteConfirmType(null)
-    const result = await killSessionProcess(session.claudePid)
-    if (!result.ok) {
-      window.alert(result.error ?? 'Failed to end the process.')
-      return
-    }
-    onDeleted?.()
-  }
-
-  // A registered session gets the one shared menu — the same actions, in the
-  // same order, as the session detail screen and the session cards. These
-  // three used to be three different lists over the same object. Adopt stays
-  // outside it: it only exists for a session that has no record yet, which is
-  // precisely the case the shared list does not cover.
-  const actions: OverflowAction[] = []
-  if (onAdopt) actions.push({ label: 'Adopt', onClick: onAdopt })
-  if (!session.record) actions.push(readAction(session, onRenamed))
-  if (session.record) {
-    actions.push(...(sessionActions(session) ?? []))
-  } else if (session.tmux) {
-    if (onOpenInIde) actions.push({ label: 'Open in IDE', onClick: onOpenInIde })
-    if (onFocusTerminal) actions.push({ label: 'Focus terminal', onClick: onFocusTerminal })
-    actions.push({
-      label: 'Delete',
-      danger: true,
-      onClick: () => void handleKillWindow()
-    })
-  } else if (session.backgroundAgentId) {
-    actions.push({
-      label: 'Delete',
-      danger: true,
-      onClick: () => void handleStopBackgroundAgent()
-    })
-  } else if (session.claudePid) {
-    actions.push({
-      label: 'Delete',
-      danger: true,
-      onClick: () => void handleKillProcess()
-    })
-  }
+  // The one shared menu: the same actions, in the same order, as Home's cards
+  // and the session screen, for every kind of session. Adopt sits in front of
+  // it here, for a session with no record in a project's folder.
+  const actions: OverflowAction[] = [
+    ...(onAdopt ? [{ label: 'Adopt', onClick: onAdopt }] : []),
+    ...sessionActions(session)
+  ]
 
   return (
     <>
-      {confirmNode}
       <div
         className={[
           'sessions-row sessions-row-clickable',
@@ -879,64 +776,6 @@ function SessionListRow({
             onDeleted?.()
           }}
         />
-      )}
-
-      {deleteConfirmType === 'window' && session.tmux && (
-        <Modal title="End this session?" onClose={() => setDeleteConfirmType(null)} width={520}>
-          <div className="delete-modal-content">
-            <p>
-              This closes its terminal window ({session.tmux.sessionName}:{session.tmux.windowName})
-              and stops the process running in it.
-            </p>
-            <div className="delete-modal-actions">
-              <Button variant="outlined" onClick={() => setDeleteConfirmType(null)}>
-                Cancel
-              </Button>
-              <Button variant="filled" onClick={() => void confirmKillWindow()}>
-                End session
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {deleteConfirmType === 'background' && session.backgroundAgentId && (
-        <Modal
-          title="Stop this background agent?"
-          onClose={() => setDeleteConfirmType(null)}
-          width={520}
-        >
-          <div className="delete-modal-content">
-            <p>Its conversation is kept - resume it later from the CLI with `claude attach`.</p>
-            <div className="delete-modal-actions">
-              <Button variant="outlined" onClick={() => setDeleteConfirmType(null)}>
-                Cancel
-              </Button>
-              <Button variant="filled" onClick={() => void confirmStopBackgroundAgent()}>
-                Stop agent
-              </Button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {deleteConfirmType === 'process' && session.claudePid && (
-        <Modal title="End this session?" onClose={() => setDeleteConfirmType(null)} width={520}>
-          <div className="delete-modal-content">
-            <p>
-              Its terminal is already gone, so this stops the process directly (pid{' '}
-              {session.claudePid}) rather than closing a window.
-            </p>
-            <div className="delete-modal-actions">
-              <Button variant="outlined" onClick={() => setDeleteConfirmType(null)}>
-                Cancel
-              </Button>
-              <Button variant="filled" onClick={() => void confirmKillProcess()}>
-                End process
-              </Button>
-            </div>
-          </div>
-        </Modal>
       )}
     </>
   )

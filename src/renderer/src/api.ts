@@ -426,6 +426,21 @@ export function stopBackgroundAgent(agentId: string): Promise<{ ok: boolean; err
 // Last resort: a record-less session whose terminal is confirmed gone and
 // that isn't an `agents --json` background agent either — only its pid is
 // left as a handle.
+/** Opens the folder a session with no record is working in, by its Claude session id. */
+export function openSessionFolderInIde(
+  claudeSessionId: string
+): Promise<{ ok: boolean; error?: string }> {
+  return window.api.invoke<{ ok: boolean; error?: string }>(
+    'session:openIdeByClaudeId',
+    claudeSessionId
+  )
+}
+
+/** Hides a Claude session from every list for good, even while it runs on. */
+export function hideSession(claudeSessionId: string): Promise<{ ok: boolean; error?: string }> {
+  return window.api.invoke<{ ok: boolean; error?: string }>('sessions:hide', claudeSessionId)
+}
+
 export function killSessionProcess(pid: number): Promise<{ ok: boolean; error?: string }> {
   return window.api.invoke<{ ok: boolean; error?: string }>('sessions:killProcess', pid)
 }
