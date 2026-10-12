@@ -40,7 +40,9 @@ export function CompleteCycle({
   const [dest, setDest] = useState<Record<string, string>>(() =>
     Object.fromEntries(unfinished.map((i) => [i.key, first ? String(first.id) : BACKLOG]))
   )
-  const [startNext, setStartNext] = useState(false)
+  // Cycles run back to back: the next one starts as this one closes, unless
+  // you untick it.
+  const [startNext, setStartNext] = useState(Boolean(first))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 

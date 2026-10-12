@@ -85,6 +85,10 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
     })
     return true
   })
+  ipcMain.handle('dev:jira-sprint-patch', async (_evt, id: number, patch: object) => {
+    const { fixtureSprintPatch } = await import('../exec/jira')
+    return fixtureSprintPatch(id, patch)
+  })
   ipcMain.handle('dev:jira-filler', async (_evt, count: number) => {
     const { fixtureFiller } = await import('../exec/jira')
     return fixtureFiller(Number(count) || 0)

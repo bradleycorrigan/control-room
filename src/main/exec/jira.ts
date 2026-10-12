@@ -47,6 +47,17 @@ export interface JiraSprint {
   goal?: string
   /** The board the cycle belongs to: where a next cycle gets created. */
   boardId?: number
+  /**
+   * Jira completes it on its end date by itself ("Start and complete
+   * automatically"). Undefined when Jira doesn't say, which is treated as off.
+   */
+  autoComplete?: boolean
+  /**
+   * Where Jira's auto-complete sends its unfinished tickets: a cycle's id, or
+   * null for Jira's default (the backlog, or a new cycle it makes itself, the
+   * "jack-snipe 2" problem). Undefined when Jira doesn't say.
+   */
+  leftoversTo?: number | null
 }
 
 /** A board column: a name, and the statuses that land in it. */
@@ -477,6 +488,14 @@ let fixture: FixtureStore | null | undefined
  * so a check can see a screen at real volume. The base fixture stays small so
  * every other check keeps its exact numbers.
  */
+/** Dev only: changes a fixture cycle's settings, as Jira's own settings would. */
+export function fixtureSprintPatch(sprintId: number, patch: Partial<JiraSprint>): boolean {
+  const sprint = fixtureStore()?.sprints.find((sp) => sp.id === sprintId)
+  if (!sprint) return false
+  Object.assign(sprint, patch)
+  return true
+}
+
 export function fixtureFiller(count: number): boolean {
   const store = fixtureStore()
   if (!store) return false
@@ -1046,7 +1065,13 @@ async function loadBoardFresh(conn: Conn): Promise<JiraResult<JiraBoardData>> {
         return mapLimit([...boardIds], 4, async (id) => {
           try {
             const body = await callJson<{
-              values?: Array<JiraSprint & { originBoardId?: number }>
+              values?: Array<
+                JiraSprint & {
+                  originBoardId?: number
+                  autoStartStop?: boolean
+                  incompleteIssuesDestinationId?: number | null
+                }
+              >
             }>(conn, `/rest/agile/1.0/board/${id}/sprint?state=active,future&maxResults=50`)
             return (body.values ?? []).map((s) => ({
               id: s.id,
@@ -1055,7 +1080,12 @@ async function loadBoardFresh(conn: Conn): Promise<JiraResult<JiraBoardData>> {
               startDate: s.startDate,
               endDate: s.endDate,
               goal: s.goal || undefined,
-              boardId: s.originBoardId ?? id
+              boardId: s.originBoardId ?? id,
+              autoComplete: s.autoStartStop,
+              leftoversTo:
+                s.incompleteIssuesDestinationId === undefined
+                  ? undefined
+                  : s.incompleteIssuesDestinationId || null
             }))
           } catch {
             return []
@@ -2274,6 +2304,80 @@ export async function completeSprint(
       throw new JiraError(`Jira didn’t close it (it says ${after.state})`)
     boardCache = null
     return { closed: true as const, moved: moves.length }
+  })
+}
+
+/**
+ * Deletes an upcoming cycle, only when it holds no tickets at all: for the
+ * empty duplicates Jira's own Complete dialog leaves behind ("jack-snipe 2").
+ * Jira would move a deleted cycle's tickets to the backlog; refusing keeps
+ * that from ever happening by accident.
+ */
+export async function deleteSprint(sprintId: number): Promise<JiraResult<{ deleted: true }>> {
+  const store = fixtureStore()
+  if (store) {
+    const sprint = store.sprints.find((sp) => sp.id === sprintId)
+    if (!sprint) return { ok: false, error: `no cycle ${sprintId}` }
+    if (sprint.state !== 'future')
+      return { ok: false, error: 'only an upcoming cycle can be deleted' }
+    if (store.issues.some((i) => i.sprint?.id === sprintId)) {
+      return { ok: false, error: `${sprint.name} has tickets; move them out first` }
+    }
+    store.sprints = store.sprints.filter((sp) => sp.id !== sprintId)
+    return { ok: true, value: { deleted: true } }
+  }
+  const conn = connection()
+  if ('error' in conn) return { ok: false, error: conn.error }
+  return attempt(async () => {
+    const sprint = await callJson<{ state?: string; name?: string }>(
+      conn,
+      `/rest/agile/1.0/sprint/${sprintId}`
+    )
+    if (sprint.state !== 'future') throw new JiraError('only an upcoming cycle can be deleted')
+    const page = await callJson<{ total?: number; issues?: unknown[] }>(
+      conn,
+      `/rest/agile/1.0/sprint/${sprintId}/issue?maxResults=1&fields=key`
+    )
+    if ((page.total ?? page.issues?.length ?? 0) > 0) {
+      throw new JiraError(`${sprint.name ?? 'it'} has tickets; move them out first`)
+    }
+    await callJson(conn, `/rest/agile/1.0/sprint/${sprintId}`, { method: 'DELETE' })
+    boardCache = null
+    return { deleted: true as const }
+  })
+}
+
+/**
+ * Points an auto-completing cycle's unfinished tickets at another cycle, so
+ * Jira's own auto-complete moves them there instead of making a new one.
+ */
+export async function setSprintLeftoversTo(
+  sprintId: number,
+  targetId: number
+): Promise<JiraResult<{ leftoversTo: number }>> {
+  const store = fixtureStore()
+  if (store) {
+    const sprint = store.sprints.find((sp) => sp.id === sprintId)
+    if (!sprint) return { ok: false, error: `no cycle ${sprintId}` }
+    sprint.leftoversTo = targetId
+    return { ok: true, value: { leftoversTo: targetId } }
+  }
+  const conn = connection()
+  if ('error' in conn) return { ok: false, error: conn.error }
+  return attempt(async () => {
+    const s = await callJson<{ incompleteIssuesDestinationId?: number | null }>(
+      conn,
+      `/rest/agile/1.0/sprint/${sprintId}`,
+      { method: 'POST', body: { incompleteIssuesDestinationId: targetId } }
+    )
+    // Jira takes unknown fields silently; only believe it once it says so.
+    if (s.incompleteIssuesDestinationId !== targetId) {
+      throw new JiraError(
+        'Jira didn’t accept a destination for this cycle; set it in Jira’s sprint settings'
+      )
+    }
+    boardCache = null
+    return { leftoversTo: targetId }
   })
 }
 

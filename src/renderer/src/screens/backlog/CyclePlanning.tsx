@@ -9,7 +9,10 @@ import { formatDays, hoursToDays, parseEstimateHours, workingDays } from './cycl
 // open, filter, show their epic and drag between groups as they do anywhere
 // else in Tickets.
 
-type Cycle = Pick<JiraSprint, 'id' | 'name' | 'state' | 'startDate' | 'endDate' | 'goal'>
+type Cycle = Pick<
+  JiraSprint,
+  'id' | 'name' | 'state' | 'startDate' | 'endDate' | 'goal' | 'autoComplete' | 'leftoversTo'
+>
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -26,6 +29,24 @@ function cycleDates(c: Pick<JiraSprint, 'startDate' | 'endDate'>): string | null
 
 const totalDays = (issues: JiraIssue[]): number =>
   hoursToDays(issues.reduce((sum, i) => sum + parseEstimateHours(i.estimate), 0))
+
+const shortDate = (s: string | undefined): string =>
+  s ? new Date(s).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : 'its end date'
+
+/**
+ * What happens to the current cycle's unfinished tickets, as Jira is set up:
+ * completed by hand, or automatically on its end date, and where they go.
+ */
+function carryLine(cycle: Cycle, next: Cycle, unfinished: number): string {
+  const n = `${unfinished} unfinished ${unfinished === 1 ? 'ticket' : 'tickets'}`
+  if (!cycle.autoComplete) {
+    return `${n} carry over to ${next.name} when you complete ${cycle.name} in Jira.`
+  }
+  const when = `Jira completes ${cycle.name} automatically on ${shortDate(cycle.endDate)}`
+  return cycle.leftoversTo === next.id
+    ? `${when}; its ${n} move to ${next.name}.`
+    : `${when}, but it’s set to send its ${n} somewhere else (a new cycle or the backlog), not ${next.name}.`
+}
 
 /** "12 tickets · 9d estimated · 3 without an estimate" */
 function Facts({
@@ -67,7 +88,9 @@ export function CycleStrip({
   onSavePrefs,
   onNoEstimate,
   onSetGoal,
-  onComplete
+  onComplete,
+  onDelete,
+  onPointLeftovers
 }: {
   /** next: the cycle being planned (the current one, or one coming up); current: the active one when it isn't. */
   kind: 'current' | 'next' | 'other' | 'backlog'
@@ -86,6 +109,10 @@ export function CycleStrip({
   onSetGoal: (sprintId: number, goal: string) => Promise<boolean>
   /** The active cycle only: completes it in Jira, after a review. */
   onComplete?: () => void
+  /** An upcoming cycle with no tickets: deletes it in Jira (Jira's "jack-snipe 2"). */
+  onDelete?: () => void
+  /** Auto-completing current cycle: send its leftovers to the next cycle. */
+  onPointLeftovers?: () => void
 }): React.JSX.Element {
   const [goalDraft, setGoalDraft] = useState<string | null>(null)
   const [capacityDraft, setCapacityDraft] = useState<Record<string, string>>({})
@@ -115,11 +142,23 @@ export function CycleStrip({
               Complete cycle…
             </button>
           )}
+          {onDelete && (
+            <button type="button" className="cycle-strip-link" onClick={onDelete}>
+              Delete cycle…
+            </button>
+          )}
         </div>
         {kind === 'current' && next && unfinished > 0 && (
           <p className="cycle-strip-note">
-            {unfinished} unfinished {unfinished === 1 ? 'ticket carries' : 'tickets carry'} over to{' '}
-            {next.name} when you complete {cycle?.name} in Jira.
+            {carryLine(cycle!, next, unfinished)}
+            {cycle?.autoComplete && cycle.leftoversTo !== next.id && onPointLeftovers && (
+              <>
+                {' '}
+                <button type="button" className="cycle-strip-link" onClick={onPointLeftovers}>
+                  Send them to {next.name}
+                </button>
+              </>
+            )}
           </p>
         )}
       </div>
@@ -159,6 +198,11 @@ export function CycleStrip({
         {onComplete && (
           <button type="button" className="cycle-strip-link" onClick={onComplete}>
             Complete cycle…
+          </button>
+        )}
+        {onDelete && (
+          <button type="button" className="cycle-strip-link" onClick={onDelete}>
+            Delete cycle…
           </button>
         )}
         {!cycle.goal && goalDraft === null && (

@@ -2226,11 +2226,13 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   }
   const capacityRows = (): HTMLElement[] => $$('[data-cycle-strip="next"] .cycle-plan-capacity-row')
   await check(
-    'the next cycle shows everyone’s load, carry-over included, against the 10-day default',
+    'the next cycle shows everyone’s load, carry-over included, against one default capacity',
     capacityRows().length > 0 &&
-      capacityRows().every(
-        (r) => r.querySelector<HTMLInputElement>('.cycle-plan-capacity-input')?.value === '10'
-      ) &&
+      new Set(
+        capacityRows().map(
+          (r) => r.querySelector<HTMLInputElement>('.cycle-plan-capacity-input')?.value
+        )
+      ).size === 1 &&
       /carrying over/.test($('[data-cycle-strip="next"]')?.textContent ?? ''),
     $('[data-cycle-strip="next"]')?.textContent?.slice(0, 160) ?? 'no strip'
   )
@@ -2375,10 +2377,21 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       const labels = $$('[role="menuitem"]').map((m) => m.textContent?.trim() ?? '')
       await key('Escape')
       await wait(200)
-      return labels.filter((l) => l !== 'Adopt')
+      // Read or unread is the same item either way; compare the menus, not the state.
+      return labels
+        .filter((l) => l !== 'Adopt')
+        .map((l) => (l === 'Mark as read' ? 'Mark as unread' : l))
     }
     const rowLabels = await menuLabels($('[aria-label="fixture-cursor actions"]'))
+    // Home shows only the most recent few, and earlier checks start newer
+    // sessions; marked unread, Home's Unread filter always has its card.
+    if (!$('[aria-label="fixture-cursor actions"]')?.closest('.sessions-row-unread')) {
+      await click($('[aria-label="fixture-cursor actions"]'))
+      await click(byText('[role="menuitem"]', 'Mark as unread'))
+      await wait(300)
+    }
     await ctx.goTo('home')
+    await click(byText('.home-recent-filters .cr-pill', 'Unread'))
     await until(() => Boolean($('[aria-label="Actions for fixture-cursor"]')), 4000)
     const cardLabels = await menuLabels($('[aria-label="Actions for fixture-cursor"]'))
     await check(
@@ -2397,6 +2410,8 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       !$('[aria-label="Actions for fixture-cursor"]'),
       'still on Home'
     )
+    // Home's filter is remembered: put it back to everything.
+    await click(byText('.home-recent-filters .cr-pill', 'Unread'))
   }
 
   // Opens the named session by its row title, not "whichever session is
@@ -3456,6 +3471,68 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     )
   }
 
+  // ---- A current cycle Jira completes by itself ----
+  {
+    await api.invoke('dev:jira-sprint-patch', 1, { autoComplete: true, leftoversTo: null })
+    await ctx.goTo('backlog')
+    await wait(400)
+    await refreshTickets()
+    await click($('[aria-label="Plan kestrel"]'))
+    const note = (): string =>
+      $('[data-cycle-strip="current"] .cycle-strip-note')?.textContent ?? ''
+    await check(
+      'with auto-complete on and its leftovers going elsewhere, planning says so and offers to fix it',
+      await until(() => /completes honey-buzzard automatically.*not kestrel/.test(note()), 3000),
+      note()
+    )
+    await click(byText('[data-cycle-strip="current"] .cycle-strip-link', 'Send them to kestrel'))
+    await check(
+      'Send them to kestrel points Jira’s auto-complete at it',
+      await until(() => /move to kestrel\./.test(note()), 3000),
+      note()
+    )
+    await click(byText('.planning-bar button', 'Done planning'))
+    await until(() => !$('.planning-bar'))
+    await api.invoke('dev:jira-sprint-patch', 1, { autoComplete: false, leftoversTo: undefined })
+    await refreshTickets()
+  }
+
+  // ---- An empty duplicate cycle, as Jira's Complete leaves behind ----
+  {
+    await api.invoke('jira:createSprint', {
+      boardId: 1,
+      // As Jira makes it: right after the pre-made kestrel.
+      name: 'kestrel 2',
+      startDate: '2026-10-13T17:00:00.000Z',
+      endDate: '2026-10-27T17:00:00.000Z'
+    })
+    await ctx.goTo('backlog')
+    await wait(400)
+    await refreshTickets()
+    await click($('[aria-label="Plan kestrel"]'))
+    const dupe = (): HTMLElement | undefined =>
+      $$('.backlog-group').find((g) =>
+        /kestrel 2/.test(g.querySelector('.backlog-group-title')?.textContent ?? '')
+      )
+    await until(() => Boolean(dupe()), 3000)
+    // Its own link: the real next cycle can have one too, once it's empty.
+    await click(
+      [...(dupe()?.querySelectorAll<HTMLElement>('.cycle-strip-link') ?? [])].find((l) =>
+        l.textContent?.startsWith('Delete cycle')
+      )
+    )
+    await click(byText('.cr-confirm-actions button', 'Delete cycle'))
+    await check(
+      'an empty upcoming cycle can be deleted from planning',
+      await until(() => !dupe(), 3000),
+      `${dupe()?.textContent?.slice(0, 80) ?? ''}; links: ${$$('.cycle-strip-link')
+        .map((l) => l.textContent)
+        .join(', ')}`
+    )
+    await click(byText('.planning-bar button', 'Done planning'))
+    await until(() => !$('.planning-bar'))
+  }
+
   // ---- Completing a cycle (last: it closes the fixture's current cycle) ----
   {
     await ctx.goTo('backlog')
@@ -3480,10 +3557,22 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         .join(', ')
     )
     setSelect(destOf('DSD-102'), 'backlog')
+    // Ticked by default (cycles run back to back); untick it here so the
+    // no-cycle-running prompt gets a turn.
     const startBox = $<HTMLInputElement>('.complete-cycle-start input')
-    if (startBox && !startBox.checked) await click(startBox)
+    const startTicked = Boolean(startBox?.checked)
+    if (startBox?.checked) await click(startBox)
     await click(byText('.complete-cycle-actions button', 'Complete honey-buzzard'))
     await until(() => !$('.complete-cycle'), 4000)
+    await check(
+      '"Start the next cycle" is ticked by default, and with it unticked, Tickets offers to start it',
+      startTicked &&
+        (await until(() => /kestrel/.test($('[data-no-cycle]')?.textContent ?? ''), 3000)),
+      `ticked ${startTicked}; ${$('[data-no-cycle]')?.textContent ?? 'no prompt'}`
+    )
+    await click(byText('[data-no-cycle] button', 'Start kestrel'))
+    await click(byText('.cr-confirm-actions button', 'Start kestrel'))
+    await until(() => !$('[data-no-cycle]'), 3000)
     await groupBy('Cycle')
     const lane = (id: string, key: string): boolean =>
       Boolean($(`.backlog-group[data-lane="${id}"] [data-issue="${key}"]`))

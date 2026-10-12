@@ -49,6 +49,8 @@ import {
   setJiraSprintGoal,
   completeJiraSprint,
   startJiraSprint,
+  deleteJiraSprint,
+  setJiraSprintLeftoversTo,
   updateJiraText,
   type BacklogPrefs,
   type BlockDirection,
@@ -1905,9 +1907,12 @@ export default function BacklogScreen({
   }
 
   // The current cycle past its end date: Jira won't close it by itself.
+  // One Jira completes by itself gets half a day to do it before the prompt.
   const endedCycle =
     activeSprint?.endDate &&
-    new Date(activeSprint.endDate).getTime() < minute &&
+    new Date(activeSprint.endDate).getTime() +
+      (activeSprint.autoComplete ? 12 * 60 * 60 * 1000 : 0) <
+      minute &&
     laterFor[activeSprint.id] !== new Date(minute).toDateString()
       ? activeSprint
       : null
@@ -1986,6 +1991,46 @@ export default function BacklogScreen({
       hoursToDays(inCycle(t.id).reduce((sum, i) => sum + parseEstimateHours(i.estimate), 0))
     ])
   )
+  // An empty upcoming cycle, deleted in Jira after a confirm (Jira refuses
+  // nothing here, so the app checks it's empty first, there too).
+  const deleteCycle = async (cycle: JiraSprint): Promise<void> => {
+    const ok = await confirm({
+      title: `Delete ${cycle.name}?`,
+      body: 'It has no tickets. It’s removed from the board in Jira.',
+      confirmLabel: 'Delete cycle',
+      danger: true
+    })
+    if (!ok) return
+    const r = await deleteJiraSprint(cycle.id)
+    if (!r.ok) {
+      pushToast?.(`Jira: ${r.error}`)
+      return
+    }
+    if (planning?.nextId === cycle.id) setPlanning((p) => (p ? { ...p, nextId: null } : p))
+    await load(true)
+    pushToast?.(`Deleted ${cycle.name}`)
+  }
+  // Starts the next cycle when none is running, with its own dates (or two
+  // weeks from today if it has none).
+  const startCycle = async (cycle: JiraSprint): Promise<void> => {
+    const from = cycle.startDate ? new Date(cycle.startDate) : new Date()
+    const to = cycle.endDate
+      ? new Date(cycle.endDate)
+      : new Date(from.getTime() + 14 * 24 * 60 * 60 * 1000)
+    const ok = await confirm({
+      title: `Start ${cycle.name}?`,
+      body: `It runs ${from.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} to ${to.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}, and starts in Jira now.`,
+      confirmLabel: `Start ${cycle.name}`
+    })
+    if (!ok) return
+    const r = await startJiraSprint(cycle.id, from.toISOString(), to.toISOString())
+    if (!r.ok) {
+      pushToast?.(`Jira: ${r.error}`)
+      return
+    }
+    await load(true)
+    pushToast?.(`${cycle.name} started`)
+  }
   // Completes a cycle after its review; returns an error to show, or null.
   const finishCycle = async (
     cycle: JiraSprint,
@@ -2046,6 +2091,26 @@ export default function BacklogScreen({
         onSavePrefs={(patch) => void saveBacklogPrefs(patch).then(setPrefs)}
         onNoEstimate={() => setNoEstimateIn(lane.id)}
         onComplete={cycle?.state === 'active' ? () => setCompleting(cycle.id) : undefined}
+        onPointLeftovers={
+          cycle?.state === 'active' && cycle.autoComplete && planningNext
+            ? () =>
+                void setJiraSprintLeftoversTo(cycle.id, planningNext.id).then(async (r) => {
+                  if (!r.ok) {
+                    pushToast?.(`Jira: ${r.error}`)
+                    return
+                  }
+                  await load(true)
+                  pushToast?.(
+                    `${cycle.name}’s unfinished tickets will move to ${planningNext.name}`
+                  )
+                })
+            : undefined
+        }
+        onDelete={
+          cycle && cycle.state === 'future' && all.length === 0
+            ? () => void deleteCycle(cycle)
+            : undefined
+        }
         onSetGoal={async (id, goal) => {
           const r = await setJiraSprintGoal(id, goal)
           if (!r.ok) {
@@ -2343,7 +2408,10 @@ export default function BacklogScreen({
                 day: 'numeric',
                 month: 'short'
               })}
-              . Jira keeps it open until it&rsquo;s completed.
+              .{' '}
+              {endedCycle.autoComplete
+                ? 'Jira was set to complete it automatically, but it’s still open.'
+                : 'Jira keeps it open until it’s completed.'}
             </span>
             <Button variant="outlined" size="compact" onClick={() => setCompleting(endedCycle.id)}>
               Complete it…
@@ -2356,6 +2424,17 @@ export default function BacklogScreen({
               }
             >
               Later
+            </Button>
+          </div>
+        )}
+        {board && !activeSprint && upcoming[0] && (
+          <div className="cycle-ended" role="status" data-no-cycle>
+            <Icon name="CirclePlay" size={14} className="cycle-ended-glyph" />
+            <span>
+              No cycle is running. <strong>{upcoming[0].name}</strong> is next.
+            </span>
+            <Button variant="outlined" size="compact" onClick={() => void startCycle(upcoming[0])}>
+              Start {upcoming[0].name}…
             </Button>
           </div>
         )}

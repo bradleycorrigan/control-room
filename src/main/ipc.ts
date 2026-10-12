@@ -110,6 +110,8 @@ import {
   setSprintGoal,
   completeSprint,
   startSprint,
+  deleteSprint,
+  setSprintLeftoversTo,
   setPriority,
   setLabels,
   addBlockLink,
@@ -808,6 +810,10 @@ export function registerIpcHandlers(): void {
     (_evt, sprintId: number, moves: { key: string; to: number | null }[]) =>
       completeSprint(sprintId, Array.isArray(moves) ? moves : [])
   )
+  ipcMain.handle('jira:sprintLeftoversTo', (_evt, sprintId: number, targetId: number) =>
+    setSprintLeftoversTo(sprintId, targetId)
+  )
+  ipcMain.handle('jira:deleteSprint', (_evt, sprintId: number) => deleteSprint(sprintId))
   ipcMain.handle('jira:startSprint', (_evt, sprintId: number, start: string, end: string) =>
     startSprint(sprintId, start, end)
   )

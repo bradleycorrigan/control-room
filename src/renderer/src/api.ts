@@ -915,6 +915,19 @@ export function completeJiraSprint(
   return window.api.invoke('jira:completeSprint', sprintId, moves)
 }
 
+/** Points an auto-completing cycle's unfinished tickets at another cycle. */
+export function setJiraSprintLeftoversTo(
+  sprintId: number,
+  targetId: number
+): Promise<JiraResult<{ leftoversTo: number }>> {
+  return window.api.invoke('jira:sprintLeftoversTo', sprintId, targetId)
+}
+
+/** Deletes an upcoming cycle; refused if it holds any tickets. */
+export function deleteJiraSprint(sprintId: number): Promise<JiraResult<{ deleted: true }>> {
+  return window.api.invoke<JiraResult<{ deleted: true }>>('jira:deleteSprint', sprintId)
+}
+
 export function startJiraSprint(
   sprintId: number,
   startDate: string,
