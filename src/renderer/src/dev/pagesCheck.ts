@@ -3370,13 +3370,6 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         return reduced ? anim === 'none' : anim === 'working-breathe'
       }, 5000)
     )
-    await check(
-      'a working session draws its activity line',
-      await until(() => {
-        const svg = workingRow()?.querySelector('svg.sessions-row-activity')
-        return Boolean(svg?.querySelector('polyline')) && Boolean(svg?.getAttribute('aria-label'))
-      }, 5000)
-    )
   }
 
   // ---- Home flourishes ----

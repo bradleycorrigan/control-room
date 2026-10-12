@@ -655,34 +655,6 @@
   color: var(--status-attention);
 }
 
-/* The last hour of activity, twelve five-minute buckets. Muted throughout,
-   with only the latest bucket in the working colour. */
-.sessions-row-activity {
-  flex: 0 0 auto;
-  display: block;
-  overflow: visible;
-}
-
-.sessions-row-activity-line,
-.sessions-row-activity-latest {
-  fill: none;
-  stroke-width: 1.25;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.sessions-row-activity-line {
-  stroke: var(--text-muted);
-}
-
-.sessions-row-activity-latest {
-  stroke: var(--status-working);
-}
-
-.sessions-row-activity-dot {
-  fill: var(--status-working);
-}
-
 .sessions-row-overflow {
   flex: 0 0 28px;
   opacity: 0;
