@@ -3394,3 +3394,26 @@
   justify-content: flex-end;
   gap: var(--space-8);
 }
+
+/* Planning: type an estimate straight onto a row that has none. */
+.backlog-row-estimate-input {
+  flex: none;
+  width: 72px;
+  height: 24px;
+  padding: 0 var(--space-8);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-meta-size);
+}
+
+.backlog-row-estimate-input::placeholder {
+  color: var(--text-muted);
+}
+
+.backlog-row-estimate-input:focus {
+  border-style: solid;
+  border-color: var(--accent);
+  outline: none;
+}

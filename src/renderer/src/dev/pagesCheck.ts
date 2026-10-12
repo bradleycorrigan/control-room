@@ -2256,6 +2256,30 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       .map((r) => r.dataset.issue)
       .join(', ')
   )
+  await check(
+    'it shows only that cycle, with a field to type each estimate',
+    !group('backlog') &&
+      !group('current') &&
+      Boolean($('.backlog-row[data-issue="DSD-102"] .backlog-row-estimate-input')),
+    $$('.backlog-group')
+      .map((g) => g.getAttribute('data-lane'))
+      .join(', ')
+  )
+  {
+    const field = $<HTMLInputElement>(
+      '.backlog-row[data-issue="DSD-102"] .backlog-row-estimate-input'
+    )
+    field?.focus()
+    await typeText('2h')
+    await key('Enter')
+    await check(
+      'typing an estimate and pressing Enter saves it, and the ticket leaves the list',
+      await until(() => !$('.backlog-row[data-issue="DSD-102"]')),
+      $$('.backlog-row')
+        .map((r) => r.dataset.issue)
+        .join(', ')
+    )
+  }
   await click($('[data-filter-chip="no-estimate"] button'))
   await click($('.backlog-row[data-issue="TEAMDATA-202"]'))
   await check(
@@ -2335,8 +2359,10 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   // screen offers them the same actions, and Hide sticks.
   {
     await api.invoke('dev:unhide-sessions')
+    await ctx.refreshSessions()
     await ctx.goTo('sessions')
-    await until(() => /fixture-cursor/.test(document.body.textContent ?? ''), 4000)
+    // A poll or two for the reset to reach the list; reload rather than wait blind.
+    await until(() => Boolean($('[aria-label="fixture-cursor actions"]')), 8000)
     await check(
       'a session in another terminal shows only if it works in one of your projects',
       /fixture-cursor/.test(document.body.textContent ?? '') &&
@@ -2353,7 +2379,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     }
     const rowLabels = await menuLabels($('[aria-label="fixture-cursor actions"]'))
     await ctx.goTo('home')
-    await wait(400)
+    await until(() => Boolean($('[aria-label="Actions for fixture-cursor"]')), 4000)
     const cardLabels = await menuLabels($('[aria-label="Actions for fixture-cursor"]'))
     await check(
       'Home and the Sessions list offer a session in another terminal the same actions',

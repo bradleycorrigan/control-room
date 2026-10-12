@@ -385,7 +385,9 @@ export default function BacklogScreen({
   // "Later" on the ended-cycle prompt: hidden until tomorrow, per cycle.
   const [laterFor, setLaterFor] = useStoredState<Record<string, string>>('cycle-ended-later', {})
   // Planning's "N without an estimate": only tickets with no estimate.
-  const [noEstimateOnly, setNoEstimateOnly] = useState(false)
+  // Planning's "N without an estimate": that one cycle's unestimated tickets
+  // (by its group id), the rest of the list out of the way.
+  const [noEstimateIn, setNoEstimateIn] = useState<string | null>(null)
   // While a ticket is being dragged, empty groups show too, as drop targets.
   const [dragging, setDragging] = useState(false)
   const loadedAt = useRef(0)
@@ -977,9 +979,9 @@ export default function BacklogScreen({
           matches(i, q) &&
           !hidden.includes(columnNameOf(i.status)) &&
           inCycles(i, cycles) &&
-          (!noEstimateOnly || !i.estimate)
+          (!noEstimateIn || !i.estimate)
       ),
-    [tickets, cycles, q, hidden, columnNameOf, noEstimateOnly]
+    [tickets, cycles, q, hidden, columnNameOf, noEstimateIn]
   )
   const narrowedAnyEpic = useMemo(
     () => narrowedAnyone.filter((i) => assignedTo(i, people)),
@@ -1693,7 +1695,7 @@ export default function BacklogScreen({
   // Every filter narrowing the list, as a chip you can see and clear. The tab
   // you're on is shown by the tabs themselves.
   const clearFilters = (): void => {
-    setNoEstimateOnly(false)
+    setNoEstimateIn(null)
     setCycle('all')
     setHidden([])
     setAssignees([])
@@ -1719,12 +1721,18 @@ export default function BacklogScreen({
       clear: () => setCycle('all')
     })
   }
-  if (noEstimateOnly) {
+  if (noEstimateIn) {
     filterChips.push({
       id: 'no-estimate',
-      label: 'No estimate',
-      clearLabel: 'Show tickets with an estimate too',
-      clear: () => setNoEstimateOnly(false)
+      label: `No estimate · ${
+        noEstimateIn === 'backlog'
+          ? 'Backlog'
+          : noEstimateIn === 'current'
+            ? (activeSprint?.name ?? 'current cycle')
+            : (sprints.find((sp) => `sprint-${sp.id}` === noEstimateIn)?.name ?? 'cycle')
+      }`,
+      clearLabel: 'Show every ticket again',
+      clear: () => setNoEstimateIn(null)
     })
   }
   if (hideDone) {
@@ -1934,7 +1942,7 @@ export default function BacklogScreen({
     setCycleSet(planning.restore.cycleSet)
     setWho(planning.restore.who)
     setAssignees(planning.restore.assignees)
-    setNoEstimateOnly(false)
+    setNoEstimateIn(null)
     setPlanning(null)
   }
   // Planning's numbers are the whole cycle's, never just what the filters
@@ -2036,7 +2044,7 @@ export default function BacklogScreen({
         now={planningSince}
         prefs={prefs}
         onSavePrefs={(patch) => void saveBacklogPrefs(patch).then(setPrefs)}
-        onNoEstimate={() => setNoEstimateOnly(true)}
+        onNoEstimate={() => setNoEstimateIn(lane.id)}
         onComplete={cycle?.state === 'active' ? () => setCompleting(cycle.id) : undefined}
         onSetGoal={async (id, goal) => {
           const r = await setJiraSprintGoal(id, goal)
@@ -2453,94 +2461,101 @@ export default function BacklogScreen({
 
         {board && view === 'list' && visible.length > 0 && (
           <div className="backlog-list">
-            {shownLanes.map((shownLane) => {
-              const lane = planningLane(shownLane)
-              const subs = subLanesFor(lane)
-              const isCollapsed = planning
-                ? (planFolds[lane.id] ?? false)
-                : collapsed.includes(lane.id)
-              return (
-                <DropGroup
-                  key={lane.id}
-                  lane={lane}
-                  values={[lane.value]}
-                  extra={planningStrip(lane)}
-                  collapsed={isCollapsed}
-                  onToggle={() =>
-                    planning
-                      ? setPlanFolds((f) => ({ ...f, [lane.id]: !isCollapsed }))
-                      : lane.items.length === 0 && !isCollapsed
-                        ? dismiss(lane.id)
-                        : setCollapsed(
-                            isCollapsed
-                              ? collapsed.filter((id) => id !== lane.id)
-                              : [...collapsed, lane.id]
-                          )
-                  }
-                  onDropIssue={(key, values) => void dropInto(key, values)}
-                >
-                  {!isCollapsed && (
-                    <div className="backlog-rows">
-                      {subs
-                        ? subs.map((sub) => {
-                            const subId = subLaneId(lane, sub)
-                            const subCollapsed = collapsed.includes(subId)
-                            return (
-                              <DropGroup
-                                key={sub.id}
-                                lane={sub}
-                                values={[lane.value, sub.value]}
-                                nested
-                                collapsed={subCollapsed}
-                                onToggle={() =>
-                                  sub.items.length === 0 && !subCollapsed
-                                    ? dismiss(subId)
-                                    : setCollapsed(
-                                        subCollapsed
-                                          ? collapsed.filter((id) => id !== subId)
-                                          : [...collapsed, subId]
-                                      )
-                                }
-                                onDropIssue={(key, values) => void dropInto(key, values)}
-                              >
-                                {!subCollapsed &&
-                                  sub.items.map((issue) => (
-                                    <IssueRow key={issue.key} issue={issue} {...rowProps} />
-                                  ))}
-                                {sub.items.length === 0 && (
-                                  <p className="backlog-empty-lane">
-                                    {dragging ? 'Drop here' : 'Nothing left here'}
-                                  </p>
-                                )}
-                              </DropGroup>
+            {shownLanes
+              .filter((l) => !noEstimateIn || l.id === noEstimateIn)
+              .map((shownLane) => {
+                const lane = planningLane(shownLane)
+                const subs = subLanesFor(lane)
+                const isCollapsed = planning
+                  ? noEstimateIn !== lane.id && (planFolds[lane.id] ?? false)
+                  : collapsed.includes(lane.id)
+                return (
+                  <DropGroup
+                    key={lane.id}
+                    lane={lane}
+                    values={[lane.value]}
+                    extra={planningStrip(lane)}
+                    collapsed={isCollapsed}
+                    onToggle={() =>
+                      planning
+                        ? setPlanFolds((f) => ({ ...f, [lane.id]: !isCollapsed }))
+                        : lane.items.length === 0 && !isCollapsed
+                          ? dismiss(lane.id)
+                          : setCollapsed(
+                              isCollapsed
+                                ? collapsed.filter((id) => id !== lane.id)
+                                : [...collapsed, lane.id]
                             )
-                          })
-                        : lane.items.map((issue) => (
-                            <IssueRow
-                              key={issue.key}
-                              issue={issue}
-                              {...rowProps}
-                              carriesOver={
-                                lane !== shownLane &&
-                                carryKeys.has(issue.key) &&
-                                issue.sprint?.id === activeSprint?.id
-                              }
-                            />
-                          ))}
-                      {lane.items.length === 0 && (
-                        <p className="backlog-empty-lane">
-                          {dragging
-                            ? 'Drop here'
-                            : planning && lane.value?.kind === 'cycle'
-                              ? 'Drag tickets here'
-                              : 'No tickets'}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </DropGroup>
-              )
-            })}
+                    }
+                    onDropIssue={(key, values) => void dropInto(key, values)}
+                  >
+                    {!isCollapsed && (
+                      <div className="backlog-rows">
+                        {subs
+                          ? subs.map((sub) => {
+                              const subId = subLaneId(lane, sub)
+                              const subCollapsed = collapsed.includes(subId)
+                              return (
+                                <DropGroup
+                                  key={sub.id}
+                                  lane={sub}
+                                  values={[lane.value, sub.value]}
+                                  nested
+                                  collapsed={subCollapsed}
+                                  onToggle={() =>
+                                    sub.items.length === 0 && !subCollapsed
+                                      ? dismiss(subId)
+                                      : setCollapsed(
+                                          subCollapsed
+                                            ? collapsed.filter((id) => id !== subId)
+                                            : [...collapsed, subId]
+                                        )
+                                  }
+                                  onDropIssue={(key, values) => void dropInto(key, values)}
+                                >
+                                  {!subCollapsed &&
+                                    sub.items.map((issue) => (
+                                      <IssueRow key={issue.key} issue={issue} {...rowProps} />
+                                    ))}
+                                  {sub.items.length === 0 && (
+                                    <p className="backlog-empty-lane">
+                                      {dragging ? 'Drop here' : 'Nothing left here'}
+                                    </p>
+                                  )}
+                                </DropGroup>
+                              )
+                            })
+                          : lane.items.map((issue) => (
+                              <IssueRow
+                                key={issue.key}
+                                issue={issue}
+                                {...rowProps}
+                                carriesOver={
+                                  lane !== shownLane &&
+                                  carryKeys.has(issue.key) &&
+                                  issue.sprint?.id === activeSprint?.id
+                                }
+                                onQuickEstimate={
+                                  planning
+                                    ? (value) => void actions.estimate(issue, value)
+                                    : undefined
+                                }
+                              />
+                            ))}
+                        {lane.items.length === 0 && (
+                          <p className="backlog-empty-lane">
+                            {dragging
+                              ? 'Drop here'
+                              : planning && lane.value?.kind === 'cycle'
+                                ? 'Drag tickets here'
+                                : 'No tickets'}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </DropGroup>
+                )
+              })}
           </div>
         )}
 
@@ -3149,11 +3164,14 @@ function IssuePills({
 function IssueRow({
   issue,
   carriesOver = false,
+  onQuickEstimate,
   ...p
 }: {
   issue: JiraIssue
   /** Planning: still in the current cycle, and Jira moves it here when that's completed. */
   carriesOver?: boolean
+  /** Planning: a ticket with no estimate gets a field for one, right on the row. */
+  onQuickEstimate?: (value: string) => void
 } & RowActions): React.JSX.Element {
   const entries = p.sessionsFor(issue)
   const selected = p.openKey === issue.key
@@ -3216,6 +3234,30 @@ function IssueRow({
             onEdit={selecting ? undefined : (field, anchor) => p.onEdit(field, issue, anchor)}
             onFilter={selecting ? undefined : p.onFilter}
           />
+          {onQuickEstimate && !issue.estimate && (
+            <input
+              aria-label={`Estimate for ${issue.key}`}
+              className="backlog-row-estimate-input"
+              placeholder="Estimate"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Escape') e.currentTarget.blur()
+                if (e.key !== 'Enter') return
+                const value = e.currentTarget.value.trim()
+                if (!value) return
+                // On to the next ticket still without one: estimating a cycle is
+                // type, Enter, type, Enter, not a click into every ticket.
+                const all = [
+                  ...document.querySelectorAll<HTMLInputElement>('.backlog-row-estimate-input')
+                ]
+                const next = all[all.indexOf(e.currentTarget) + 1] ?? null
+                onQuickEstimate(value)
+                e.currentTarget.value = ''
+                requestAnimationFrame(() => next?.focus())
+              }}
+            />
+          )}
           {subtasks.length > 0 && (
             <button
               type="button"
