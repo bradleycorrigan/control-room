@@ -3,7 +3,14 @@ import { getState } from './store/store'
 import { pullRequestFor } from './exec/pullRequests'
 import { handoffGitSummary } from './exec/sessionGit'
 import { buildHandoffNote, lastAssistantMessage } from './exec/handoffNote'
-import { pushAndCreatePr, pushBranch, markReadyForReview, unpushedCount } from './exec/ship'
+import {
+  commitPathsAndPush,
+  pushAndCreatePr,
+  pushBranch,
+  markReadyForReview,
+  unpushedCount
+} from './exec/ship'
+import { resolveProjectPath } from './exec/files'
 import { currentBranch } from './engine/sessionBranch'
 
 /**
@@ -68,6 +75,29 @@ export function registerSessionsIpc(): void {
     if (!branch) return { ok: false, error: "This session isn't on a branch of its own yet." }
     return pushBranch(record.worktreePath, branch)
   })
+
+  // A small fix made in the diff view: commit the files edited there, push.
+  // Every path must resolve inside the session's own worktree.
+  ipcMain.handle(
+    'sessions:commitPush',
+    async (_evt, id: string, paths: string[], message: string) => {
+      const record = getState().sessions.find((s) => s.id === id)
+      if (!record) return { ok: false, error: 'Session not found.' }
+      if (!Array.isArray(paths) || paths.length === 0) {
+        return { ok: false, error: 'Nothing to commit.' }
+      }
+      if (
+        paths.some((p) => typeof p !== 'string' || !resolveProjectPath([record.worktreePath], p))
+      ) {
+        return { ok: false, error: "A file is outside this session's worktree." }
+      }
+      const text = typeof message === 'string' ? message.trim() : ''
+      if (!text) return { ok: false, error: 'Write a commit message first.' }
+      const branch = await currentBranch(record)
+      if (!branch) return { ok: false, error: "This session isn't on a branch of its own yet." }
+      return commitPathsAndPush(record.worktreePath, branch, paths, text)
+    }
+  )
 
   // A draft pull request, out of draft.
   ipcMain.handle('sessions:prReady', async (_evt, id: string, prNumber: number) => {

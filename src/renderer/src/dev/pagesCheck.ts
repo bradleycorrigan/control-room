@@ -2513,6 +2513,57 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     await check('and the project closes again', !item())
   }
 
+  // Quick edits in the diff: Edit opens the whole file, Save writes it to the
+  // worktree and offers Commit & push. Never pushes (that's the network); the
+  // file goes back as it was before the check moves on.
+  {
+    await openSessionByTitle('Working session')
+    await click($('[aria-label="View diff"]'))
+    await until(() => $$('.diff-file-head button').some((b) => b.textContent === 'Edit'), 5000)
+    const box = $$<HTMLElement>('.diff-file').find((f) =>
+      [...f.querySelectorAll('button')].some((b) => b.textContent === 'Edit')
+    )
+    await click([...(box?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Edit'))
+    await until(() => Boolean(box?.querySelector('.diff-edit-textarea')), 3000)
+    const editor = (): HTMLTextAreaElement | null =>
+      box?.querySelector<HTMLTextAreaElement>('.diff-edit-textarea') ?? null
+    const original = editor()?.value ?? ''
+    await check(
+      'Edit in the diff opens the whole file',
+      Boolean(editor()) && original.length > 0,
+      box?.textContent?.slice(0, 120) ?? 'no editable file in the diff'
+    )
+    setText(editor(), `${original}\n// quick edit\n`)
+    await key('Escape')
+    await check(
+      'Esc keeps the diff open while an edit is unsaved',
+      Boolean($('.diff-overlay')),
+      `editor ${editor()?.value.length ?? 'gone'} chars (was ${original.length}), editors on page ${$$('.diff-edit-textarea').length}`
+    )
+    await click(byText('.diff-edit-actions button', 'Save'))
+    await check(
+      'Save writes it and offers Commit & push',
+      await until(() => Boolean(byText('.diff-overlay-actions button', 'Commit & push')), 3000)
+    )
+    await click(byText('.diff-overlay-actions button', 'Commit & push'))
+    await check(
+      'Commit & push asks for a message first',
+      (await until(
+        () => Boolean($('.diff-commit-bar input[aria-label="Commit message"]')),
+        2000
+      )) && Boolean($<HTMLButtonElement>('.diff-commit-bar button[type="submit"]')?.disabled)
+    )
+    await click(byText('.diff-commit-bar button', 'Cancel'))
+    // Put the file back.
+    await click([...(box?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Edit'))
+    await until(() => Boolean(editor()), 3000)
+    setText(editor(), original)
+    await click(byText('.diff-edit-actions button', 'Save'))
+    await until(() => !editor(), 3000)
+    await key('Escape')
+    await until(() => !$('.diff-overlay'), 2000)
+  }
+
   // Ship on a branch whose pull request is already open: the PR and what to
   // do with it, not a form that fails with "already exists".
   {

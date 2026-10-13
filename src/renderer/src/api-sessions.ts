@@ -51,6 +51,15 @@ export function pushSessionBranch(id: string): Promise<ShipResult> {
   return window.api.invoke<ShipResult>('sessions:push', id)
 }
 
+/** Commits the files edited in the diff view, then pushes the session's branch. */
+export function commitAndPushSessionFiles(
+  id: string,
+  paths: string[],
+  message: string
+): Promise<ShipResult> {
+  return window.api.invoke<ShipResult>('sessions:commitPush', id, paths, message)
+}
+
 /** Takes a draft pull request out of draft. */
 export function markPullRequestReady(id: string, prNumber: number): Promise<ShipResult> {
   return window.api.invoke<ShipResult>('sessions:prReady', id, prNumber)

@@ -67,6 +67,27 @@ export async function pushAndCreatePr(
 
 const isFixture = (): boolean => !app.isPackaged && Boolean(process.env.CR_SHIP_FIXTURE)
 
+/**
+ * A small fix made by hand in the diff view: commit just the files you edited
+ * there, then push. Only those paths go in, so whatever the agent has left
+ * uncommitted elsewhere stays out of your commit.
+ */
+export async function commitPathsAndPush(
+  worktreePath: string,
+  branch: string,
+  paths: string[],
+  message: string
+): Promise<ShipResult> {
+  if (isFixture()) return { ok: true }
+  const add = await run('git', ['-C', worktreePath, 'add', '--', ...paths])
+  if (add.code !== 0) return { ok: false, error: add.stderr.trim() || 'git add failed' }
+  const commit = await run('git', ['-C', worktreePath, 'commit', '-m', message, '--', ...paths])
+  if (commit.code !== 0) {
+    return { ok: false, error: (commit.stderr || commit.stdout).trim() || 'git commit failed' }
+  }
+  return pushBranch(worktreePath, branch)
+}
+
 /** `git push -u origin <branch>`: a new branch, or new commits for its open pull request. */
 export async function pushBranch(worktreePath: string, branch: string): Promise<ShipResult> {
   if (isFixture()) return { ok: true }

@@ -242,3 +242,129 @@
   color: var(--text-muted);
   font-size: var(--text-caption-size);
 }
+
+/* ---- Quick edits: fix a line without a prompt ----
+   The file's header row holds its toggle and, beside it, Edit. Edit swaps
+   the patch for the whole file in a plain editor; Save writes it to the
+   session's worktree. */
+.diff-file-head {
+  display: flex;
+  align-items: center;
+  padding-right: var(--space-8);
+}
+
+.diff-file-head:hover {
+  background: var(--surface-raised);
+}
+
+.diff-file-head .diff-file-header {
+  flex: 1;
+  min-width: 0;
+}
+
+.diff-file-head .diff-file-header:hover {
+  background: transparent;
+}
+
+.diff-edit {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.diff-edit-textarea {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  padding: var(--space-8) var(--space-16);
+  border: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+}
+
+.diff-edit-textarea:focus {
+  outline: none;
+}
+
+.diff-edit-textarea:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.diff-edit-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-16);
+  border-top: 1px solid var(--border);
+}
+
+.diff-edit-hint {
+  flex: 1;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.diff-edit-error,
+.diff-commit-result--error {
+  color: var(--status-error);
+}
+
+.diff-edit-error {
+  margin: 0;
+  padding: var(--space-8) var(--space-16);
+  font-size: var(--text-caption-size);
+}
+
+/* Commit & push: a message, the files it covers, and go. Sits under the
+   header so the diff it describes stays in view. */
+.diff-commit-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-16) var(--space-8) var(--space-24);
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-commit-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--text-body-size);
+}
+
+.diff-commit-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.diff-commit-files {
+  max-width: 30%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.diff-commit-result {
+  margin: 0;
+  padding: var(--space-8) var(--space-24);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}

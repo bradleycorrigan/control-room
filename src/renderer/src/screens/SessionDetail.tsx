@@ -780,6 +780,7 @@ export default function SessionDetail({
       {session.record && (
         <DiffOverlay
           sessionId={session.record.id}
+          projectId={session.record.projectId}
           open={diffOpen}
           onClose={() => {
             setDiffOpen(false)
