@@ -255,6 +255,8 @@ export default function SessionDetail({
   // until we know, rather than flashing the control in and out.
   const [rawCommitsAhead, setRawCommitsAhead] = useState<boolean | undefined>(undefined)
   const recordId = session.record?.id
+  // Bumped when the diff closes: a commit made there can be the first one.
+  const [shipCheck, setShipCheck] = useState(0)
   useEffect(() => {
     if (!recordId || session.record?.investigation) return
     let cancelled = false
@@ -267,8 +269,11 @@ export default function SessionDetail({
     // Keyed on the record's id, not the object — sessions:changed replaces
     // session.record on every push, which would otherwise re-run merge-base,
     // git log and git diff --numstat on every status/transcript update.
+    // Checked again when the agent finishes a turn or changes status, since
+    // that's when its commits land: checked only on open, Ship stayed hidden
+    // until you left the session and came back.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recordId])
+  }, [recordId, session.status, session.activityAt, shipCheck])
   const hasCommitsAhead =
     !!session.record && !session.record.investigation && rawCommitsAhead === true
 
@@ -784,6 +789,7 @@ export default function SessionDetail({
           open={diffOpen}
           onClose={() => {
             setDiffOpen(false)
+            setShipCheck((n) => n + 1)
             // "View diff" from the Ship panel hides the panel to show the
             // diff on top of it (neither uses a portal, so they'd otherwise
             // share a layer and the panel — opened later — would win).
