@@ -89,15 +89,15 @@
   flex: 0 0 auto;
   /* 56px tall with a single baseline of items, plan 3 section 2.1. */
   height: 56px;
-  display: flex;
+  /* Three columns, the outer two equal, so the search sits on the window's
+     centre line. Centred between the nav and the icons instead, it drifted
+     right, by half the difference between the two groups' widths. An outer
+     column only grows past its share when its content needs the room. */
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, 560px) minmax(max-content, 1fr);
   align-items: center;
-  gap: var(--space-8);
+  column-gap: var(--space-32);
   padding: 0 var(--space-8);
-  /* Room for the traffic lights, which sit inset in the top-left corner
-     under titleBarStyle: 'hiddenInset' — macOS needs ~78px of clearance for
-     them; 88px is the floor (plan 5), so the draggable region never swallows
-     the Projects | Sessions control sitting right after it. */
-  padding-left: 88px;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
@@ -116,24 +116,25 @@
 }
 
 .app-titlebar-left {
-  flex: 0 0 auto;
   display: flex;
   justify-content: flex-start;
   align-items: center;
+  /* Room for the traffic lights, which sit inset in the top-left corner
+     under titleBarStyle: 'hiddenInset' — macOS needs ~78px of clearance for
+     them; 88px is the floor (plan 5), so the draggable region never swallows
+     the Projects | Sessions control sitting right after it. Here rather than
+     on the bar, so both outer columns start from the same inset and the
+     middle one stays centred on the window. */
+  padding-left: calc(88px - var(--space-8));
 }
 
 .app-titlebar-center {
-  flex: 1;
   display: flex;
   justify-content: center;
   min-width: 0;
-  /* The same space on both sides of the search, so it sits evenly between
-     the nav and the icons, whatever each group's width. */
-  padding: 0 var(--space-32);
 }
 
 .app-titlebar-right {
-  flex: 0 0 auto;
   display: flex;
   justify-content: flex-end;
   align-items: center;
