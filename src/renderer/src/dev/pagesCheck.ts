@@ -2530,7 +2530,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       await click(copy)
       await check(
         'each file in the diff copies its name, not its path',
-        copy?.getAttribute('aria-label') === `Copy ${fileName}` &&
+        copy?.getAttribute('aria-label') === `Copy ${fileName.replace(/(.)\.[^.]*$/, '$1')}` &&
           fileName !== '' &&
           (await until(() => Boolean(copy?.querySelector('.lucide-check')), 2000)),
         `path "${fullPath}", button "${copy?.getAttribute('aria-label')}"`

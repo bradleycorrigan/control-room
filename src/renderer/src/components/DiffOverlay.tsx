@@ -189,6 +189,11 @@ function FileBox({
   const slash = path.lastIndexOf('/')
   const dir = slash === -1 ? '' : path.slice(0, slash + 1)
   const name = slash === -1 ? path : path.slice(slash + 1)
+  // What Copy puts on the clipboard: the name without its extension, as you'd
+  // type it to refer to a model ("donations", not "donations.sql"). A dotfile
+  // such as ".cursor" keeps its name.
+  const dot = name.lastIndexOf('.')
+  const stem = dot > 0 ? name.slice(0, dot) : name
 
   return (
     <div className="diff-file">
@@ -212,12 +217,12 @@ function FileBox({
         </button>
         <IconButton
           icon={copied ? 'Check' : 'Copy'}
-          label={`Copy ${name}`}
+          label={`Copy ${stem}`}
           tooltip={copied ? 'Copied' : 'Copy file name'}
           size={28}
           className="diff-file-copy"
           onClick={() =>
-            void copyText(name).then((r) => {
+            void copyText(stem).then((r) => {
               if (r.ok) setCopied(true)
             })
           }
