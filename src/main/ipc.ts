@@ -1,6 +1,6 @@
 import { ipcMain, dialog, BrowserWindow, shell, app, clipboard } from 'electron'
-import { existsSync } from 'node:fs'
-import { basename } from 'node:path'
+import { existsSync, promises as fsp } from 'node:fs'
+import { basename, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import parseDiff from 'parse-diff'
 import {
@@ -75,6 +75,7 @@ import {
   isWithinRoots,
   listFileTree,
   readProjectFile,
+  type ReadFileResult,
   writeProjectFile,
   searchProjectFiles
 } from './exec/files'
@@ -1018,6 +1019,38 @@ export function registerIpcHandlers(): void {
   // Rules tab (plan 3, section 2.7). rules:append is the only automatic
   // edit CLAUDE.md allows — append-only, always behind a timestamped
   // backup (exec/rules.ts), never a rewrite.
+
+  // The whole text of one skill (its SKILL.md) or rule file, to read in the
+  // app. The renderer sends back a path skills:list or rules:list gave it;
+  // it's read only if listing again still returns it, so nothing else on
+  // disk is reachable this way. Capped, and returned as plain text for the
+  // renderer to escape.
+  const readListedText = async (file: string): Promise<ReadFileResult> => {
+    try {
+      const stat = await fsp.stat(file)
+      if (!stat.isFile()) return { ok: false, error: 'not a file' }
+      if (stat.size > 512 * 1024) return { ok: false, error: 'file is too large to show' }
+      return { ok: true, content: await fsp.readFile(file, 'utf8') }
+    } catch (err) {
+      return { ok: false, error: String(err) }
+    }
+  }
+
+  ipcMain.handle('skills:read', async (_evt, projectId: string | undefined, skillDir: string) => {
+    const project = projectId ? getState().projects.find((p) => p.id === projectId) : undefined
+    const listed = listSkills(project?.repoPath ?? null).find((s) => s.path === skillDir)
+    if (!listed) return { ok: false, error: 'skill not found' }
+    return readListedText(join(listed.path, 'SKILL.md'))
+  })
+
+  ipcMain.handle('rules:read', async (_evt, projectId: string | undefined, rulePath: string) => {
+    const project = projectId ? getState().projects.find((p) => p.id === projectId) : undefined
+    const listed = (await listRules(project?.repoPath ?? null)).find(
+      (r) => r.path === rulePath && r.exists
+    )
+    if (!listed) return { ok: false, error: 'rule file not found' }
+    return readListedText(listed.path)
+  })
 
   ipcMain.handle('rules:list', async (_evt, projectId?: string) => {
     const project = projectId ? getState().projects.find((p) => p.id === projectId) : undefined

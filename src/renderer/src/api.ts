@@ -635,6 +635,16 @@ export interface RuleInfo {
   relPath?: string
 }
 
+/** A skill's SKILL.md, whole, to read in the app. `skillDir` is the path skills:list returned. */
+export function readSkill(projectId: string, skillDir: string): Promise<ReadFileResult> {
+  return window.api.invoke<ReadFileResult>('skills:read', projectId, skillDir)
+}
+
+/** A rule file, whole, to read in the app. `rulePath` is the path rules:list returned. */
+export function readRule(projectId: string, rulePath: string): Promise<ReadFileResult> {
+  return window.api.invoke<ReadFileResult>('rules:read', projectId, rulePath)
+}
+
 export function listRules(projectId?: string): Promise<RuleInfo[]> {
   return window.api.invoke<RuleInfo[]>('rules:list', projectId)
 }

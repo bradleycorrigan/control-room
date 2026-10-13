@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { listRules, restoreRuleBackup, type RuleInfo } from '../../api'
+import { listRules, readRule, restoreRuleBackup, type RuleInfo } from '../../api'
 import { requestOpenFile } from './openFileBus'
 import AddRuleDialog from '../../components/AddRuleDialog'
+import DocReader from '../../components/DocReader'
+import './doc-rows.css'
 import type { ToastAction } from '../../state/useToasts'
 import './RulesTab.css'
 
@@ -27,6 +29,7 @@ export default function RulesTab({ projectId, pushToast }: Props): React.JSX.Ele
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAddRule, setShowAddRule] = useState(false)
+  const [reading, setReading] = useState<RuleInfo | null>(null)
 
   const reload = useCallback(() => {
     let cancelled = false
@@ -108,11 +111,34 @@ export default function RulesTab({ projectId, pushToast }: Props): React.JSX.Ele
       )}
 
       {!loading && !error && rules.length > 0 && (
-        <div className="rules-tab-grid">
+        <div className="doc-rows">
           {rules.map((rule) => (
-            <RuleCard key={`${rule.scope}:${rule.path}`} rule={rule} projectId={projectId} />
+            <RuleRow
+              key={`${rule.scope}:${rule.path}`}
+              rule={rule}
+              onOpen={() => setReading(rule)}
+            />
           ))}
         </div>
+      )}
+
+      {reading && (
+        <DocReader
+          key={reading.path}
+          title={appliesToLabel(reading)}
+          location={tildify(reading.path)}
+          load={() => readRule(projectId, reading.path)}
+          onOpenInFiles={
+            reading.relPath !== undefined
+              ? () => {
+                  const relPath = reading.relPath!
+                  setReading(null)
+                  requestOpenFile(projectId, relPath)
+                }
+              : undefined
+          }
+          onClose={() => setReading(null)}
+        />
       )}
     </div>
   )
@@ -126,65 +152,43 @@ function appliesToLabel(rule: RuleInfo): string {
   return `Applies to ${rule.dir}/`
 }
 
-function RuleCard({ rule, projectId }: { rule: RuleInfo; projectId: string }): React.JSX.Element {
-  const scopeLabel = rule.scope === 'global' ? 'Global' : 'Project'
+/** A path for display only: the home directory as ~. The renderer never acts on it. */
+function tildify(p: string): string {
+  return p.replace(/^\/Users\/[^/]+/, '~')
+}
 
-  // Only a project-scope file that actually exists can be opened — the
-  // global file sits outside every registered project (files.ts's own
-  // boundary; the Files editor can't reach it), and there is nothing to
-  // edit for a "not created" placeholder either way.
-  const canOpen = rule.exists && rule.relPath !== undefined
-
-  const openInFiles = (): void => {
-    if (canOpen) requestOpenFile(projectId, rule.relPath!)
-  }
-
+/** One rule file: what it governs, where it is, and its scope. Not created yet: shown, not opened. */
+function RuleRow({ rule, onOpen }: { rule: RuleInfo; onOpen: () => void }): React.JSX.Element {
+  const canOpen = rule.exists
   return (
     <div
-      className={'rules-tab-card' + (rule.exists ? '' : ' rules-tab-card-missing')}
+      className={canOpen ? 'doc-row' : 'doc-row doc-row--inert'}
       role={canOpen ? 'button' : undefined}
       tabIndex={canOpen ? 0 : undefined}
-      onClick={canOpen ? openInFiles : undefined}
+      data-rule={rule.scope}
+      onClick={canOpen ? onOpen : undefined}
       onKeyDown={
         canOpen
           ? (e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
-                openInFiles()
+                onOpen()
               }
             }
           : undefined
       }
-      aria-label={
-        canOpen
-          ? `Open ${rule.path} in the Files editor`
-          : rule.exists
-            ? rule.path
-            : `${rule.path}, not created`
-      }
+      aria-label={canOpen ? `Read ${rule.path}` : `${rule.path}, not created`}
     >
-      <div className="rules-tab-card-header">
-        <span
-          className={
-            'rules-tab-scope-badge ' +
-            (rule.scope === 'global'
-              ? 'rules-tab-scope-badge-global'
-              : 'rules-tab-scope-badge-project')
-          }
-        >
-          {scopeLabel}
-        </span>
-        <span
-          className={
-            'rules-tab-exists-word ' +
-            (rule.exists ? 'rules-tab-exists-word-yes' : 'rules-tab-exists-word-no')
-          }
-        >
-          {rule.exists ? 'exists' : 'not created'}
+      <div className="doc-row-main">
+        <span className="doc-row-title">{appliesToLabel(rule)}</span>
+        <span className="doc-row-sub doc-row-sub--path" title={rule.path}>
+          {tildify(rule.path)}
         </span>
       </div>
-      <span className="rules-tab-applies-to">{appliesToLabel(rule)}</span>
-      <span className="rules-tab-card-path">{rule.path}</span>
+      <div className="doc-row-meta">
+        <span>{rule.scope === 'global' ? 'Global' : 'Project'}</span>
+        {!rule.exists && <span>Not created</span>}
+      </div>
     </div>
   )
 }

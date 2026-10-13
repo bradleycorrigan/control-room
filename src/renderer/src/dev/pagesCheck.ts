@@ -3394,6 +3394,56 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     await key('Escape')
   }
 
+  // ---- Skills and rules: rows that open a reader ----
+  // Full-width rows, like sessions and projects, not square tiles. Clicking
+  // one opens the whole file to read, global ones included.
+  {
+    await ctx.goTo('home')
+    await wait(300)
+    await key('1', ['meta', 'shift'])
+    await until(() => Boolean($('.projects-list-screen')), 3000)
+    await click(
+      $$('.project-row-name')
+        .find((el) => el.textContent?.trim() === 'fixture-project')
+        ?.closest<HTMLElement>('.project-row-card') ?? null
+    )
+    await until(() => Boolean($('.project-detail')), 3000)
+    const tab = (name: string): HTMLElement | undefined =>
+      $$<HTMLElement>('.project-detail button, .project-detail [role="tab"]').find(
+        (b) => b.textContent?.trim() === name
+      )
+    for (const [name, rowSel] of [
+      ['Rules', '[data-rule]'],
+      ['Skills', '[data-skill]']
+    ] as const) {
+      await click(tab(name))
+      await until(() => $$(`.doc-row${rowSel}`).length > 0, 5000)
+      const rows = $$<HTMLElement>(`.doc-row${rowSel}`)
+      const list = rows[0]?.parentElement
+      await check(
+        `${name} show as full-width rows`,
+        rows.length > 0 &&
+          Boolean(list) &&
+          Math.abs(rows[0].getBoundingClientRect().width - list!.getBoundingClientRect().width) < 2,
+        `${rows.length} rows`
+      )
+      const openable = rows.find((r) => r.getAttribute('role') === 'button')
+      await click(openable ?? null)
+      await check(
+        `clicking a ${name === 'Rules' ? 'rule' : 'skill'} opens it to read in full`,
+        await until(
+          () =>
+            Boolean($('.doc-reader .md-text')) ||
+            Boolean($('.doc-reader .doc-reader-muted')?.textContent?.includes('empty')),
+          4000
+        ),
+        $('.doc-reader')?.textContent?.slice(0, 160) ?? 'no reader opened'
+      )
+      await key('Escape')
+      await until(() => !$('.doc-reader'), 2000)
+    }
+  }
+
   // ---- Ship ticks ----
   // Each Ship step's number turns into a tick once it's done. The Ready
   // session's branch has an open pull request, so linking it to DSD-101 (a

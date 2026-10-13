@@ -545,6 +545,14 @@ function App(): React.JSX.Element {
     })
     registerShotScreen('project-detail-skills', () => landOnProjectDetail('skills'))
     registerShotScreen('project-detail-rules', () => landOnProjectDetail('rules'))
+    registerShotScreen('project-detail-skill-reader', async () => {
+      await landOnProjectDetail('skills')
+      for (let i = 0; i < 40 && !document.querySelector('.doc-row'); i++) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+      document.querySelector<HTMLElement>('.doc-row[role="button"]')?.click()
+      await new Promise((resolve) => setTimeout(resolve, 400))
+    })
     registerShotScreen('project-detail-cli', () => landOnProjectDetail('overview', 'cli'))
     registerShotScreen('sessions', () => {
       setView('sessions')

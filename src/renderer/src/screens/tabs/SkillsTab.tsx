@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { listProjects, listSkills, type SkillInfo } from '../../api'
+import { listProjects, listSkills, readSkill, type SkillInfo } from '../../api'
 import { requestOpenFile } from './openFileBus'
 import NewSkillDialog from '../../components/NewSkillDialog'
+import DocReader from '../../components/DocReader'
+import './doc-rows.css'
 import type { ToastAction } from '../../state/useToasts'
 import './SkillsTab.css'
 
@@ -12,10 +14,10 @@ interface Props {
 
 type ScopeFilter = 'all' | 'global' | 'project'
 
-// Read-only cards from ~/.claude/skills/, <project>/.claude/skills/ and
-// plugin skill directories (plan 2.2, Skills paragraph). skills:list is the
-// only handler for this tab — there is no editor and no write action here.
-// Clicking a card opens its SKILL.md in the Files tab via the openFileBus
+// Read-only rows from ~/.claude/skills/, <project>/.claude/skills/ and
+// plugin skill directories (plan 2.2, Skills paragraph). Clicking a row opens
+// its SKILL.md in a reader (skills:read), global skills included; from there,
+// a project skill's "Open in Files" goes to the editor via the openFileBus
 // (FilesTab subscribes to that itself).
 //
 // skills:list hands back each skill's real, absolute filesystem path
@@ -51,6 +53,7 @@ export default function SkillsTab({ projectId, pushToast }: Props): React.JSX.El
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all')
   const [repoPath, setRepoPath] = useState<string | null>(null)
   const [showNewSkill, setShowNewSkill] = useState(false)
+  const [reading, setReading] = useState<SkillInfo | null>(null)
 
   const reload = useCallback(() => {
     let cancelled = false
@@ -160,19 +163,39 @@ export default function SkillsTab({ projectId, pushToast }: Props): React.JSX.El
       )}
 
       {!loading && !error && filtered.length > 0 && (
-        <div className="skills-tab-grid">
+        <div className="doc-rows">
           {filtered.map((skill) => (
-            <SkillCard
+            <SkillRow
               key={`${skill.scope}:${skill.path}`}
               skill={skill}
-              projectId={projectId}
-              relPath={
-                skill.scope === 'project' ? toProjectRelativePath(repoPath, skill.path) : null
-              }
+              onOpen={() => setReading(skill)}
             />
           ))}
         </div>
       )}
+
+      {reading &&
+        (() => {
+          const relPath =
+            reading.scope === 'project' ? toProjectRelativePath(repoPath, reading.path) : null
+          return (
+            <DocReader
+              key={reading.path}
+              title={reading.name}
+              location={`${tildify(reading.path)}/SKILL.md`}
+              load={() => readSkill(projectId, reading.path)}
+              onOpenInFiles={
+                relPath
+                  ? () => {
+                      setReading(null)
+                      requestOpenFile(projectId, relPath)
+                    }
+                  : undefined
+              }
+              onClose={() => setReading(null)}
+            />
+          )
+        })()}
     </div>
   )
 }
@@ -198,81 +221,41 @@ function FilterPill({
   )
 }
 
-/**
- * Where an unopenable skill lives, in as few characters as carry the meaning.
- *
- * Every global card used to end with "Global skill — outside this project,
- * open it at /Users/<you>/.claude/skills/<name>": three wrapped lines that
- * repeated the GLOBAL badge, repeated the skill's own name, and put the same
- * home directory on every card in the grid. The badge says the scope and the
- * heading says the name, so all that is left to say is the folder.
- */
-function locationOf(skill: SkillInfo): string {
-  // The renderer never learns the home directory — it only ever displays these
-  // paths, so tildifying by pattern is honest here in a way acting on the path
-  // would not be.
-  const dir = skill.path.replace(/\/[^/]+$/, '').replace(/^\/Users\/[^/]+/, '~')
-  return dir
+/** A path for display only: the home directory as ~. The renderer never acts on it. */
+function tildify(p: string): string {
+  return p.replace(/^\/Users\/[^/]+/, '~')
 }
 
-function SkillCard({
-  skill,
-  projectId,
-  relPath
-}: {
-  skill: SkillInfo
-  projectId: string
-  // The project-relative path to open this skill's SKILL.md at, or null
-  // when it can't be expressed that way (every global skill, and a
-  // project skill whose repoPath lookup hasn't resolved yet or failed).
-  relPath: string | null
-}): React.JSX.Element {
-  const scopeLabel = skill.scope === 'global' ? 'Global' : 'Project'
+/** One skill: its name and what it's for, then where it comes from and how big it is. */
+function SkillRow({ skill, onOpen }: { skill: SkillInfo; onOpen: () => void }): React.JSX.Element {
   const fileCountLabel = skill.fileCount === 1 ? '1 file' : `${skill.fileCount} files`
-  const canOpen = relPath !== null
-
-  const openInFiles = (): void => {
-    if (relPath !== null) requestOpenFile(projectId, relPath)
-  }
-
   return (
     <div
-      className={'skills-tab-card' + (canOpen ? '' : ' skills-tab-card-unopenable')}
-      role={canOpen ? 'button' : undefined}
-      tabIndex={canOpen ? 0 : undefined}
-      onClick={canOpen ? openInFiles : undefined}
-      onKeyDown={
-        canOpen
-          ? (e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault()
-                openInFiles()
-              }
-            }
-          : undefined
-      }
-      aria-label={
-        canOpen
-          ? `Open ${skill.name} in the Files editor`
-          : `${skill.name}, cannot be opened from here`
-      }
+      className="doc-row"
+      role="button"
+      tabIndex={0}
+      data-skill={skill.name}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpen()
+        }
+      }}
+      aria-label={`Read ${skill.name}`}
     >
-      <div className="skills-tab-card-header">
-        <span className="skills-tab-card-name">{skill.name}</span>
-        <span
-          className={
-            'skills-tab-scope-badge ' +
-            (skill.scope === 'global'
-              ? 'skills-tab-scope-badge-global'
-              : 'skills-tab-scope-badge-project')
-          }
-        >
-          {scopeLabel}
-        </span>
+      <div className="doc-row-main">
+        <span className="doc-row-title">{skill.name}</span>
+        {skill.description && (
+          <span className="doc-row-sub" title={skill.description}>
+            {skill.description}
+          </span>
+        )}
       </div>
-      {skill.description && <p className="skills-tab-card-description">{skill.description}</p>}
-      <span className="skills-tab-card-filecount">{fileCountLabel}</span>
-      {!canOpen && <span className="skills-tab-card-location">{locationOf(skill)}</span>}
+      <div className="doc-row-meta">
+        <span>{skill.scope === 'global' ? 'Global' : 'Project'}</span>
+        <span>{fileCountLabel}</span>
+      </div>
     </div>
   )
 }
