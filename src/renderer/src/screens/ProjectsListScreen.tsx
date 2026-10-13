@@ -29,68 +29,13 @@ function isLive(status: LiveSession['status']): boolean {
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
 
-/** Seven squares, oldest first, ending today, shaded by how many commits landed that day. */
-function ActivityStrip({ activity }: { activity: number[] }): React.JSX.Element {
-  const today = new Date()
-  const total = activity.reduce((sum, n) => sum + n, 0)
-  return (
-    <div
-      className="project-activity"
-      role="img"
-      aria-label={
-        total === 0
-          ? 'No commits in the last 7 days'
-          : `${plural(total, 'commit', 'commits')} in the last 7 days`
-      }
-    >
-      {/* What the squares are, in words: a commit count for each of the last
-          seven days, today last. */}
-      <span className="project-activity-total">
-        {total === 0 ? 'No commits this week' : `${plural(total, 'commit', 'commits')} this week`}
-      </span>
-      <span className="project-activity-days">
-        {activity.map((count, i) => {
-          const day = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6 + i)
-          const weekday = day.toLocaleDateString('en-US', { weekday: 'short' })
-          // One commit reads faint, eight or more at full strength.
-          const mix = count === 0 ? null : `${Math.round(30 + (70 * Math.min(count, 8)) / 8)}%`
-          return (
-            <span key={i} className="project-activity-col">
-              <span
-                className={
-                  i === 6
-                    ? 'project-activity-day project-activity-day--today'
-                    : 'project-activity-day'
-                }
-                data-count={count}
-                title={`${plural(count, 'commit', 'commits')} ${i === 6 ? 'today' : `on ${weekday}`}`}
-                style={mix ? ({ '--activity-mix': mix } as React.CSSProperties) : undefined}
-              />
-              <span
-                className={
-                  i === 6
-                    ? 'project-activity-letter project-activity-letter--today'
-                    : 'project-activity-letter'
-                }
-                aria-hidden
-              >
-                {weekday.slice(0, 1)}
-              </span>
-            </span>
-          )
-        })}
-      </span>
-    </div>
-  )
-}
-
 function TidyStrip({
   tidy,
   onCleanUp
 }: {
   tidy: ProjectTidy
   onCleanUp: () => void
-}): React.JSX.Element {
+}): React.JSX.Element | null {
   const counts = [
     tidy.openPrs > 0 && plural(tidy.openPrs, 'open PR', 'open PRs'),
     tidy.neverPushed > 0 &&
@@ -98,31 +43,27 @@ function TidyStrip({
     tidy.idleWorktrees > 0 &&
       plural(tidy.idleWorktrees, 'worktree idle 2+ weeks', 'worktrees idle 2+ weeks')
   ].filter((c): c is string => Boolean(c))
+  if (counts.length === 0) return null
   return (
-    <div className="project-row-strip">
-      <ActivityStrip activity={tidy.activity} />
-      {counts.length > 0 && (
-        <div className="project-tidy">
-          {counts.map((c) => (
-            <span key={c} className="project-tidy-count">
-              {c}
-            </span>
-          ))}
-          <Button
-            variant="ghost"
-            size="compact"
-            className="project-tidy-clean"
-            onClick={(e) => {
-              // The whole card opens the project; this opens the dialog instead.
-              e.stopPropagation()
-              onCleanUp()
-            }}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
-            Clean up
-          </Button>
-        </div>
-      )}
+    <div className="project-row-strip project-tidy">
+      {counts.map((c) => (
+        <span key={c} className="project-tidy-count">
+          {c}
+        </span>
+      ))}
+      <Button
+        variant="ghost"
+        size="compact"
+        className="project-tidy-clean"
+        onClick={(e) => {
+          // The whole card opens the project; this opens the dialog instead.
+          e.stopPropagation()
+          onCleanUp()
+        }}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        Clean up
+      </Button>
     </div>
   )
 }

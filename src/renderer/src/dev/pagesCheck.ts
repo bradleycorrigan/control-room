@@ -2973,8 +2973,8 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   }
 
   // ---- Projects tidy ----
-  // Each project row loads a 7-day activity strip and, when anything is left
-  // lying around, a tidy-up strip ending in "Clean up" (projects:tidy, loaded
+  // When anything is left lying around, each project row loads a tidy-up
+  // strip ending in "Clean up" (projects:tidy, loaded
   // lazily after the list renders). The fixture's worktree branches are never
   // pushed, so its row should show at least that count.
   {
@@ -2998,27 +2998,16 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       $$('.project-row-name')
         .find((el) => el.textContent?.trim() === 'fixture-project')
         ?.closest<HTMLElement>('.project-row-card') ?? null
-    const days = (): HTMLElement[] => [
-      ...(fixtureCard()?.querySelectorAll<HTMLElement>('.project-activity-day') ?? [])
-    ]
-    await check(
-      'the fixture project row shows a 7-day activity strip',
-      await until(() => days().length === 7, 20000),
-      `${days().length} squares`
-    )
-    await check(
-      'each activity square names its day on hover (3 commits on Tue)',
-      days().length === 7 &&
-        days().every((d) => /^\d+ commits? (on [A-Z][a-z]{2}|today)$/.test(d.title)),
-      days()
-        .map((d) => d.title)
-        .join(' | ')
-    )
-
     const counts = (): string[] =>
       [...(fixtureCard()?.querySelectorAll('.project-tidy-count') ?? [])].map(
         (c) => c.textContent?.trim() ?? ''
       )
+    await check(
+      'the fixture project row shows what needs tidying, with no commit-activity strip',
+      (await until(() => counts().length > 0, 20000)) &&
+        !fixtureCard()?.querySelector('.project-activity'),
+      counts().join(' | ') || 'no tidy-up counts'
+    )
     if (counts().length > 0) {
       await check(
         'the tidy-up counts are words, never zero',

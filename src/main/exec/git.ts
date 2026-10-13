@@ -767,27 +767,6 @@ export async function resolveRemoteBranch(
 // Projects list tidy-up strip ('projects:tidy' in ipc.ts).
 
 /**
- * Commit times (epoch ms) across every ref in the repo since `days` ago —
- * one `git log --all`, so each commit counts once however many branches hold
- * it. Empty on any failure.
- */
-export async function commitTimesSince(repoPath: string, days: number): Promise<number[]> {
-  const res = await run('git', [
-    '-C',
-    repoPath,
-    'log',
-    `--since=${days}.days`,
-    '--format=%ct',
-    '--all'
-  ])
-  if (res.code !== 0) return []
-  return res.stdout
-    .split('\n')
-    .map((line) => Number(line.trim()) * 1000)
-    .filter((ms) => Number.isFinite(ms) && ms > 0)
-}
-
-/**
  * Whether `origin/<branch>` exists locally. A branch pushed without `-u` has
  * no upstream set, but it has still been pushed — this catches that case.
  */

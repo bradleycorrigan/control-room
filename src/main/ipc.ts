@@ -69,7 +69,6 @@ import {
   getDefaultBranch,
   prStatesForBranches,
   lastCommitTime,
-  commitTimesSince,
   remoteTrackingRefExists
 } from './exec/git'
 import {
@@ -173,15 +172,12 @@ function resolveFilesRoot(project: Project, sessionId?: string): string | null {
 
 // ---- Projects list tidy-up strip -----------------------------------------
 // One summary per project for the Projects list: what is left lying around
-// (open PRs, branches never pushed, idle worktrees) and how many commits
-// landed on each of the last seven days.
+// (open PRs, branches never pushed, idle worktrees).
 
 export interface ProjectTidy {
   openPrs: number
   neverPushed: number
   idleWorktrees: number
-  /** Seven local days, oldest first, ending today. */
-  activity: number[]
 }
 
 const TIDY_CACHE_MS = 2 * 60 * 1000
@@ -192,8 +188,7 @@ const tidyInFlight = new Map<string, Promise<ProjectTidy>>()
 const emptyTidy = (): ProjectTidy => ({
   openPrs: 0,
   neverPushed: 0,
-  idleWorktrees: 0,
-  activity: [0, 0, 0, 0, 0, 0, 0]
+  idleWorktrees: 0
 })
 
 /** Runs `fn` over `items`, at most `limit` at a time. */
@@ -214,26 +209,10 @@ async function mapLimit<T, R>(
   return results
 }
 
-/** Buckets commit times into the seven local days ending today, oldest first. */
-function activityByDay(times: number[], now = new Date()): number[] {
-  const starts = Array.from({ length: 7 }, (_, i) =>
-    new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6 + i).getTime()
-  )
-  const counts = [0, 0, 0, 0, 0, 0, 0]
-  for (const t of times) {
-    if (t < starts[0]) continue
-    let day = 6
-    while (day > 0 && t < starts[day]) day--
-    counts[day]++
-  }
-  return counts
-}
-
 async function computeProjectTidy(project: Project): Promise<ProjectTidy> {
-  const [worktrees, prStates, commitTimes] = await Promise.all([
+  const [worktrees, prStates] = await Promise.all([
     listWorktrees(project.repoPath),
-    prStatesForBranches(project.repoPath),
-    commitTimesSince(project.repoPath, 7)
+    prStatesForBranches(project.repoPath)
   ])
   const attached = new Set(getState().sessions.map((s) => s.worktreePath))
   const now = Date.now()
@@ -259,8 +238,7 @@ async function computeProjectTidy(project: Project): Promise<ProjectTidy> {
   return {
     openPrs: perWorktree.filter((w) => w.openPr).length,
     neverPushed: perWorktree.filter((w) => w.neverPushed).length,
-    idleWorktrees: perWorktree.filter((w) => w.idle).length,
-    activity: activityByDay(commitTimes)
+    idleWorktrees: perWorktree.filter((w) => w.idle).length
   }
 }
 

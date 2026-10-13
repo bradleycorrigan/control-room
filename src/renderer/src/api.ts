@@ -72,13 +72,11 @@ export function listProjectWorktrees(projectId: string): Promise<UnattachedWorkt
   return window.api.invoke<UnattachedWorktree[]>('projects:worktrees', projectId)
 }
 
-/** The Projects list's tidy-up strip: what's left lying around, and the last seven days' commits. */
+/** The Projects list's tidy-up strip: what's left lying around. */
 export interface ProjectTidy {
   openPrs: number
   neverPushed: number
   idleWorktrees: number
-  /** Commits per local day, oldest first, ending today. */
-  activity: number[]
 }
 
 /** Cached in main for two minutes; `force` re-reads (after a cleanup). Zeros on any failure. */
