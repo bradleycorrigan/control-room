@@ -354,10 +354,17 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   )
   {
     const data = new DataTransfer()
+    const listHeight = (): number => $('.backlog-list')?.getBoundingClientRect().height ?? 0
+    const before = listHeight()
     row('TEAMDATA-202')?.dispatchEvent(
       new DragEvent('dragstart', { bubbles: true, dataTransfer: data })
     )
     await wait(200)
+    await check(
+      'starting a drag leaves the list where it is, and offers empty groups in the drag bar',
+      listHeight() === before && Boolean($('.backlog-drag-bar [data-drop-chip]')),
+      `list ${before}px -> ${listHeight()}px, ${$$('.backlog-drag-bar [data-drop-chip]').length} chips`
+    )
     const target = sub('TEAMDATA-60', 'In Progress')
     target?.dispatchEvent(
       new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data })
@@ -380,11 +387,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   // every input after it. Checked by hand on 2026-10-07: the drag used to
   // cancel itself at once (dragstart, then dragend) because the drop targets
   // appeared in the same tick; BacklogScreen now shows them a tick later.
-  await check(
-    'after a drop, the empty drop-targets go away again',
-    !byText('.backlog-empty-lane', 'Drop here'),
-    `${$$('.backlog-empty-lane').length} drop targets still showing`
-  )
+  await check('after a drop, the drag bar goes away again', !$('.backlog-drag-bar'))
   {
     // The drop leaves emptied groups holding their place. Collapsing one
     // removes it, as an empty group would anywhere else.

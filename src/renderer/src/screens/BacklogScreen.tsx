@@ -461,7 +461,7 @@ export default function BacklogScreen({
   //
   // Cleared after the drop has been handled, not before: this listener runs
   // first (capture), and React re-renders in the gap before the group's own
-  // drop handler. The empty groups only exist while dragging, so the one
+  // drop handler. The drag bar only exists while dragging, so the chip
   // under the pointer vanished and a drop onto it was lost.
   useEffect(() => {
     const end = (): void => {
@@ -1145,7 +1145,7 @@ export default function BacklogScreen({
     settleKey
   )
   const keptSubLaneIds = useMemo(() => new Set(keptSubLaneOrder), [keptSubLaneOrder])
-  /** A group's sub-groups, when sub-grouping: the non-empty ones, or all while dragging. */
+  /** A group's sub-groups, when sub-grouping: the non-empty ones (and any just emptied). */
   const subLanesFor = useCallback(
     (lane: Lane): Lane[] | null =>
       subGroup
@@ -1154,27 +1154,26 @@ export default function BacklogScreen({
               l.items.length > 0 ||
               (keptSubLaneIds.has(`${lane.id}/${l.id}`) &&
                 !dismissed.has(subLaneId(lane, l)) &&
-                !collapsed.includes(subLaneId(lane, l))) ||
-              (dragging && l.value)
+                !collapsed.includes(subLaneId(lane, l)))
           )
         : null,
-    [groupInto, subGroup, dragging, keptSubLaneIds, dismissed, collapsed]
+    [groupInto, subGroup, keptSubLaneIds, dismissed, collapsed]
   )
 
-  // What the list shows: empty groups only while something is being dragged
-  // (as drop targets), except the two cycle groups, which always show. A
-  // group you just emptied holds its place until the view changes, unless
-  // it's collapsed: then it goes, as an empty group would anywhere else.
+  // What the list shows: groups with tickets, and the cycle groups, which
+  // always show. A group you just emptied holds its place until the view
+  // changes, unless it's collapsed: then it goes, as an empty group would
+  // anywhere else. Empty groups are drop targets in the drag bar instead
+  // (dragTargets): opening them up in the list moved every row mid-drag.
   const shownLanes = useMemo(
     () =>
       lanes.filter(
         (l) =>
           l.items.length > 0 ||
           groupBy === 'cycle' ||
-          (keptLaneIds.has(l.id) && !dismissed.has(l.id) && !collapsed.includes(l.id)) ||
-          (dragging && l.value)
+          (keptLaneIds.has(l.id) && !dismissed.has(l.id) && !collapsed.includes(l.id))
       ),
-    [lanes, groupBy, dragging, keptLaneIds, dismissed, collapsed]
+    [lanes, groupBy, keptLaneIds, dismissed, collapsed]
   )
   const boardLanes = useMemo(
     () =>
@@ -1183,12 +1182,51 @@ export default function BacklogScreen({
       groupBy === 'status'
         ? subGroup
           ? groupInto(visible, subGroup).filter(
-              (l) => l.items.length > 0 || subGroup === 'cycle' || dragging
+              (l) => l.items.length > 0 || subGroup === 'cycle'
             )
           : [{ id: 'all', title: '', items: visible, value: null } as Lane]
-        : lanes.filter((l) => l.items.length > 0 || groupBy === 'cycle' || dragging),
-    [groupBy, subGroup, groupInto, visible, lanes, dragging]
+        : lanes.filter((l) => l.items.length > 0 || groupBy === 'cycle'),
+    [groupBy, subGroup, groupInto, visible, lanes]
   )
+
+  /**
+   * While dragging: the groups that aren't on screen because nothing is in
+   * them, by what they group on. The drag bar offers them, floating over the
+   * list, so the rows under the pointer stay put.
+   */
+  const dragTargets = useMemo((): { by: GroupBy; lanes: Lane[] }[] => {
+    if (!dragging) return []
+    const missing = (by: GroupBy, shown: Lane[]): { by: GroupBy; lanes: Lane[] } => {
+      const ids = new Set(shown.map((l) => l.id))
+      return { by, lanes: groupInto([], by).filter((l) => l.value && !ids.has(l.id)) }
+    }
+    const out =
+      view === 'board'
+        ? groupBy !== 'status'
+          ? [missing(groupBy, boardLanes)]
+          : subGroup
+            ? [missing(subGroup, boardLanes)]
+            : []
+        : [
+            missing(groupBy, shownLanes),
+            // A sub-group counts as missing if any group on screen lacks it.
+            ...(subGroup
+              ? [
+                  {
+                    by: subGroup,
+                    lanes: groupInto([], subGroup).filter(
+                      (sub) =>
+                        sub.value &&
+                        shownLanes.some(
+                          (lane) => !(subLanesFor(lane) ?? []).some((l) => l.id === sub.id)
+                        )
+                    )
+                  }
+                ]
+              : [])
+          ]
+    return out.filter((g) => g.lanes.length > 0)
+  }, [dragging, view, groupBy, subGroup, groupInto, boardLanes, shownLanes, subLanesFor])
 
   // Top-to-bottom order on screen, for stepping through tickets in the panel.
   const order = useMemo(() => {
@@ -2181,7 +2219,7 @@ export default function BacklogScreen({
           openIssue ? 'backlog--peek' : ''
         ].join(' ')}
         onDragStart={(e) => {
-          // Not in the same tick: showing the drop targets moves the rows,
+          // Not in the same tick: showing the drag bar changes the page,
           // and Chromium cancels a drag whose page changes as it starts
           // (dragstart, then dragend at once, and the ticket never moves).
           if ((e.target as HTMLElement).dataset?.issue) setTimeout(() => setDragging(true), 0)
@@ -2190,6 +2228,12 @@ export default function BacklogScreen({
         onDrop={() => setDragging(false)}
       >
         {confirmNode}
+        {dragTargets.length > 0 && (
+          <DragBar
+            groups={dragTargets}
+            onDropIssue={(key, value) => void dropInto(key, [value])}
+          />
+        )}
         {creating && board && (
           <CreateTicket
             projects={status.projects}
@@ -2598,7 +2642,7 @@ export default function BacklogScreen({
                                     ))}
                                   {sub.items.length === 0 && (
                                     <p className="backlog-empty-lane">
-                                      {dragging ? 'Drop here' : 'Nothing left here'}
+                                      Nothing left here
                                     </p>
                                   )}
                                 </DropGroup>
@@ -2623,11 +2667,9 @@ export default function BacklogScreen({
                             ))}
                         {lane.items.length === 0 && (
                           <p className="backlog-empty-lane">
-                            {dragging
-                              ? 'Drop here'
-                              : planning && lane.value?.kind === 'cycle'
-                                ? 'Drag tickets here'
-                                : 'No tickets'}
+                            {planning && lane.value?.kind === 'cycle'
+                              ? 'Drag tickets here'
+                              : 'No tickets'}
                           </p>
                         )}
                       </div>
@@ -2982,6 +3024,62 @@ function DropGroup({
       {extra}
       {children}
     </section>
+  )
+}
+
+/** Where a dragged ticket can go that isn't on screen: empty groups, as chips. */
+function DragBar({
+  groups,
+  onDropIssue
+}: {
+  groups: { by: GroupBy; lanes: Lane[] }[]
+  onDropIssue: (key: string, value: LaneValue) => void
+}): React.JSX.Element {
+  return (
+    <div className="backlog-drag-bar" role="group" aria-label="Drop into an empty group">
+      {groups.map((g) => (
+        <div key={g.by} className="backlog-drag-bar-row">
+          <span className="backlog-drag-bar-label">{GROUP_LABELS[g.by]}</span>
+          {g.lanes.map((lane) => (
+            <DropChip key={lane.id} lane={lane} onDropIssue={onDropIssue} />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DropChip({
+  lane,
+  onDropIssue
+}: {
+  lane: Lane
+  onDropIssue: (key: string, value: LaneValue) => void
+}): React.JSX.Element {
+  const [over, setOver] = useState(false)
+  return (
+    <span
+      className={over ? 'backlog-drop-chip backlog-drop-chip--over' : 'backlog-drop-chip'}
+      data-drop-chip={lane.id}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes(DRAG_TYPE)) return
+        e.stopPropagation()
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        if (!over) setOver(true)
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setOver(false)
+        const key = e.dataTransfer.getData(DRAG_TYPE)
+        if (key) onDropIssue(key, lane.value)
+      }}
+    >
+      <LaneMark lane={lane} />
+      <span className="backlog-group-name">{lane.title}</span>
+    </span>
   )
 }
 
