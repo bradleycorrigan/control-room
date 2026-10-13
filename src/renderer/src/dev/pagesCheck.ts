@@ -462,6 +462,55 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     'tickets without a session offer Start session',
     Boolean(row('DSD-101')?.querySelector('[aria-label="Start session"]'))
   )
+  {
+    // Hover help: every control says what it does. Start session has no
+    // <Tooltip> of its own, so the app-wide fallback has to cover it.
+    const start = row('DSD-101')?.querySelector<HTMLElement>('[aria-label="Start session"]')
+    start?.scrollIntoView({ block: 'center' })
+    const rowRect = row('DSD-101')?.getBoundingClientRect()
+    if (rowRect) {
+      await input({
+        type: 'mouseMove',
+        x: Math.round(rowRect.left + 60),
+        y: Math.round(rowRect.top + rowRect.height / 2)
+      })
+    }
+    await wait(150)
+    const r = start?.getBoundingClientRect()
+    if (r) {
+      await input({
+        type: 'mouseMove',
+        x: Math.round(r.left + r.width / 2),
+        y: Math.round(r.top + r.height / 2)
+      })
+    }
+    await check(
+      'hovering a button with no tooltip of its own still says what it does',
+      await until(
+        () => ($('[data-hover-help]')?.textContent ?? '') === 'Start a session on this ticket',
+        2000
+      ),
+      $('[data-hover-help]')?.textContent ?? 'no hover text'
+    )
+    await input({ type: 'mouseMove', x: 5, y: Math.round(window.innerHeight / 2) })
+    // And none is left with nothing to say: a button with no words must
+    // carry a label, a title, or a <Tooltip>.
+    const silent = $$<HTMLElement>('button, [role="button"]').filter(
+      (b) =>
+        !(b.textContent ?? '').trim() &&
+        !b.getAttribute('aria-label') &&
+        !b.getAttribute('title') &&
+        !b.closest('.cr-tooltip-trigger')
+    )
+    await check(
+      'every button on Tickets has words, a label, or a tooltip',
+      silent.length === 0,
+      silent
+        .slice(0, 5)
+        .map((b) => b.outerHTML.slice(0, 120))
+        .join(' | ')
+    )
+  }
 
   await check(
     'rows show status as a glyph, and Slack as its own mono mark',

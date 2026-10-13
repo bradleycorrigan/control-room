@@ -9,6 +9,7 @@ import './screens/modals.css'
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import HoverHelp from './components/HoverHelp'
 import App from './App'
 
 // Anything that slips past a screen's own catch still reaches the app's log,
@@ -32,5 +33,6 @@ window.addEventListener('unhandledrejection', (e) => {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
+    <HoverHelp />
   </StrictMode>
 )
