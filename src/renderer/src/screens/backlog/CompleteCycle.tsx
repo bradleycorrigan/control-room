@@ -3,6 +3,7 @@ import { Button, Modal } from '../../components/primitives'
 import type { JiraIssue, JiraSprint } from '../../api'
 import { Avatar, StatusGlyph } from '../backlogGlyphs'
 import { formatDays, hoursToDays, parseEstimateHours } from './cyclePlan'
+import Select from '../../components/Select'
 
 type Cycle = Pick<JiraSprint, 'id' | 'name' | 'state' | 'startDate' | 'endDate'>
 
@@ -77,7 +78,7 @@ export function CompleteCycle({
         {unfinished.length > 1 && (
           <label className="complete-cycle-all">
             Move all to
-            <select
+            <Select
               aria-label="Move all unfinished tickets to"
               value=""
               onChange={(e) => {
@@ -87,7 +88,7 @@ export function CompleteCycle({
             >
               <option value="">Choose…</option>
               {options}
-            </select>
+            </Select>
           </label>
         )}
 
@@ -101,13 +102,13 @@ export function CompleteCycle({
               </span>
               <span className="complete-cycle-estimate">{i.estimate ?? '–'}</span>
               <Avatar name={i.assignee} size={16} />
-              <select
+              <Select
                 aria-label={`Where ${i.key} goes`}
                 value={dest[i.key]}
                 onChange={(e) => setDest((d) => ({ ...d, [i.key]: e.target.value }))}
               >
                 {options}
-              </select>
+              </Select>
             </div>
           ))}
         </div>

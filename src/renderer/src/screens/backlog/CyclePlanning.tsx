@@ -3,6 +3,7 @@ import { Button } from '../../components/primitives'
 import type { BacklogPrefs, JiraIssue, JiraSprint } from '../../api'
 import { Avatar } from '../backlogGlyphs'
 import { formatDays, hoursToDays, parseEstimateHours, workingDays } from './cyclePlan'
+import Select from '../../components/Select'
 
 // Planning is a mode of the Tickets list, not a screen of its own: the list
 // groups by cycle, and these sit under each cycle's group title. Tickets
@@ -361,7 +362,7 @@ export function PlanningBar({
       <span className="planning-bar-title">
         Planning
         {next ? (
-          <select
+          <Select
             aria-label="Cycle to plan"
             className="planning-bar-pick"
             value={String(next.id)}
@@ -373,7 +374,7 @@ export function PlanningBar({
                 {c.state === 'active' ? ' (current)' : ''}
               </option>
             ))}
-          </select>
+          </Select>
         ) : (
           ' the next cycle'
         )}

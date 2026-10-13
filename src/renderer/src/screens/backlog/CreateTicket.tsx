@@ -8,6 +8,7 @@ import {
   type JiraIssueType
 } from '../../api'
 import { useStoredState } from '../../state/useStoredState'
+import Select from '../../components/Select'
 
 /**
  * New ticket (C). The fields every ticket here needs up front — project,
@@ -123,7 +124,7 @@ export function CreateTicket({
         <div className="backlog-create-row">
           <label className="backlog-field">
             <span>Project</span>
-            <select
+            <Select
               className="backlog-select"
               aria-label="Project"
               value={currentProject}
@@ -134,11 +135,11 @@ export function CreateTicket({
                   {p}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="backlog-field">
             <span>Type</span>
-            <select
+            <Select
               className="backlog-select"
               aria-label="Type"
               value={typeId}
@@ -151,7 +152,7 @@ export function CreateTicket({
                   {t.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
         <label className="backlog-field">
@@ -178,7 +179,7 @@ export function CreateTicket({
         <div className="backlog-create-row">
           <label className="backlog-field">
             <span>Epic</span>
-            <select
+            <Select
               className="backlog-select"
               aria-label="Epic"
               value={parentKey}
@@ -190,11 +191,11 @@ export function CreateTicket({
                   {ep.summary} ({ep.key})
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
           <label className="backlog-field">
             <span>Priority</span>
-            <select
+            <Select
               className="backlog-select"
               aria-label="Priority"
               value={priority}
@@ -205,7 +206,7 @@ export function CreateTicket({
                   {p}
                 </option>
               ))}
-            </select>
+            </Select>
           </label>
         </div>
         <div className="backlog-create-row">
@@ -227,7 +228,7 @@ export function CreateTicket({
           {board.sprints.length > 0 && (
             <label className="backlog-field">
               <span>Cycle</span>
-              <select
+              <Select
                 className="backlog-select"
                 aria-label="Cycle"
                 value={sprintId === null ? '' : String(sprintId)}
@@ -239,7 +240,7 @@ export function CreateTicket({
                     {sp.state === 'active' ? `Current cycle · ${sp.name}` : `${sp.name} · upcoming`}
                   </option>
                 ))}
-              </select>
+              </Select>
             </label>
           )}
         </div>

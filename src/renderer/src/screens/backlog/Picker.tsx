@@ -95,6 +95,7 @@ export function Picker({
             key={o.value}
             type="button"
             role="option"
+            data-value={o.value}
             aria-selected={i === active}
             className={`cr-popover-item backlog-menu-item${i === active ? ' cr-popover-item--active' : ''}`}
             onMouseEnter={() => setActive(i)}

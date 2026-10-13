@@ -135,10 +135,28 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   if ($('[data-filter-chip="done"] button')) await click($('[data-filter-chip="done"] button'))
   const rows = (): HTMLElement[] => $$('.backlog-row')
   const row = (key: string): HTMLElement | undefined => rows().find((r) => r.dataset.issue === key)
-  const setSelect = (el: HTMLSelectElement | null, value: string): void => {
+  // Dropdowns are the app's own (components/Select): open one and click the
+  // option, as you would.
+  const setSelect = async (el: HTMLElement | null, value: string): Promise<void> => {
     if (!el) return
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(el, value)
-    el.dispatchEvent(new Event('change', { bubbles: true }))
+    el.click()
+    await until(() => Boolean($('.backlog-picker [role="option"]')), 1500)
+    $$<HTMLElement>('.backlog-picker [role="option"]')
+      .find((o) => o.dataset.value === value)
+      ?.click()
+    await wait(50)
+  }
+
+  // What a dropdown offers: open it, read its options, close it again.
+  const selectValues = async (el: HTMLElement | null): Promise<string[]> => {
+    if (!el) return []
+    el.click()
+    await until(() => Boolean($('.backlog-picker [role="option"]')), 1500)
+    const values = $$<HTMLElement>('.backlog-picker [role="option"]').map(
+      (o) => o.dataset.value ?? ''
+    )
+    await key('Escape')
+    return values
   }
   const setText = (el: HTMLTextAreaElement | HTMLInputElement | null, value: string): void => {
     if (!el) return
@@ -651,16 +669,16 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     /every run/.test(row('DSD-103')?.textContent ?? ''),
     row('DSD-103')?.querySelector('.backlog-row-summary')?.textContent ?? ''
   )
-  setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Status"]'), 'In Review')
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]'), 'In Review')
   await wait(400)
   await check(
     'the status can be changed',
-    $<HTMLSelectElement>('.backlog-drawer select[aria-label="Status"]')?.value === 'In Review'
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value === 'In Review'
   )
   await click(byText('.backlog-drawer button', 'Assign to me'))
   await wait(300)
   await check('Assign to me assigns it', /Unassign/.test(drawer()?.textContent ?? ''))
-  setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]'), 'Highest')
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]'), 'Highest')
   await wait(400)
   await check(
     'the priority can be changed',
@@ -702,20 +720,20 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         Boolean(row('DSD-103')?.querySelector('[aria-label="Open in Slack"]'))
     )
   )
-  setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Cycle"]'), '1')
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Cycle"]'), '1')
   await wait(400)
   await check(
     'it can be added to the current cycle',
     /honey-buzzard/.test(row('DSD-103')?.textContent ?? '')
   )
-  setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Cycle"]'), '')
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Cycle"]'), '')
   await wait(400)
   await check(
     'and put back in the backlog',
     !/honey-buzzard/.test(row('DSD-103')?.textContent ?? '') &&
-      $<HTMLSelectElement>('.backlog-drawer select[aria-label="Cycle"]')?.value === ''
+      $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Cycle"]')?.dataset.value === ''
   )
-  setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Parent"]'), 'TEAMDATA-50')
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Parent"]'), 'TEAMDATA-50')
   await wait(400)
   await check(
     'a parent epic can be set',
@@ -856,8 +874,8 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       /Why it matters/.test(panelText),
     panelText.slice(0, 160)
   )
-  setSelect(
-    $<HTMLSelectElement>('.backlog-drawer select[aria-label="Link a session"]'),
+  await setSelect(
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Link a session"]'),
     'fixture-rec-working'
   )
   await wait(500)
@@ -1221,22 +1239,24 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   )
 
   // Assignee: anyone, not only you.
-  setSelect(
-    $<HTMLSelectElement>('.backlog-drawer select[aria-label="Assignee"]'),
+  await setSelect(
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Assignee"]'),
     'fixture-someone'
   )
   await check(
     'a ticket can be assigned to someone else',
     await until(
       () =>
-        $<HTMLSelectElement>('.backlog-drawer select[aria-label="Assignee"]')?.value ===
+        $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Assignee"]')?.dataset.value ===
         'fixture-someone'
     ),
-    $<HTMLSelectElement>('.backlog-drawer select[aria-label="Assignee"]')?.value ?? 'no select'
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Assignee"]')?.dataset.value ??
+      'no select'
   )
-  setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Assignee"]'), 'me')
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Assignee"]'), 'me')
   await until(
-    () => $<HTMLSelectElement>('.backlog-drawer select[aria-label="Assignee"]')?.value === 'me'
+    () =>
+      $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Assignee"]')?.dataset.value === 'me'
   )
 
   // Moving an epic's last ticket out leaves the sidebar where it was.
@@ -1246,12 +1266,13 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         .map((e) => e.dataset.sidebarEpic)
         .join(',')
     const before = epicOrder()
-    const parentSelect = $<HTMLSelectElement>('.backlog-drawer select[aria-label="Parent"]')
-    const was = parentSelect?.value ?? ''
-    const other = [...(parentSelect?.options ?? [])].find((o) => o.value && o.value !== was)?.value
-    setSelect(parentSelect, other ?? '')
+    const parentSelect = $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Parent"]')
+    const was = parentSelect?.dataset.value ?? ''
+    const other = (await selectValues(parentSelect)).find((v) => v && v !== was)
+    await setSelect(parentSelect, other ?? '')
     await until(
-      () => $<HTMLSelectElement>('.backlog-drawer select[aria-label="Parent"]')?.value === other
+      () =>
+        $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Parent"]')?.dataset.value === other
     )
     await wait(300)
     await check(
@@ -1259,13 +1280,13 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       Boolean(before) && epicOrder() === before,
       `${before} -> ${epicOrder()}`
     )
-    setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Parent"]'), was)
+    await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Parent"]'), was)
     await until(
-      () => $<HTMLSelectElement>('.backlog-drawer select[aria-label="Parent"]')?.value === was
+      () => $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Parent"]')?.dataset.value === was
     )
   }
-  setSelect(
-    $<HTMLSelectElement>('.backlog-drawer select[aria-label="Link a session"]'),
+  await setSelect(
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Link a session"]'),
     'fixture-rec-ready'
   )
   await wait(800)
@@ -1290,7 +1311,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   await wait(400)
   await check(
     'Move to In Review moves it',
-    $<HTMLSelectElement>('.backlog-drawer select[aria-label="Status"]')?.value === 'In Review'
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value === 'In Review'
   )
   await click($('.backlog-drawer [aria-label="Unlink this session"]'))
   await key('Escape')
@@ -1875,18 +1896,27 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     `${$('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 20) ?? 'no panel'}, session ${Boolean($('.session-detail-header'))}, list ${Boolean($('.backlog-list'))}`
   )
   {
-    const before = $<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]')?.value
+    const before = $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]')?.dataset
+      .value
     const next = before === 'High' ? 'Low' : 'High'
-    setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]'), next)
+    await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]'), next)
+    await check(
+      "the ticket panel's dropdowns are the app's own, not the native menu",
+      !$('.backlog-drawer select') && $$('.backlog-drawer .cr-select').length > 0,
+      `${$$('.backlog-drawer select').length} native, ${$$('.backlog-drawer .cr-select').length} own`
+    )
     await check(
       'a ticket can be edited in that panel',
       await until(
-        () => $<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]')?.value === next
+        () =>
+          $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]')?.dataset.value ===
+          next
       ),
-      $<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]')?.value ?? 'no select'
+      $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]')?.dataset.value ??
+        'no select'
     )
     if (before)
-      setSelect($<HTMLSelectElement>('.backlog-drawer select[aria-label="Priority"]'), before)
+      await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]'), before)
     await wait(400)
   }
   await click($('.session-detail-ticket'))
@@ -2092,15 +2122,15 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   )
   await check(
     'a sub-task shows a read-only Parent, not an Epic picker it can’t actually set',
-    !$('.backlog-drawer select[aria-label="Parent"]') &&
+    !$('.backlog-drawer .cr-select[aria-label="Parent"]') &&
       ($('.backlog-drawer .backlog-link.backlog-prop-text')?.textContent ?? '').includes('DSD-101'),
-    $('.backlog-drawer select[aria-label="Parent"]')
+    $('.backlog-drawer .cr-select[aria-label="Parent"]')
       ? 'still has the Epic select'
       : ($('.backlog-drawer .backlog-link.backlog-prop-text')?.textContent ?? 'no parent link')
   )
   await check(
     'and no live Cycle select — a sub-task can’t be re-sprinted on its own',
-    !$('.backlog-drawer select[aria-label="Cycle"]')
+    !$('.backlog-drawer .cr-select[aria-label="Cycle"]')
   )
   await key('Escape')
 
@@ -2148,9 +2178,9 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   // Earlier rounds move TEAMDATA-202 about; Undo should restore whatever it
   // was just before the toast's move, not a fixed status.
   const statusBeforePrMove =
-    $<HTMLSelectElement>('.backlog-drawer select[aria-label="Status"]')?.value ?? ''
-  setSelect(
-    $<HTMLSelectElement>('.backlog-drawer select[aria-label="Link a session"]'),
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value ?? ''
+  await setSelect(
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Link a session"]'),
     'fixture-rec-ready'
   )
   await check(
@@ -2166,7 +2196,8 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     'its action moves the ticket',
     await until(
       () =>
-        $<HTMLSelectElement>('.backlog-drawer select[aria-label="Status"]')?.value === 'In Review'
+        $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value ===
+        'In Review'
     )
   )
   await check(
@@ -2178,11 +2209,11 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     'Undo puts it back',
     await until(
       () =>
-        $<HTMLSelectElement>('.backlog-drawer select[aria-label="Status"]')?.value ===
+        $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value ===
         statusBeforePrMove,
       4000
     ),
-    `${$<HTMLSelectElement>('.backlog-drawer select[aria-label="Status"]')?.value ?? 'no select'} (wanted ${statusBeforePrMove})`
+    `${$<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value ?? 'no select'} (wanted ${statusBeforePrMove})`
   )
   await click($('.backlog-drawer [aria-label="Unlink this session"]'))
   await key('Escape')
@@ -2256,8 +2287,9 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     'Plan opens planning in the list: grouped by cycle, current folded, with the planning bar',
     (await until(
       () =>
-        $<HTMLSelectElement>('.planning-bar select[aria-label="Cycle to plan"]')?.selectedOptions[0]
-          ?.text === 'kestrel'
+        $<HTMLElement>(
+          '.planning-bar .cr-select[aria-label="Cycle to plan"]'
+        )?.textContent?.trim() === 'kestrel'
     )) &&
       Boolean(group('current')) &&
       Boolean(group('sprint-2')) &&
@@ -2371,7 +2403,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   await dragTo('TEAMDATA-202', 'backlog')
   await check('and back to the backlog', await until(() => inGroup('backlog', 'TEAMDATA-202')))
   // Any open cycle can be planned, the current one too.
-  setSelect($<HTMLSelectElement>('.planning-bar select[aria-label="Cycle to plan"]'), '1')
+  await setSelect($<HTMLElement>('.planning-bar .cr-select[aria-label="Cycle to plan"]'), '1')
   await check(
     'the planning bar can switch to planning the current cycle, with no carry-over',
     (await until(() => Boolean(group('current')?.querySelector('[data-cycle-strip="next"]')))) &&
@@ -3702,18 +3734,18 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     await click(byText('[data-cycle-ended] button', 'Complete it'))
     const dialogRow = (key: string): HTMLElement | null =>
       $(`.complete-cycle-row[data-issue="${key}"]`)
-    const destOf = (key: string): HTMLSelectElement | null =>
-      dialogRow(key)?.querySelector('select') ?? null
+    const destOf = (key: string): HTMLElement | null =>
+      dialogRow(key)?.querySelector<HTMLElement>('.cr-select') ?? null
     await check(
       'the review lists every unfinished ticket, each going to the next cycle unless changed',
       (await until(() => Boolean(dialogRow('DSD-101')))) &&
-        destOf('DSD-101')?.selectedOptions[0]?.text === 'kestrel' &&
+        destOf('DSD-101')?.textContent?.trim() === 'kestrel' &&
         !dialogRow('DSD-104'),
       $$('.complete-cycle-row')
-        .map((r) => `${r.dataset.issue}→${r.querySelector('select')?.selectedOptions[0]?.text}`)
+        .map((r) => `${r.dataset.issue}→${r.querySelector('.cr-select')?.textContent}`)
         .join(', ')
     )
-    setSelect(destOf('DSD-102'), 'backlog')
+    await setSelect(destOf('DSD-102'), 'backlog')
     // Ticked by default (cycles run back to back); untick it here so the
     // no-cycle-running prompt gets a turn.
     const startBox = $<HTMLInputElement>('.complete-cycle-start input')

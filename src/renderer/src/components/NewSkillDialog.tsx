@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { createSkill } from '../api'
 import { Modal, Button, Stack, Row } from './primitives'
+import Select from './Select'
 
 interface Props {
   projectId: string
@@ -71,7 +72,7 @@ export default function NewSkillDialog({
         <Stack gap={16} className="new-skill-dialog">
           <label>
             Scope
-            <select
+            <Select
               value={scope}
               onChange={(e) => setScope(e.target.value as 'global' | 'project')}
               disabled={busy}
@@ -80,7 +81,7 @@ export default function NewSkillDialog({
               <option value="project" disabled={!hasProject}>
                 Project (.claude/skills)
               </option>
-            </select>
+            </Select>
           </label>
 
           <label>

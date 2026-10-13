@@ -94,6 +94,7 @@ import {
 } from './backlog/ticketSessions'
 import { PickCheck, SelectionAction, SelectionBar } from '../components/selection'
 import './backlog.css'
+import Select from '../components/Select'
 
 export type { ComposerSeed } from './backlog/ticketSessions'
 
@@ -1181,9 +1182,7 @@ export default function BacklogScreen({
       // or, grouped by status, the sub-grouping.
       groupBy === 'status'
         ? subGroup
-          ? groupInto(visible, subGroup).filter(
-              (l) => l.items.length > 0 || subGroup === 'cycle'
-            )
+          ? groupInto(visible, subGroup).filter((l) => l.items.length > 0 || subGroup === 'cycle')
           : [{ id: 'all', title: '', items: visible, value: null } as Lane]
         : lanes.filter((l) => l.items.length > 0 || groupBy === 'cycle'),
     [groupBy, subGroup, groupInto, visible, lanes]
@@ -2229,10 +2228,7 @@ export default function BacklogScreen({
       >
         {confirmNode}
         {dragTargets.length > 0 && (
-          <DragBar
-            groups={dragTargets}
-            onDropIssue={(key, value) => void dropInto(key, [value])}
-          />
+          <DragBar groups={dragTargets} onDropIssue={(key, value) => void dropInto(key, [value])} />
         )}
         {creating && board && (
           <CreateTicket
@@ -2641,9 +2637,7 @@ export default function BacklogScreen({
                                       <IssueRow key={issue.key} issue={issue} {...rowProps} />
                                     ))}
                                   {sub.items.length === 0 && (
-                                    <p className="backlog-empty-lane">
-                                      Nothing left here
-                                    </p>
+                                    <p className="backlog-empty-lane">Nothing left here</p>
                                   )}
                                 </DropGroup>
                               )
@@ -4939,7 +4933,7 @@ function IssueDrawer({
           <span className="backlog-prop-label">Status</span>
           <div className="backlog-prop-value">
             <StatusGlyph name={issue.status} category={issue.statusCategory} />
-            <select
+            <Select
               aria-label="Status"
               className="backlog-select"
               value={issue.status}
@@ -4953,14 +4947,14 @@ function IssueDrawer({
                   {s.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
         <div className="backlog-prop backlog-prop--third">
           <span className="backlog-prop-label">Priority</span>
           <div className="backlog-prop-value">
             <PriorityGlyph priority={issue.priority} />
-            <select
+            <Select
               aria-label="Priority"
               className="backlog-select"
               value={issue.priority ?? ''}
@@ -4972,7 +4966,7 @@ function IssueDrawer({
                   {p}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
         </div>
         <div className="backlog-prop backlog-prop--third">
@@ -4986,7 +4980,7 @@ function IssueDrawer({
           <div className="backlog-prop-value">
             <Avatar name={issue.assignee} size={20} />
             {people.length > 0 ? (
-              <select
+              <Select
                 aria-label="Assignee"
                 className="backlog-select"
                 value={
@@ -5016,7 +5010,7 @@ function IssueDrawer({
                       {p.name}
                     </option>
                   ))}
-              </select>
+              </Select>
             ) : (
               <span className="backlog-person backlog-prop-text">
                 {issue.assignee ?? 'Unassigned'}
@@ -5075,7 +5069,7 @@ function IssueDrawer({
               <span className="backlog-prop-label">Cycle</span>
               <div className="backlog-prop-value">
                 <Icon name={issue.sprint ? 'RefreshCw' : 'Inbox'} size={14} />
-                <select
+                <Select
                   aria-label="Cycle"
                   className="backlog-select"
                   value={issue.sprint ? String(issue.sprint.id) : ''}
@@ -5095,7 +5089,7 @@ function IssueDrawer({
                         : `${sp.name} · upcoming`}
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
 
@@ -5103,7 +5097,7 @@ function IssueDrawer({
               <span className="backlog-prop-label">Epic</span>
               <div className="backlog-prop-value">
                 {issue.parent ? <EpicMark /> : <span className="backlog-drawer-field-blank" />}
-                <select
+                <Select
                   aria-label="Parent"
                   className="backlog-select"
                   value={issue.parent?.key ?? ''}
@@ -5120,7 +5114,7 @@ function IssueDrawer({
                       {ep.summary} ({ep.key})
                     </option>
                   ))}
-                </select>
+                </Select>
               </div>
             </div>
           </>
@@ -5156,7 +5150,7 @@ function IssueDrawer({
             and sit beside the heading; with none, Start session is the body. */}
         {(() => {
           const linkSelect = linkable.length > 0 && (
-            <select
+            <Select
               aria-label="Link a session"
               className="backlog-select backlog-select--flat"
               value=""
@@ -5171,7 +5165,7 @@ function IssueDrawer({
                   {s.record!.title}
                 </option>
               ))}
-            </select>
+            </Select>
           )
           return linkedSessions.length > 0 || prs.rows.length > 0 ? (
             <div className="backlog-drawer-section-head">

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { appendRule } from '../api'
 import { Modal, Button, Stack, Row } from './primitives'
+import Select from './Select'
 
 interface Props {
   projectId: string
@@ -62,7 +63,7 @@ export default function AddRuleDialog({
         <Stack gap={16} className="add-rule-dialog">
           <label>
             Target
-            <select
+            <Select
               value={scope}
               onChange={(e) => setScope(e.target.value as 'global' | 'project')}
               disabled={busy}
@@ -71,7 +72,7 @@ export default function AddRuleDialog({
               <option value="project" disabled={!hasProject}>
                 Project: {projectPath ?? 'no project selected'}
               </option>
-            </select>
+            </Select>
           </label>
 
           <label>

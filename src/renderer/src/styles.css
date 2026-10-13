@@ -1288,10 +1288,10 @@
 .new-session-form select,
 .new-session-form textarea,
 .new-skill-dialog input,
-.new-skill-dialog select,
+.new-skill-dialog .cr-select,
 .new-skill-dialog textarea,
 .add-rule-dialog input,
-.add-rule-dialog select,
+.add-rule-dialog .cr-select,
 .add-rule-dialog textarea {
   padding: 6px 8px;
   border-radius: var(--radius-sm);

@@ -3254,8 +3254,6 @@
 
 /* The cycle you're planning: reads as the title, opens as a picker. */
 .planning-bar-pick {
-  /* As wide as the cycle's name, not the longest option. */
-  field-sizing: content;
   padding: 0 var(--space-4);
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -3371,8 +3369,8 @@
   color: var(--text-muted);
 }
 
-.complete-cycle-row select,
-.complete-cycle-all select {
+.complete-cycle-row .cr-select,
+.complete-cycle-all .cr-select {
   flex: none;
   max-width: 150px;
   border: 1px solid var(--border);
