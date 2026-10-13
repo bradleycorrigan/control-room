@@ -1609,6 +1609,16 @@ export function registerIpcHandlers(): void {
     return { ok: true }
   })
 
+  // A file name from the diff. Plain text the renderer already shows, so it
+  // is sent as is; capped so nothing huge lands on the clipboard by mistake.
+  ipcMain.handle('clipboard:writeText', async (_evt, text: unknown) => {
+    if (typeof text !== 'string' || text.length === 0 || text.length > 4096) {
+      return { ok: false, error: 'nothing to copy' }
+    }
+    clipboard.writeText(text)
+    return { ok: true }
+  })
+
   ipcMain.handle('session:copyAttachCommand', async (_evt, id: string) => {
     const record = getState().sessions.find((s) => s.id === id)
     if (!record) return { ok: false, error: 'session not found' }

@@ -368,3 +368,15 @@
   font-size: var(--text-caption-size);
   color: var(--text-muted);
 }
+
+/* Copy the file's name: shown on the row you're pointing at, and while
+   it's focused or has just copied. */
+.diff-file-copy {
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--motion-easing);
+}
+
+.diff-file-head:hover .diff-file-copy,
+.diff-file-head:focus-within .diff-file-copy {
+  opacity: 1;
+}

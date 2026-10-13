@@ -2523,6 +2523,19 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     const box = $$<HTMLElement>('.diff-file').find((f) =>
       [...f.querySelectorAll('button')].some((b) => b.textContent === 'Edit')
     )
+    {
+      const fullPath = box?.querySelector('.diff-file-path')?.textContent ?? ''
+      const fileName = box?.querySelector('.diff-file-name')?.textContent ?? ''
+      const copy = box?.querySelector<HTMLButtonElement>('.diff-file-copy')
+      await click(copy)
+      await check(
+        'each file in the diff copies its name, not its path',
+        copy?.getAttribute('aria-label') === `Copy ${fileName}` &&
+          fileName !== '' &&
+          (await until(() => Boolean(copy?.querySelector('.lucide-check')), 2000)),
+        `path "${fullPath}", button "${copy?.getAttribute('aria-label')}"`
+      )
+    }
     await click([...(box?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Edit'))
     await until(() => Boolean(box?.querySelector('.diff-edit-textarea')), 3000)
     const editor = (): HTMLTextAreaElement | null =>

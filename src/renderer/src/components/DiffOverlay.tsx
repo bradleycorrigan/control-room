@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { getSessionDiff, readFile, writeFile, type SessionDiff } from '../api'
+import { copyText, getSessionDiff, readFile, writeFile, type SessionDiff } from '../api'
 import { commitAndPushSessionFiles } from '../api-sessions'
 import { Button, IconButton } from './primitives'
 import { useDismissible } from '../keyboard'
@@ -140,6 +140,13 @@ function FileBox({
     setDraft(next)
     onDirtyChange(path, next !== null && next.text !== next.saved)
   }
+  // Ticks for a moment after the name goes to the clipboard.
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(false), 1500)
+    return () => clearTimeout(t)
+  }, [copied])
   // A deleted file has nothing on disk to edit.
   const canEdit = status !== 'deleted'
 
@@ -203,6 +210,18 @@ function FileBox({
             {removed > 0 && <span className="diff-stat-remove">−{removed}</span>}
           </span>
         </button>
+        <IconButton
+          icon={copied ? 'Check' : 'Copy'}
+          label={`Copy ${name}`}
+          tooltip={copied ? 'Copied' : 'Copy file name'}
+          size={28}
+          className="diff-file-copy"
+          onClick={() =>
+            void copyText(name).then((r) => {
+              if (r.ok) setCopied(true)
+            })
+          }
+        />
         {canEdit && !draft && (
           <Button variant="ghost" size="compact" disabled={busy} onClick={() => void startEdit()}>
             Edit

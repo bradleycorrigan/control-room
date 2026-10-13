@@ -545,6 +545,11 @@ export function getFileTree(projectId: string, sessionId?: string): Promise<File
 
 export type ReadFileResult = { ok: true; content: string } | { ok: false; error: string }
 
+/** Puts plain text on the clipboard, through main: works whether or not the window has focus. */
+export function copyText(text: string): Promise<{ ok: boolean; error?: string }> {
+  return window.api.invoke<{ ok: boolean; error?: string }>('clipboard:writeText', text)
+}
+
 export function readFile(
   projectId: string,
   relPath: string,
