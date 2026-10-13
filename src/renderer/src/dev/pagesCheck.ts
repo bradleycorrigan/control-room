@@ -617,6 +617,15 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         promptBox?.value.includes('Re-run the model') && promptBox.value.includes('Jira: https://')
       )
   )
+  await check(
+    'the pre-filled prompt is sized to its text when the composer opens, and can be dragged taller',
+    Boolean(promptBox) &&
+      // Showing all of it, or as much as half the window allows.
+      promptBox!.clientHeight >=
+        Math.min(promptBox!.scrollHeight, Math.round(window.innerHeight * 0.5)) - 4 &&
+      getComputedStyle(promptBox!).resize === 'vertical',
+    `box ${promptBox?.clientHeight}px, text ${promptBox?.scrollHeight}px`
+  )
   await key('Escape')
   await check('Escape closes the composer', !$('[role="dialog"]'))
 

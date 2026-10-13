@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   attentionRank,
   wantsYou,
@@ -309,18 +309,34 @@ export default function HomeScreen({
     localStorage.setItem(STORAGE_PLAN_MODE, JSON.stringify(planMode))
   }, [planMode])
 
-  // Auto-grow between 3 and 12 rows, measured off the textarea's own
-  // scrollHeight (not by counting newlines, so long wrapped lines grow it
-  // too). Run straight from the change event's target — the Textarea
-  // primitive doesn't forward a ref, and the DOM already reflects the
-  // keystroke by the time this handler runs.
+  // Auto-grow from 3 rows up to about half the window, measured off the
+  // textarea's own scrollHeight (not by counting newlines, so long wrapped
+  // lines grow it too); past that it scrolls. Drag its corner to make it
+  // taller still, and it keeps that height while you type. The Textarea
+  // primitive doesn't forward a ref, so the card's ref finds it.
+  const composerCardRef = useRef<HTMLDivElement>(null)
+  // Height you dragged it to, or null to size to the text.
+  const draggedHeight = useRef<number | null>(null)
+  const grownHeight = useRef<number | null>(null)
   const autoGrow = (el: HTMLTextAreaElement): void => {
-    el.style.height = 'auto'
     const lineHeight = 20 // --text-body-line
     const min = lineHeight * 3 + 4
-    const max = lineHeight * 12 + 4
-    el.style.height = `${Math.min(Math.max(el.scrollHeight, min), max)}px`
+    const max = Math.max(lineHeight * 12 + 4, Math.round(window.innerHeight * 0.5))
+    el.style.height = 'auto'
+    const fit = Math.min(Math.max(el.scrollHeight, min), max)
+    const height = Math.max(fit, draggedHeight.current ?? 0)
+    el.style.height = `${height}px`
+    grownHeight.current = height
   }
+  // A prompt that arrives filled in (from a ticket) is sized from the start,
+  // not after the first keystroke. Before, it sat at three rows, then
+  // jumped to fit the moment you typed.
+  useLayoutEffect(() => {
+    const el = composerCardRef.current?.querySelector('textarea')
+    if (el && initialPrompt) autoGrow(el)
+    // Once, on open: typing resizes it from then on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const otherProjects = projects.filter((p) => p.id !== selectedProject?.id)
 
@@ -820,6 +836,7 @@ export default function HomeScreen({
           </p>
         )}
         <div
+          ref={composerCardRef}
           className={`home-composer-card${dragOver ? ' home-composer-card--drag-over' : ''}`}
           onDragOver={handleDragOver}
           onDragEnter={handleDragEnter}
@@ -837,6 +854,14 @@ export default function HomeScreen({
             }}
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
+            onMouseUp={(e) => {
+              // A height we didn't set came from dragging the corner: keep it.
+              const h = e.currentTarget.offsetHeight
+              if (grownHeight.current !== null && Math.abs(h - grownHeight.current) > 2) {
+                draggedHeight.current = h
+                grownHeight.current = h
+              }
+            }}
             autoFocus
           />
 

@@ -66,9 +66,13 @@
   border: none;
   border-radius: 0;
   padding: var(--space-8) var(--space-8) 0;
-  font-size: var(--text-card-size);
-  line-height: var(--text-card-line);
-  resize: none;
+  /* Body size, not card size: a prompt is something you read, and at 16px a
+     pasted ticket read like a page of headings. */
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  /* Drag the corner for more room; it grows with the text up to half the
+     window on its own (HomeScreen autoGrow). */
+  resize: vertical;
   overflow-y: auto;
 }
 

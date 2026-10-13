@@ -2340,10 +2340,10 @@ function App(): React.JSX.Element {
         <Modal
           title={composerSeed ? composerSeed.title : 'New session'}
           icon="Plus"
-          // 720, not 680: the chip row underneath carries a project name, the
-          // run-location switch and the branch field, and at 680 it had to
-          // wrap even with a short project name.
-          width={720}
+          // 880: room to read a pasted ticket without a narrow column, and
+          // for the chip row underneath (project, run location, branch) not
+          // to wrap. The modal never asks for more than the window has.
+          width={880}
           onClose={() => {
             setShowNewSessionForm(false)
             setNewSessionProjectId(null)
