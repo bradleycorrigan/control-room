@@ -141,32 +141,9 @@
   color: var(--text-muted);
 }
 
-/* --space-4 and friends were redefined to 4px-scale by the plan-3 tokens,
-   which left each group heading sitting on the cards above it. */
-.sessions-group-section {
-  margin-bottom: var(--space-24);
-}
 
-.sessions-group-header {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-8);
-  padding: var(--space-4) 0;
-  margin-bottom: var(--space-12);
-}
 
-.sessions-group-label {
-  font-size: var(--text-caption-size);
-  line-height: var(--text-caption-line);
-  font-weight: var(--text-label-weight);
-  color: var(--text-muted);
-}
 
-.sessions-group-count {
-  font-size: var(--text-mono-size);
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
-}
 
 .sessions-card-grid {
   display: grid;
@@ -355,10 +332,17 @@
    outlined pills plus two segmented bars read as a wall of controls. */
 
 .sessions-filters {
+  /* One line: status tabs on the left, search and Filter on the right,
+     wrapping under the tabs only when the window is too narrow. */
   display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-16);
   margin: var(--space-12) 0 var(--space-16);
+}
+
+.sessions-filters > .sessions-filter-row {
+  margin-left: auto;
 }
 
 /* Search, then the switches that narrow whatever statuses are on. */
@@ -374,9 +358,8 @@
   align-items: center;
   gap: var(--space-8);
   height: 32px;
-  width: 300px;
+  width: 260px;
   max-width: 100%;
-  margin-right: var(--space-8);
   padding: 0 var(--space-8) 0 var(--space-12);
   border-radius: var(--radius-md);
   background: var(--surface);

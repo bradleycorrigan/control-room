@@ -845,6 +845,8 @@ function useCollapsedProject(projectId: string): [boolean, (next: boolean) => vo
 
 interface ProjectContainerProps {
   group: ProjectGroup
+  /** Rows or cards: the same section, header and collapse in both views. */
+  view: 'list' | 'grid'
   /** A filter is on: show the matches even in a project you collapsed. */
   forceOpen: boolean
   onOpenSession: (liveKey: string, background?: boolean) => void
@@ -866,6 +868,7 @@ interface ProjectContainerProps {
 
 function ProjectContainer({
   group,
+  view,
   forceOpen,
   onOpenSession,
   onAdopt,
@@ -1035,22 +1038,83 @@ function ProjectContainer({
           agent stylesheet, and this element sets `display: flex`, so the rows
           stayed exactly where they were. */}
       {!collapsed && (
-        <div className="sessions-project-rows">
-          {sessions.map((session) => (
-            <SessionListRow
-              key={session.key}
-              session={session}
-              onOpen={(background) => onOpenSession(session.key, background)}
-              onAdopt={session.record ? undefined : () => onAdopt(session, project.id)}
-              onOpenInIde={onOpenInIde ? () => onOpenInIde(session) : undefined}
-              onFocusTerminal={onFocusTerminal ? () => onFocusTerminal(session) : undefined}
-              onDeleted={onRowChanged}
-              onRenamed={onRowChanged}
-            />
-          ))}
-        </div>
+        <SessionGroupBody
+          sessions={sessions}
+          view={view}
+          adoptTo={() => project.id}
+          onOpenSession={onOpenSession}
+          onAdopt={onAdopt}
+          onRowChanged={onRowChanged}
+          onOpenInIde={onOpenInIde}
+          onFocusTerminal={onFocusTerminal}
+        />
       )}
     </section>
+  )
+}
+
+/**
+ * A group's sessions as rows (list) or cards (grid). One body for every
+ * group in both views, so the project sections above it are the same
+ * component whichever view is on.
+ */
+function SessionGroupBody({
+  sessions,
+  view,
+  adoptTo,
+  onOpenSession,
+  onAdopt,
+  onRowChanged,
+  onOpenInIde,
+  onFocusTerminal
+}: {
+  sessions: LiveSession[]
+  view: 'list' | 'grid'
+  /** The project a session without a record would be adopted into, if any. */
+  adoptTo: (session: LiveSession) => string | null
+  onOpenSession: (liveKey: string, background?: boolean) => void
+  onAdopt: (session: LiveSession, projectId: string) => void
+  onRowChanged: () => void
+  onOpenInIde?: (session: LiveSession) => void
+  onFocusTerminal?: (session: LiveSession) => void
+}): React.JSX.Element {
+  const prOf = useContext(SessionPrs)
+  const adoptFor = (session: LiveSession): (() => void) | undefined => {
+    if (session.record) return undefined
+    const projectId = adoptTo(session)
+    return projectId ? () => onAdopt(session, projectId) : undefined
+  }
+  if (view === 'grid') {
+    return (
+      <div className="sessions-card-grid">
+        {sessions.map((session) => (
+          <SessionCard
+            key={session.key}
+            session={session}
+            projectName={null}
+            pr={prOf(session)}
+            onOpen={(background) => onOpenSession(session.key, background)}
+            onAdopt={adoptFor(session)}
+          />
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div className="sessions-project-rows">
+      {sessions.map((session) => (
+        <SessionListRow
+          key={session.key}
+          session={session}
+          onOpen={(background) => onOpenSession(session.key, background)}
+          onAdopt={adoptFor(session)}
+          onOpenInIde={onOpenInIde ? () => onOpenInIde(session) : undefined}
+          onFocusTerminal={onFocusTerminal ? () => onFocusTerminal(session) : undefined}
+          onDeleted={onRowChanged}
+          onRenamed={onRowChanged}
+        />
+      ))}
+    </div>
   )
 }
 
@@ -1681,7 +1745,8 @@ export default function SessionsScreen({
                         ref={searchRef}
                         type="search"
                         aria-label="Search sessions"
-                        placeholder="Search title, branch, project or ticket"
+                        placeholder="Search sessions"
+                        title="Matches title, branch, project, ticket or PR number"
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         onKeyDown={(e) => {
@@ -1762,12 +1827,13 @@ export default function SessionsScreen({
                 />
               )}
 
-              {hasAnySessions && view === 'list' && (
+              {hasAnySessions && (
                 <div className="sessions-groups-list">
                   {projectGroups.map((group) => (
                     <ProjectContainer
                       key={group.project.id}
                       group={group}
+                      view={view}
                       forceOpen={filtersOn}
                       onOpenSession={onOpenSession}
                       onAdopt={handleAdopt}
@@ -1788,79 +1854,20 @@ export default function SessionsScreen({
                           {otherSessions.length} session{otherSessions.length === 1 ? '' : 's'}
                         </span>
                       </div>
-                      <div className="sessions-project-rows">
-                        {otherSessions.map((session) => {
-                          const adoptableProject = !session.record
-                            ? projectForCwd(session.cwd, projects)
-                            : null
-                          return (
-                            <SessionListRow
-                              key={session.key}
-                              session={session}
-                              onOpen={(background) => onOpenSession(session.key, background)}
-                              onAdopt={
-                                adoptableProject
-                                  ? () => handleAdopt(session, adoptableProject.id)
-                                  : undefined
-                              }
-                              onOpenInIde={onOpenInIde ? () => onOpenInIde(session) : undefined}
-                              onFocusTerminal={
-                                onFocusTerminal ? () => onFocusTerminal(session) : undefined
-                              }
-                              onDeleted={handleSessionRowChanged}
-                              onRenamed={handleSessionRowChanged}
-                            />
-                          )
-                        })}
-                      </div>
+                      <SessionGroupBody
+                        sessions={otherSessions}
+                        view={view}
+                        adoptTo={(session) => projectForCwd(session.cwd, projects)?.id ?? null}
+                        onOpenSession={onOpenSession}
+                        onAdopt={handleAdopt}
+                        onRowChanged={handleSessionRowChanged}
+                        onOpenInIde={onOpenInIde}
+                        onFocusTerminal={onFocusTerminal}
+                      />
                     </section>
                   )}
                 </div>
               )}
-
-              {/* Grouped by project, as the list is, so switching view keeps
-                everything where it was. */}
-              {hasAnySessions &&
-                view === 'grid' &&
-                [
-                  ...projectGroups.map((g) => ({
-                    id: g.project.id,
-                    label: g.project.name,
-                    sessions: g.sessions
-                  })),
-                  ...(otherSessions.length > 0
-                    ? [{ id: 'other', label: 'Other sessions', sessions: otherSessions }]
-                    : [])
-                ].map((group) => (
-                  <section key={group.id} className="sessions-group-section">
-                    <div className="sessions-group-header">
-                      <span className="sessions-group-label">{group.label}</span>
-                      <span className="sessions-group-count">{group.sessions.length}</span>
-                    </div>
-
-                    <div className="sessions-card-grid">
-                      {group.sessions.map((session) => {
-                        const adoptableProject = !session.record
-                          ? projectForCwd(session.cwd, projects)
-                          : null
-                        return (
-                          <SessionCard
-                            key={session.key}
-                            session={session}
-                            projectName={null}
-                            pr={prOf(session)}
-                            onOpen={(background) => onOpenSession(session.key, background)}
-                            onAdopt={
-                              adoptableProject
-                                ? () => handleAdopt(session, adoptableProject.id)
-                                : undefined
-                            }
-                          />
-                        )
-                      })}
-                    </div>
-                  </section>
-                ))}
             </div>
           </div>
         </SessionSelection.Provider>
