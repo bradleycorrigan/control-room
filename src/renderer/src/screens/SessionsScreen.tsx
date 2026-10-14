@@ -881,7 +881,16 @@ function ProjectContainer({
 }: ProjectContainerProps): React.JSX.Element {
   const { project, sessions, hasAttention } = group
   const [storedCollapsed, setCollapsed] = useCollapsedProject(project.id)
-  const collapsed = storedCollapsed && !forceOpen
+  // With a filter on, every project opens so no match is hidden, but the
+  // arrow still works: folding one while filtering is just for now, and
+  // leaves the remembered state alone. Turning filters on or off resets it.
+  const [filterFold, setFilterFold] = useState({ forceOpen, folded: false })
+  if (filterFold.forceOpen !== forceOpen) setFilterFold({ forceOpen, folded: false })
+  const collapsed = forceOpen ? filterFold.folded : storedCollapsed
+  const toggleCollapsed = (): void => {
+    if (forceOpen) setFilterFold({ forceOpen, folded: !collapsed })
+    else setCollapsed(!collapsed)
+  }
   const [confirmNode, confirm] = useConfirm()
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
@@ -965,7 +974,7 @@ function ProjectContainer({
           className="sessions-project-collapse"
           aria-expanded={!collapsed}
           aria-label={collapsed ? `Expand ${project.name}` : `Collapse ${project.name}`}
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={toggleCollapsed}
         >
           <Icon
             name="ChevronRight"

@@ -1782,6 +1782,24 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         ),
       unfinished.join(',')
     )
+    {
+      // With a filter on, projects open so matches show, but the arrow still folds one.
+      const arrow = $('.sessions-project .sessions-project-collapse')
+      const project = arrow?.closest('.sessions-project') ?? null
+      const bodyShown = (): boolean =>
+        Boolean(project?.querySelector('.sessions-project-rows, .sessions-card-grid'))
+      const openBefore = bodyShown()
+      await click(arrow)
+      await wait(200)
+      const folded = !bodyShown()
+      await click(arrow)
+      await wait(200)
+      await check(
+        'with a filter on, the project arrow still folds and unfolds it',
+        openBefore && folded && bodyShown(),
+        `open before ${openBefore}, folded ${folded}, open after ${bodyShown()}`
+      )
+    }
     await check(
       'the filter switches sit in one Filter menu, which counts what is on',
       !$('.sessions-unread-toggle') &&
