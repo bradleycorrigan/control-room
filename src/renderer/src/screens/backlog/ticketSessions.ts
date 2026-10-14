@@ -24,9 +24,53 @@ function slug(text: string): string {
 export const branchFor = (issue: JiraIssue): string =>
   `${issue.key.toLowerCase()}-${slug(issue.summary)}`.slice(0, 60).replace(/-$/, '')
 
+const DESCRIPTION_CAP = 4000
+const SHORTENED_NOTE = '(Description shortened: read the ticket for the rest.)'
+
+/**
+ * A ticket description made safe to use as a prompt: embedded images and
+ * encoded blobs (a pasted Metabase card is ~5,000 characters of base64) are
+ * dropped, blank lines collapsed, and the rest capped at a line boundary.
+ * The ticket panel still shows the full description.
+ */
+export function cleanDescription(text: string): string {
+  let t = text
+    // data: URIs, alone or inside markup
+    .replace(/data:[a-z0-9.+-]+\/[a-z0-9.+-]+[;,][^\s)\]"'>}|]*/gi, '')
+    // Jira wiki images and attachments: !pic.png!, !pic.png|width=50!, [^file.pdf]
+    .replace(/![^\s!|]+\.(?:png|jpe?g|gif|webp|svg|bmp)(?:\|[^!\n]*)?!/gi, '')
+    .replace(/\[\^[^\]\n]+\]/g, '')
+    // Markdown images and media placeholders the conversion can leave
+    .replace(/!\[[^\]\n]*\]\([^)\n]*\)/g, '')
+    .replace(/^[ \t]*\[?(?:media|mediaSingle|mediaGroup|inlineCard)\]?[ \t]*$/gim, '')
+    // long encoded runs: 200+ characters with no spaces
+    .replace(/[A-Za-z0-9+/=_-]{200,}/g, '')
+  // a long token of only base64 characters, mixing letters and digits, with no
+  // URL or path shape, is a blob
+  t = t.replace(/\S{80,}/g, (tok) =>
+    /^[A-Za-z0-9+/=_-]+$/.test(tok) &&
+    !/^https?:/i.test(tok) &&
+    /\d/.test(tok) &&
+    /[A-Za-z]/.test(tok) &&
+    !/[a-z]{3,}\.[a-z]/i.test(tok)
+      ? ''
+      : tok
+  )
+  t = t
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  if (t.length <= DESCRIPTION_CAP) return t
+  const head = t.slice(0, DESCRIPTION_CAP)
+  const cut = Math.max(head.lastIndexOf('\n\n'), head.lastIndexOf('\n'))
+  const kept = (cut > DESCRIPTION_CAP / 2 ? head.slice(0, cut) : head).trimEnd()
+  return `${kept}\n\n${SHORTENED_NOTE}`
+}
+
 /** A new session for a ticket: its key, summary, description and link. */
 export function seedFor(issue: JiraIssue): ComposerSeed {
-  const description = issue.description ? `\n\n${issue.description}` : ''
+  const cleaned = issue.description ? cleanDescription(issue.description) : ''
+  const description = cleaned ? `\n\n${cleaned}` : ''
   return {
     prompt: `${issue.key}: ${issue.summary}${description}\n\nJira: ${issue.url}`,
     branch: branchFor(issue),

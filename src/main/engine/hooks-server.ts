@@ -20,7 +20,14 @@ export interface SessionHookState {
 }
 
 const stateBySessionId = new Map<string, SessionHookState>()
-const stateByCwd = new Map<string, SessionHookState>()
+// Last state seen at each cwd, with the session id that wrote it (null when the event had none).
+const stateByCwd = new Map<string, { state: SessionHookState; sessionId: string | null }>()
+// Live sessions from the latest poll, so the cwd fallback can tell when a folder is shared.
+let liveSessions: { sessionId: string | null; cwd: string }[] = []
+
+export function setLiveSessions(sessions: { sessionId: string | null; cwd: string }[]): void {
+  liveSessions = sessions
+}
 
 function emptyState(): SessionHookState {
   return { lastNotification: null, lastStop: null, lastStopFailure: null }
@@ -36,17 +43,25 @@ function getOrCreateState(sessionId: string | null, cwd: string | null): Session
     return s
   }
   if (cwd) {
-    let s = stateByCwd.get(cwd)
-    if (!s) {
-      s = emptyState()
-      stateByCwd.set(cwd, s)
+    let entry = stateByCwd.get(cwd)
+    if (!entry) {
+      entry = { state: emptyState(), sessionId: null }
+      stateByCwd.set(cwd, entry)
     }
-    return s
+    return entry.state
   }
   return emptyState() // orphaned event, not correlatable — not stored
 }
 
-/** Correlates by session_id → claudeSessionId first, falling back to cwd. */
+/**
+ * Looks up by Claude session id first. The cwd fallback only exists for events
+ * and sessions that carry no id. Sessions often share a cwd (several General
+ * sessions in the home folder, two sessions in one checkout), and a cwd entry
+ * holds whichever of them spoke last, so using it for them would show one
+ * session's activity and status on another. So it applies only when it can't
+ * be ambiguous: no other live session shares this cwd, and the entry was
+ * written by this session or by an event with no id.
+ */
 export function getHookState(
   sessionId: string | null,
   cwd: string | null
@@ -57,7 +72,13 @@ export function getHookState(
   }
   if (cwd) {
     const byCwd = stateByCwd.get(cwd)
-    if (byCwd) return byCwd
+    if (byCwd && (!sessionId || !byCwd.sessionId || byCwd.sessionId === sessionId)) {
+      const sharing = liveSessions.filter((s) => s.cwd === cwd)
+      const others = sessionId ? sharing.filter((s) => s.sessionId !== sessionId) : sharing
+      // With no id, the asker is one of the sharing sessions itself.
+      const shared = sessionId ? others.length > 0 : others.length > 1
+      if (!shared) return byCwd.state
+    }
   }
   return null
 }
@@ -109,7 +130,7 @@ export function seedFixtureHookEvents(events: Partial<NormalizedEvent>[]): void 
     else if (event.type === 'Stop') state.lastStop = event
     else if (event.type === 'StopFailure') state.lastStopFailure = event
     if (event.sessionId) stateBySessionId.set(event.sessionId, state)
-    if (event.cwd) stateByCwd.set(event.cwd, state)
+    if (event.cwd) stateByCwd.set(event.cwd, { state, sessionId: event.sessionId })
   }
 }
 
@@ -122,7 +143,7 @@ function handleEvent(raw: unknown): void {
   else if (event.type === 'StopFailure') state.lastStopFailure = event
 
   if (event.sessionId) stateBySessionId.set(event.sessionId, state)
-  if (event.cwd) stateByCwd.set(event.cwd, state)
+  if (event.cwd) stateByCwd.set(event.cwd, { state, sessionId: event.sessionId })
 
   appendEvent(event)
   onEvent?.(event)

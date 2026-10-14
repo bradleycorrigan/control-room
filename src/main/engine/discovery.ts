@@ -16,7 +16,7 @@ import {
   sessionIdentityCandidates,
   migrateAcknowledgement
 } from './status'
-import { getHookState, type NormalizedEvent } from './hooks-server'
+import { getHookState, setLiveSessions, type NormalizedEvent } from './hooks-server'
 import { isUnread, lastActivityAt, migrateSeen } from './seen'
 import { getTranscriptTitle } from '../exec/transcripts'
 import type { LiveSession, SessionRecord } from '../store/types'
@@ -451,6 +451,12 @@ export async function discoverLiveSessions(): Promise<LiveSession[]> {
   // rendering the same row twice.
   const orderedSessionFiles = [...sessionFiles].sort(
     (a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0)
+  )
+
+  setLiveSessions(
+    orderedSessionFiles
+      .filter((f) => f.alive && f.cwd)
+      .map((f) => ({ sessionId: f.sessionId ?? null, cwd: f.cwd as string }))
   )
 
   const live: LiveSession[] = []

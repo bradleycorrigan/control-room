@@ -41,11 +41,9 @@
   font-weight: var(--text-label-weight);
 }
 
-
 .wt-overlay-spacer {
   flex: 1;
 }
-
 
 .wt-overlay-muted {
   margin: 0;
@@ -63,7 +61,6 @@
   font-size: var(--text-label-size);
   line-height: var(--text-body-line);
 }
-
 
 .wt-overlay-added {
   color: var(--status-done);
@@ -167,5 +164,6 @@ button.wt-overlay-chip:hover {
 
 .wt-overlay-footer {
   display: flex;
+  gap: 8px;
   justify-content: flex-end;
 }

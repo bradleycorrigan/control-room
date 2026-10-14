@@ -50,6 +50,18 @@ export function removeWorktrees(
   )
 }
 
+export interface WrapUpResult {
+  ok: boolean
+  error?: string
+  branchDeleted: boolean
+  note?: string
+}
+
+/** Ends a merged worktree's sessions, removes it and deletes its local branch. */
+export function wrapUpWorktree(projectId: string, worktreePath: string): Promise<WrapUpResult> {
+  return window.api.invoke<WrapUpResult>('worktrees:wrapUp', projectId, worktreePath)
+}
+
 /** Pin a session so it sorts first on Home and the Sessions page. */
 export function setSessionPinned(id: string, pinned: boolean): Promise<SessionActionResult> {
   return window.api.invoke<SessionActionResult>('sessions:setPinned', id, pinned)

@@ -29,6 +29,7 @@ export default function WorktreeOverlay({
   onOpenSession,
   onStartAgent,
   onRemove,
+  onWrapUp,
   onOpenTicket,
   pushToast,
   onClose
@@ -47,6 +48,8 @@ export default function WorktreeOverlay({
   onStartAgent?: () => void
   /** Only when nothing is running in it. */
   onRemove?: () => void
+  /** Only when the branch's pull request is merged. */
+  onWrapUp?: () => void
   onOpenTicket?: (key: string) => void
   pushToast: (message: string) => void
   onClose: () => void
@@ -281,11 +284,18 @@ export default function WorktreeOverlay({
           </section>
         )}
 
-        {onRemove && (
+        {(onRemove || onWrapUp) && (
           <div className="wt-overlay-footer">
-            <Button variant="outlined" size="compact" onClick={onRemove}>
-              Remove worktree
-            </Button>
+            {onWrapUp && (
+              <Button variant="outlined" size="compact" onClick={onWrapUp}>
+                Wrap up
+              </Button>
+            )}
+            {onRemove && (
+              <Button variant="outlined" size="compact" onClick={onRemove}>
+                Remove worktree
+              </Button>
+            )}
           </div>
         )}
       </div>

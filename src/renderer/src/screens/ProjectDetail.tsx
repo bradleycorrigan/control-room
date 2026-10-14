@@ -26,7 +26,7 @@ import { useWorktreeChoice } from '../state/useWorktreeChoice'
 import { useHomeDir } from '../state/useHomeDir'
 import { useTicketKeys } from '../state/useTicketKeys'
 import { formatHomePath } from '../lib/format-path'
-import { revealProjectInFinder } from '../api-projects'
+import { revealProjectInFinder, wrapUpWorktree } from '../api-projects'
 import {
   createSession,
   listAllWorktrees,
@@ -329,6 +329,41 @@ function OverviewTab({
     }
   }
 
+  const handleWrapUp = async (
+    path: string,
+    prNumber: number,
+    sessionTitle?: string
+  ): Promise<void> => {
+    const confirmed = await confirm({
+      title: 'Wrap up this worktree?',
+      body: `Pull request #${prNumber} is merged. ${
+        sessionTitle
+          ? `The agent in ${sessionTitle} stops and the session moves to Ended in History. `
+          : ''
+      }${path} is deleted from disk and its branch is deleted locally. GitHub keeps everything.`,
+      confirmLabel: 'Wrap up',
+      danger: true
+    })
+    if (!confirmed) return
+    try {
+      const res = await wrapUpWorktree(project.id, path)
+      if (!res.ok) {
+        pushToast(res.error ?? `Could not wrap up the worktree at ${path}.`)
+        return
+      }
+      pushToast(
+        res.branchDeleted
+          ? `Wrapped up #${prNumber}. Worktree and branch deleted.`
+          : `Wrapped up #${prNumber}. Worktree deleted. ${res.note ?? 'The branch was kept.'}`
+      )
+      refreshWorktrees()
+      refreshRecords()
+      onSessionsChanged()
+    } catch {
+      pushToast(`Could not wrap up the worktree at ${path}.`)
+    }
+  }
+
   const projectSessions = sessions.filter((s) => s.record?.projectId === project.id)
   // Archived records drop off the board without anything being stopped — that
   // is what the tile menu's "Remove from Active" does, and what History's
@@ -520,6 +555,22 @@ function OverviewTab({
                         </button>
                       </>
                     )}
+                    {pr?.state === 'MERGED' && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleWrapUp(
+                            w.path,
+                            pr.number,
+                            liveSession?.record?.title ??
+                              sessionRecord?.title ??
+                              w.doneSession?.title
+                          )
+                        }
+                      >
+                        Wrap up
+                      </button>
+                    )}
                   </div>
                 </div>
               )
@@ -547,6 +598,7 @@ function OverviewTab({
         const pastTitle = w.sessionId
           ? records.find((r) => r.id === w.sessionId)?.title
           : w.doneSession?.title
+        const wrapPr = branch ? worktreePrs[branch] : undefined
         const close = (): void => setOpenWorktree(null)
         return (
           <WorktreeOverlay
@@ -581,6 +633,18 @@ function OverviewTab({
                     close()
                     void handleRemoveWorktree(w.path, liveSession?.record?.title ?? pastTitle)
                   }
+            }
+            onWrapUp={
+              wrapPr?.state === 'MERGED'
+                ? () => {
+                    close()
+                    void handleWrapUp(
+                      w.path,
+                      wrapPr.number,
+                      liveSession?.record?.title ?? pastTitle
+                    )
+                  }
+                : undefined
             }
             onOpenTicket={
               onOpenTicket

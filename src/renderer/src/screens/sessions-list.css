@@ -988,3 +988,40 @@
 .sessions-row--picked.sessions-row-clickable:hover {
   background: var(--accent-soft);
 }
+
+/* Pull request chip, as the History chips on a project. */
+.sessions-pr-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 22px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-meta-size);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sessions-pr-chip:hover {
+  border-color: var(--text-faint);
+}
+
+.sessions-pr-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--text-faint);
+}
+
+.sessions-pr-chip--open .sessions-pr-chip-dot {
+  background: var(--status-done);
+}
+
+.sessions-pr-chip--merged .sessions-pr-chip-dot {
+  background: var(--accent);
+}

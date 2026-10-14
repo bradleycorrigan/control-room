@@ -371,6 +371,8 @@ export interface BranchPullRequest {
   number: number
   state: 'OPEN' | 'MERGED' | 'CLOSED'
   url: string
+  /** Commit the PR branch pointed at on GitHub. */
+  headRefOid?: string
 }
 
 /** Each branch's most recent pull request, from one `gh pr list`. Empty when gh fails. */
@@ -379,7 +381,16 @@ export async function pullRequestsByBranch(
 ): Promise<Map<string, BranchPullRequest>> {
   const res = await run(
     'gh',
-    ['pr', 'list', '--state', 'all', '--json', 'headRefName,state,number,url', '--limit', '500'],
+    [
+      'pr',
+      'list',
+      '--state',
+      'all',
+      '--json',
+      'headRefName,state,number,url,headRefOid',
+      '--limit',
+      '500'
+    ],
     { cwd: repoPath, timeoutMs: 15_000 }
   )
   if (res.code !== 0) return new Map()
@@ -389,6 +400,7 @@ export async function pullRequestsByBranch(
       state: string
       number: number
       url: string
+      headRefOid?: string
     }>
     const byBranch = new Map<string, BranchPullRequest>()
     for (const pr of list) {
@@ -396,7 +408,12 @@ export async function pullRequestsByBranch(
         // A branch can have more than one PR over its life; the most recent
         // (gh lists newest first) wins.
         if (!byBranch.has(pr.headRefName))
-          byBranch.set(pr.headRefName, { number: pr.number, state: pr.state, url: pr.url })
+          byBranch.set(pr.headRefName, {
+            number: pr.number,
+            state: pr.state,
+            url: pr.url,
+            headRefOid: pr.headRefOid
+          })
       }
     }
     return byBranch
@@ -410,6 +427,30 @@ export async function deleteLocalBranch(repoPath: string, branch: string): Promi
   const res = await run('git', ['-C', repoPath, 'branch', '-d', branch])
   if (res.code === 0) return { ok: true }
   return { ok: false, error: res.stderr.trim() || `git branch -d exited ${res.code}` }
+}
+
+/** The commit a local branch points at, or null when it doesn't exist. */
+export async function branchTip(repoPath: string, branch: string): Promise<string | null> {
+  const res = await run('git', [
+    '-C',
+    repoPath,
+    'rev-parse',
+    '--verify',
+    '--quiet',
+    `refs/heads/${branch}`
+  ])
+  return res.code === 0 ? res.stdout.trim() : null
+}
+
+/**
+ * `git branch -D`, only for a branch whose tip is the commit its merged PR
+ * ended on: GitHub has every commit, so nothing is lost. Squash merges make
+ * `-d` refuse those branches.
+ */
+export async function forceDeleteBranch(repoPath: string, branch: string): Promise<GitOpResult> {
+  const res = await run('git', ['-C', repoPath, 'branch', '-D', branch])
+  if (res.code === 0) return { ok: true }
+  return { ok: false, error: res.stderr.trim() || `git branch -D exited ${res.code}` }
 }
 
 /** Plan 4 §7.2's `worktreeSparseDirectories` — applied right after worktree creation. */

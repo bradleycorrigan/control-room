@@ -28,7 +28,9 @@ import {
   removeProject,
   renameSession,
   getAppSettings,
-  listWorktreePullRequests
+  listWorktreePullRequests,
+  openExternal,
+  type WorktreePullRequest
 } from '../api'
 import { useStoredState } from '../state/useStoredState'
 import { useTicketKeys } from '../state/useTicketKeys'
@@ -264,16 +266,51 @@ function matchesStatus(session: LiveSession, filter: StatusFilterId[]): boolean 
 // start it again.
 const FINISHED: SessionStatus[] = ['stopped', 'missing', 'errored']
 
+const PR_WORDS: Record<WorktreePullRequest['state'], string> = {
+  OPEN: 'open',
+  MERGED: 'merged',
+  CLOSED: 'closed'
+}
+
+// The pull request for a session's branch, read by rows and cards without
+// threading it through every group component.
+const SessionPrs = createContext<(s: LiveSession) => WorktreePullRequest | null>(() => null)
+
+/** Dot, number and state. A button, so it opens the PR without opening the row. */
+function PrChip({ pr }: { pr: WorktreePullRequest }): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      className={`sessions-pr-chip sessions-pr-chip--${pr.state.toLowerCase()}`}
+      title={`Open pull request #${pr.number} on GitHub`}
+      onClick={(e) => {
+        e.stopPropagation()
+        void openExternal(pr.url)
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      <span className="sessions-pr-chip-dot" aria-hidden="true" />
+      PR #{pr.number} {PR_WORDS[pr.state]}
+    </button>
+  )
+}
+
 /**
- * The open pull request on each session's branch, and the Jira ticket each
+ * The pull request on each session's branch, and the Jira ticket each
  * session is for, so the list can filter and search by them. PRs come from
  * one `gh pr list` per project (cached in main), refreshed every two minutes.
  */
 function useSessionLinks(
   sessions: LiveSession[],
   projects: Project[]
-): { openPr: (s: LiveSession) => boolean; ticketOf: (s: LiveSession) => string | null } {
-  const [prBranches, setPrBranches] = useState<Map<string, Set<string>>>(new Map())
+): {
+  openPr: (s: LiveSession) => boolean
+  prOf: (s: LiveSession) => WorktreePullRequest | null
+  ticketOf: (s: LiveSession) => string | null
+} {
+  const [prBranches, setPrBranches] = useState<Map<string, Record<string, WorktreePullRequest>>>(
+    new Map()
+  )
   const ticketKey = useTicketKeys()
   const projectIds = useMemo(
     () =>
@@ -291,10 +328,7 @@ function useSessionLinks(
       void Promise.all(
         ids.map(async (id) => {
           const prs = await listWorktreePullRequests(id).catch(() => ({}))
-          const open = Object.entries(prs)
-            .filter(([, pr]) => pr.state === 'OPEN')
-            .map(([branch]) => branch)
-          return [id, new Set(open)] as const
+          return [id, prs] as const
         })
       ).then((entries) => {
         if (live) setPrBranches(new Map(entries))
@@ -308,13 +342,14 @@ function useSessionLinks(
     }
   }, [projectIds])
 
-  const openPr = (s: LiveSession): boolean => {
+  const prOf = (s: LiveSession): WorktreePullRequest | null => {
     const r = s.record
-    return Boolean(r?.branch && prBranches.get(r.projectId)?.has(r.branch))
+    return (r?.branch && prBranches.get(r.projectId)?.[r.branch]) || null
   }
+  const openPr = (s: LiveSession): boolean => prOf(s)?.state === 'OPEN'
   const ticketOf = (s: LiveSession): string | null => ticketKey(s.record)
 
-  return { openPr, ticketOf }
+  return { openPr, prOf, ticketOf }
 }
 
 interface ProjectGroup {
@@ -488,6 +523,7 @@ function SessionListRow({
 }: SessionListRowProps): React.JSX.Element {
   const title = sessionTitle(session)
   const selection = useContext(SessionSelection)
+  const pr = useContext(SessionPrs)(session)
   const recordId = session.record?.id ?? null
   const picked = recordId !== null && selection.selected.has(recordId)
   // Once anything is picked, a plain click picks too, as on the Backlog.
@@ -657,6 +693,8 @@ function SessionListRow({
               </span>
             </div>
           )}
+
+          {pr && <PrChip pr={pr} />}
 
           {since !== null ? (
             <div
@@ -980,6 +1018,7 @@ interface SessionCardProps {
   /** `background`: ⌘- or middle-click — open it in a tab without switching. */
   onOpen: (background?: boolean) => void
   onAdopt?: () => void
+  pr?: WorktreePullRequest | null
 }
 
 // Plan 2.4 — "sessions as cards in a responsive grid, same card as the
@@ -991,7 +1030,8 @@ function SessionCard({
   session,
   projectName,
   onOpen,
-  onAdopt
+  onAdopt,
+  pr
 }: SessionCardProps): React.JSX.Element {
   const title = sessionTitle(session)
   const branch = session.record?.investigation
@@ -1034,6 +1074,7 @@ function SessionCard({
         </div>
       )}
       <div className="session-card-bottom">
+        {pr && <PrChip pr={pr} />}
         {projectName && <span className="cr-project-pill">{projectName}</span>}
         {onAdopt && (
           <button
@@ -1182,7 +1223,7 @@ export default function SessionsScreen({
   const [hideFinished, setHideFinished] = useStoredState('sessions-hide-finished', false)
   const [prOnly, setPrOnly] = useStoredState('sessions-pr-only', false)
   const [ticketOnly, setTicketOnly] = useStoredState('sessions-ticket-only', false)
-  const { openPr, ticketOf } = useSessionLinks(sessions, projects)
+  const { openPr, prOf, ticketOf } = useSessionLinks(sessions, projects)
   const filtersOn =
     unreadOnly ||
     statusFilter.length > 0 ||
@@ -1216,7 +1257,8 @@ export default function SessionsScreen({
     return sessions.filter((s) => resolveSessionProjectId(s, projects) === effectiveProjectId)
   }, [sessions, effectiveProjectId, projects, attentionOnly])
 
-  // Every word has to appear in the title, branch, project or ticket key.
+  // Every word has to appear in the title, branch, project, ticket key or PR
+  // number ("#123" or "123").
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
   const matchesQuery = (s: LiveSession): boolean => {
     if (words.length === 0) return true
@@ -1225,7 +1267,8 @@ export default function SessionsScreen({
       sessionTitle(s),
       s.record?.branch,
       projects.find((p) => p.id === projectId)?.name,
-      ticketOf(s)
+      ticketOf(s),
+      prOf(s) ? `#${prOf(s)!.number}` : null
     ]
       .filter(Boolean)
       .join(' ')
@@ -1390,400 +1433,405 @@ export default function SessionsScreen({
     : null
 
   return (
-    <SessionSelection.Provider value={selection}>
-      <div className="sessions-view">
-        {pickedRecords.length > 0 && (
-          <SelectionBar
-            count={pickedRecords.length}
-            label="Selected sessions"
-            onClear={() => setPicked(new Set())}
-          >
-            <SelectionAction shortcut="O" onClick={openPicked}>
-              Open in tabs
-            </SelectionAction>
-            <SelectionAction shortcut="⌫" onClick={() => setDeletingPicked(true)}>
-              Delete
-            </SelectionAction>
-          </SelectionBar>
-        )}
-        {deletingPicked && pickedRecords.length > 0 && (
-          <DeleteSessionsDialog
-            records={pickedRecords}
-            onCancel={() => setDeletingPicked(false)}
-            onDone={(failed) => {
-              setDeletingPicked(false)
-              setPicked(new Set(failed.map((f) => f.record.id)))
-              handleSessionRowChanged()
-              const done = pickedRecords.length - failed.length
-              if (failed.length === 0) {
-                pushToast?.(`Deleted ${done} session${done === 1 ? '' : 's'}`)
-              } else {
-                pushToast?.(
-                  `Deleted ${done}. Couldn't delete ${failed
-                    .map((f) => `${f.record.title} (${f.error})`)
-                    .join(', ')}`
-                )
-              }
-            }}
-          />
-        )}
-        <div className="sessions-main">
-          <div className="sessions-main-header">
-            <div className="sessions-main-heading">
-              <h1 className="sessions-main-title">Sessions</h1>
-              {attentionOnly ? (
-                <p className="sessions-main-caption">
-                  {visibleSessions.length === 0
-                    ? 'Nothing is waiting on you'
-                    : `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'} need${visibleSessions.length === 1 ? 's' : ''} you`}
-                  {' - '}
-                  <button
-                    type="button"
-                    className="sessions-main-caption-clear"
-                    onClick={onClearAttentionFilter}
-                  >
-                    show all sessions
-                  </button>
-                </p>
-              ) : (
-                <p className="sessions-main-caption">
-                  {filtersOn ? `${visibleSessions.length} of ` : ''}
-                  {scopedSessions.length} session{scopedSessions.length === 1 ? '' : 's'}
-                  {effectiveProjectId ? ' in this project' : ' across all projects'}
-                </p>
-              )}
-            </div>
-            <div className="sessions-main-controls">
-              {scopedSessions.length > 0 && (
-                <div className="sessions-sort" ref={sortAnchor}>
-                  <button
-                    type="button"
-                    className="sessions-sort-button"
-                    aria-haspopup="menu"
-                    aria-expanded={sortOpen}
-                    onClick={() => setSortOpen((v) => !v)}
-                  >
-                    <Icon name="ArrowUpDown" size={14} />
-                    {SORT_OPTIONS.find((o) => o.value === sortMode)?.label}
-                    <Icon name="ChevronDown" size={14} />
-                  </button>
-                  <Popover
-                    open={sortOpen}
-                    onClose={() => setSortOpen(false)}
-                    anchorRef={sortAnchor}
-                    placement="bottom-end"
-                    className="sessions-sort-menu"
-                    aria-label="Sort sessions"
-                  >
-                    {SORT_OPTIONS.map((o) => (
-                      <button
-                        key={o.value}
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={sortMode === o.value}
-                        className="cr-popover-item sessions-sort-item"
-                        onClick={() => {
-                          setSortMode(o.value)
-                          setSortOpen(false)
-                        }}
-                      >
-                        <span>Sort by {o.label.toLowerCase()}</span>
-                        {sortMode === o.value && <Icon name="Check" size={14} />}
-                      </button>
-                    ))}
-                  </Popover>
-                </div>
-              )}
-              <div className="sessions-view-toggle" role="radiogroup" aria-label="View">
-                {(
-                  [
-                    { value: 'list', icon: 'List', label: 'List view' },
-                    { value: 'grid', icon: 'LayoutGrid', label: 'Grid view' }
-                  ] as const
-                ).map((o) => (
-                  <Tooltip key={o.value} label={o.label}>
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={view === o.value}
-                      aria-label={o.label}
-                      className={
-                        view === o.value
-                          ? 'sessions-view-option sessions-view-option--selected'
-                          : 'sessions-view-option'
-                      }
-                      onClick={() => setView(o.value)}
-                    >
-                      <Icon name={o.icon} size={16} />
-                    </button>
-                  </Tooltip>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Two quiet rows. Statuses: pick any number, or All. Under them,
-            search and the switches that narrow whatever statuses are on. */}
-          {scopedSessions.length > 0 && (
-            <div className="sessions-filters">
-              <div
-                className="sessions-filter-tabs"
-                role="group"
-                aria-label="Filter by status: pick any number"
-              >
-                <button
-                  type="button"
-                  aria-pressed={statusFilter.length === 0}
-                  className={
-                    statusFilter.length === 0
-                      ? 'sessions-filter-tab sessions-filter-tab--selected'
-                      : 'sessions-filter-tab'
-                  }
-                  title="Show every status"
-                  onClick={() => setStatusFilter([])}
-                >
-                  All
-                  <span className="sessions-filter-count">{allCount}</span>
-                </button>
-                {/* Only statuses something actually has, plus any selected
-                  one, so it can always be switched off again. */}
-                {STATUS_FILTERS.filter(
-                  (f) => (statusCounts.get(f.id) ?? 0) > 0 || statusFilter.includes(f.id)
-                ).map((f) => {
-                  const on = statusFilter.includes(f.id)
-                  return (
-                    <button
-                      key={f.id}
-                      type="button"
-                      aria-pressed={on}
-                      data-status-filter={f.id}
-                      className={
-                        on
-                          ? 'sessions-filter-tab sessions-filter-tab--selected'
-                          : 'sessions-filter-tab'
-                      }
-                      title={on ? 'Stop showing these' : 'Show these too; click others to add them'}
-                      onClick={() =>
-                        setStatusFilter(
-                          on ? statusFilter.filter((id) => id !== f.id) : [...statusFilter, f.id]
-                        )
-                      }
-                    >
-                      <StatusDot status={f.statuses[0]} size={8} />
-                      {sentenceCase(STATUS_WORDS[f.statuses[0]])}
-                      <span className="sessions-filter-count">{statusCounts.get(f.id) ?? 0}</span>
-                    </button>
+    <SessionPrs.Provider value={prOf}>
+      <SessionSelection.Provider value={selection}>
+        <div className="sessions-view">
+          {pickedRecords.length > 0 && (
+            <SelectionBar
+              count={pickedRecords.length}
+              label="Selected sessions"
+              onClear={() => setPicked(new Set())}
+            >
+              <SelectionAction shortcut="O" onClick={openPicked}>
+                Open in tabs
+              </SelectionAction>
+              <SelectionAction shortcut="⌫" onClick={() => setDeletingPicked(true)}>
+                Delete
+              </SelectionAction>
+            </SelectionBar>
+          )}
+          {deletingPicked && pickedRecords.length > 0 && (
+            <DeleteSessionsDialog
+              records={pickedRecords}
+              onCancel={() => setDeletingPicked(false)}
+              onDone={(failed) => {
+                setDeletingPicked(false)
+                setPicked(new Set(failed.map((f) => f.record.id)))
+                handleSessionRowChanged()
+                const done = pickedRecords.length - failed.length
+                if (failed.length === 0) {
+                  pushToast?.(`Deleted ${done} session${done === 1 ? '' : 's'}`)
+                } else {
+                  pushToast?.(
+                    `Deleted ${done}. Couldn't delete ${failed
+                      .map((f) => `${f.record.title} (${f.error})`)
+                      .join(', ')}`
                   )
-                })}
-              </div>
-              <div className="sessions-filter-row">
-                <label className="sessions-search">
-                  <Icon name="Search" size={14} />
-                  <input
-                    ref={searchRef}
-                    type="search"
-                    aria-label="Search sessions"
-                    placeholder="Search title, branch, project or ticket"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Escape') {
-                        e.stopPropagation()
-                        setQuery('')
-                        e.currentTarget.blur()
-                      }
-                    }}
-                  />
-                  {!query && <kbd>/</kbd>}
-                </label>
-                {(
-                  [
-                    {
-                      id: 'unread',
-                      label: 'Unread',
-                      on: unreadOnly,
-                      set: setUnreadOnly,
-                      count: unreadCount,
-                      help: 'Only sessions with something new since you last opened them'
-                    },
-                    {
-                      id: 'pr',
-                      label: 'Open PR',
-                      on: prOnly,
-                      set: setPrOnly,
-                      count: prCount,
-                      help: 'Only sessions whose branch has an open pull request'
-                    },
-                    {
-                      id: 'ticket',
-                      label: 'Has ticket',
-                      on: ticketOnly,
-                      set: setTicketOnly,
-                      count: ticketCount,
-                      help: 'Only sessions linked to a Jira ticket'
-                    },
-                    {
-                      id: 'finished',
-                      label: 'Hide finished',
-                      on: hideFinished,
-                      set: setHideFinished,
-                      count: finishedCount,
-                      help: 'Hide stopped, missing and errored sessions'
-                    }
-                  ] as const
-                )
-                  // Open PR and Has ticket only once something has one (or
-                  // while on): without gh or Jira they could never match.
-                  .filter((t) => t.id === 'unread' || t.id === 'finished' || t.on || t.count > 0)
-                  .map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      role="switch"
-                      aria-checked={t.on}
-                      data-filter-switch={t.id}
-                      title={t.help}
-                      className={
-                        t.on
-                          ? 'sessions-unread-toggle sessions-unread-toggle--on'
-                          : 'sessions-unread-toggle'
-                      }
-                      onClick={() => t.set(!t.on)}
-                    >
-                      <span className="sessions-unread-switch" aria-hidden="true" />
-                      {t.label}
-                      <span className="sessions-filter-count">{t.count}</span>
-                    </button>
-                  ))}
-                {filtersOn && (
-                  <button type="button" className="sessions-filter-clear" onClick={clearFilters}>
-                    Clear filters
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {filteredToNothing && (
-            <div className="sessions-empty-wrap">
-              <div className="sessions-empty-box">
-                <h2 className="sessions-empty-title">No sessions match these filters</h2>
-                <Button variant="outlined" onClick={clearFilters}>
-                  Clear filters
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {!hasAnySessions && !filteredToNothing && (
-            <SessionsEmptyState
-              filtered={effectiveProjectId !== null}
-              attentionOnly={attentionOnly}
-              projectName={filterProjectName}
-              onNewSession={onNewSession ? () => onNewSession() : undefined}
-              onClearFilter={onClearFilter}
-              onClearAttentionFilter={onClearAttentionFilter}
+                }
+              }}
             />
           )}
-
-          {hasAnySessions && view === 'list' && (
-            <div className="sessions-groups-list">
-              {projectGroups.map((group) => (
-                <ProjectContainer
-                  key={group.project.id}
-                  group={group}
-                  forceOpen={filtersOn}
-                  onOpenSession={onOpenSession}
-                  onAdopt={handleAdopt}
-                  onRowChanged={handleSessionRowChanged}
-                  onNewSession={onNewSession}
-                  onProjectsChanged={onProjectsChanged}
-                  pushToast={pushToast}
-                  onOpenInIde={onOpenInIde}
-                  onFocusTerminal={onFocusTerminal}
-                />
-              ))}
-
-              {otherSessions.length > 0 && (
-                <section className="sessions-project sessions-project-other">
-                  <div className="sessions-project-header">
-                    <span className="sessions-project-name">Other sessions</span>
-                    <span className="sessions-project-count">
-                      {otherSessions.length} session{otherSessions.length === 1 ? '' : 's'}
-                    </span>
+          <div className="sessions-main">
+            <div className="sessions-main-header">
+              <div className="sessions-main-heading">
+                <h1 className="sessions-main-title">Sessions</h1>
+                {attentionOnly ? (
+                  <p className="sessions-main-caption">
+                    {visibleSessions.length === 0
+                      ? 'Nothing is waiting on you'
+                      : `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'} need${visibleSessions.length === 1 ? 's' : ''} you`}
+                    {' - '}
+                    <button
+                      type="button"
+                      className="sessions-main-caption-clear"
+                      onClick={onClearAttentionFilter}
+                    >
+                      show all sessions
+                    </button>
+                  </p>
+                ) : (
+                  <p className="sessions-main-caption">
+                    {filtersOn ? `${visibleSessions.length} of ` : ''}
+                    {scopedSessions.length} session{scopedSessions.length === 1 ? '' : 's'}
+                    {effectiveProjectId ? ' in this project' : ' across all projects'}
+                  </p>
+                )}
+              </div>
+              <div className="sessions-main-controls">
+                {scopedSessions.length > 0 && (
+                  <div className="sessions-sort" ref={sortAnchor}>
+                    <button
+                      type="button"
+                      className="sessions-sort-button"
+                      aria-haspopup="menu"
+                      aria-expanded={sortOpen}
+                      onClick={() => setSortOpen((v) => !v)}
+                    >
+                      <Icon name="ArrowUpDown" size={14} />
+                      {SORT_OPTIONS.find((o) => o.value === sortMode)?.label}
+                      <Icon name="ChevronDown" size={14} />
+                    </button>
+                    <Popover
+                      open={sortOpen}
+                      onClose={() => setSortOpen(false)}
+                      anchorRef={sortAnchor}
+                      placement="bottom-end"
+                      className="sessions-sort-menu"
+                      aria-label="Sort sessions"
+                    >
+                      {SORT_OPTIONS.map((o) => (
+                        <button
+                          key={o.value}
+                          type="button"
+                          role="menuitemradio"
+                          aria-checked={sortMode === o.value}
+                          className="cr-popover-item sessions-sort-item"
+                          onClick={() => {
+                            setSortMode(o.value)
+                            setSortOpen(false)
+                          }}
+                        >
+                          <span>Sort by {o.label.toLowerCase()}</span>
+                          {sortMode === o.value && <Icon name="Check" size={14} />}
+                        </button>
+                      ))}
+                    </Popover>
                   </div>
-                  <div className="sessions-project-rows">
-                    {otherSessions.map((session) => {
-                      const adoptableProject = !session.record
-                        ? projectForCwd(session.cwd, projects)
-                        : null
-                      return (
-                        <SessionListRow
-                          key={session.key}
-                          session={session}
-                          onOpen={(background) => onOpenSession(session.key, background)}
-                          onAdopt={
-                            adoptableProject
-                              ? () => handleAdopt(session, adoptableProject.id)
-                              : undefined
-                          }
-                          onOpenInIde={onOpenInIde ? () => onOpenInIde(session) : undefined}
-                          onFocusTerminal={
-                            onFocusTerminal ? () => onFocusTerminal(session) : undefined
-                          }
-                          onDeleted={handleSessionRowChanged}
-                          onRenamed={handleSessionRowChanged}
-                        />
-                      )
-                    })}
-                  </div>
-                </section>
-              )}
+                )}
+                <div className="sessions-view-toggle" role="radiogroup" aria-label="View">
+                  {(
+                    [
+                      { value: 'list', icon: 'List', label: 'List view' },
+                      { value: 'grid', icon: 'LayoutGrid', label: 'Grid view' }
+                    ] as const
+                  ).map((o) => (
+                    <Tooltip key={o.value} label={o.label}>
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={view === o.value}
+                        aria-label={o.label}
+                        className={
+                          view === o.value
+                            ? 'sessions-view-option sessions-view-option--selected'
+                            : 'sessions-view-option'
+                        }
+                        onClick={() => setView(o.value)}
+                      >
+                        <Icon name={o.icon} size={16} />
+                      </button>
+                    </Tooltip>
+                  ))}
+                </div>
+              </div>
             </div>
-          )}
 
-          {hasAnySessions &&
-            view === 'grid' &&
-            GROUP_ORDER.map((groupId) => {
-              const groupSessions = groups.get(groupId) ?? []
-              if (groupSessions.length === 0) return null
-              return (
-                <section key={groupId} className="sessions-group-section">
-                  <div className="sessions-group-header">
-                    <span className="sessions-group-label">{GROUP_LABEL[groupId]}</span>
-                    <span className="sessions-group-count">{groupSessions.length}</span>
-                  </div>
+            {/* Two quiet rows. Statuses: pick any number, or All. Under them,
+            search and the switches that narrow whatever statuses are on. */}
+            {scopedSessions.length > 0 && (
+              <div className="sessions-filters">
+                <div
+                  className="sessions-filter-tabs"
+                  role="group"
+                  aria-label="Filter by status: pick any number"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={statusFilter.length === 0}
+                    className={
+                      statusFilter.length === 0
+                        ? 'sessions-filter-tab sessions-filter-tab--selected'
+                        : 'sessions-filter-tab'
+                    }
+                    title="Show every status"
+                    onClick={() => setStatusFilter([])}
+                  >
+                    All
+                    <span className="sessions-filter-count">{allCount}</span>
+                  </button>
+                  {/* Only statuses something actually has, plus any selected
+                  one, so it can always be switched off again. */}
+                  {STATUS_FILTERS.filter(
+                    (f) => (statusCounts.get(f.id) ?? 0) > 0 || statusFilter.includes(f.id)
+                  ).map((f) => {
+                    const on = statusFilter.includes(f.id)
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        aria-pressed={on}
+                        data-status-filter={f.id}
+                        className={
+                          on
+                            ? 'sessions-filter-tab sessions-filter-tab--selected'
+                            : 'sessions-filter-tab'
+                        }
+                        title={
+                          on ? 'Stop showing these' : 'Show these too; click others to add them'
+                        }
+                        onClick={() =>
+                          setStatusFilter(
+                            on ? statusFilter.filter((id) => id !== f.id) : [...statusFilter, f.id]
+                          )
+                        }
+                      >
+                        <StatusDot status={f.statuses[0]} size={8} />
+                        {sentenceCase(STATUS_WORDS[f.statuses[0]])}
+                        <span className="sessions-filter-count">{statusCounts.get(f.id) ?? 0}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <div className="sessions-filter-row">
+                  <label className="sessions-search">
+                    <Icon name="Search" size={14} />
+                    <input
+                      ref={searchRef}
+                      type="search"
+                      aria-label="Search sessions"
+                      placeholder="Search title, branch, project or ticket"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') {
+                          e.stopPropagation()
+                          setQuery('')
+                          e.currentTarget.blur()
+                        }
+                      }}
+                    />
+                    {!query && <kbd>/</kbd>}
+                  </label>
+                  {(
+                    [
+                      {
+                        id: 'unread',
+                        label: 'Unread',
+                        on: unreadOnly,
+                        set: setUnreadOnly,
+                        count: unreadCount,
+                        help: 'Only sessions with something new since you last opened them'
+                      },
+                      {
+                        id: 'pr',
+                        label: 'Open PR',
+                        on: prOnly,
+                        set: setPrOnly,
+                        count: prCount,
+                        help: 'Only sessions whose branch has an open pull request'
+                      },
+                      {
+                        id: 'ticket',
+                        label: 'Has ticket',
+                        on: ticketOnly,
+                        set: setTicketOnly,
+                        count: ticketCount,
+                        help: 'Only sessions linked to a Jira ticket'
+                      },
+                      {
+                        id: 'finished',
+                        label: 'Hide finished',
+                        on: hideFinished,
+                        set: setHideFinished,
+                        count: finishedCount,
+                        help: 'Hide stopped, missing and errored sessions'
+                      }
+                    ] as const
+                  )
+                    // Open PR and Has ticket only once something has one (or
+                    // while on): without gh or Jira they could never match.
+                    .filter((t) => t.id === 'unread' || t.id === 'finished' || t.on || t.count > 0)
+                    .map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        role="switch"
+                        aria-checked={t.on}
+                        data-filter-switch={t.id}
+                        title={t.help}
+                        className={
+                          t.on
+                            ? 'sessions-unread-toggle sessions-unread-toggle--on'
+                            : 'sessions-unread-toggle'
+                        }
+                        onClick={() => t.set(!t.on)}
+                      >
+                        <span className="sessions-unread-switch" aria-hidden="true" />
+                        {t.label}
+                        <span className="sessions-filter-count">{t.count}</span>
+                      </button>
+                    ))}
+                  {filtersOn && (
+                    <button type="button" className="sessions-filter-clear" onClick={clearFilters}>
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
-                  <div className="sessions-card-grid">
-                    {groupSessions.map((session) => {
-                      const adoptableProject = !session.record
-                        ? projectForCwd(session.cwd, projects)
-                        : null
-                      return (
-                        <SessionCard
-                          key={session.key}
-                          session={session}
-                          projectName={
-                            session.record
-                              ? (projects.find((p) => p.id === session.record!.projectId)?.name ??
-                                null)
-                              : null
-                          }
-                          onOpen={(background) => onOpenSession(session.key, background)}
-                          onAdopt={
-                            adoptableProject
-                              ? () => handleAdopt(session, adoptableProject.id)
-                              : undefined
-                          }
-                        />
-                      )
-                    })}
-                  </div>
-                </section>
-              )
-            })}
+            {filteredToNothing && (
+              <div className="sessions-empty-wrap">
+                <div className="sessions-empty-box">
+                  <h2 className="sessions-empty-title">No sessions match these filters</h2>
+                  <Button variant="outlined" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {!hasAnySessions && !filteredToNothing && (
+              <SessionsEmptyState
+                filtered={effectiveProjectId !== null}
+                attentionOnly={attentionOnly}
+                projectName={filterProjectName}
+                onNewSession={onNewSession ? () => onNewSession() : undefined}
+                onClearFilter={onClearFilter}
+                onClearAttentionFilter={onClearAttentionFilter}
+              />
+            )}
+
+            {hasAnySessions && view === 'list' && (
+              <div className="sessions-groups-list">
+                {projectGroups.map((group) => (
+                  <ProjectContainer
+                    key={group.project.id}
+                    group={group}
+                    forceOpen={filtersOn}
+                    onOpenSession={onOpenSession}
+                    onAdopt={handleAdopt}
+                    onRowChanged={handleSessionRowChanged}
+                    onNewSession={onNewSession}
+                    onProjectsChanged={onProjectsChanged}
+                    pushToast={pushToast}
+                    onOpenInIde={onOpenInIde}
+                    onFocusTerminal={onFocusTerminal}
+                  />
+                ))}
+
+                {otherSessions.length > 0 && (
+                  <section className="sessions-project sessions-project-other">
+                    <div className="sessions-project-header">
+                      <span className="sessions-project-name">Other sessions</span>
+                      <span className="sessions-project-count">
+                        {otherSessions.length} session{otherSessions.length === 1 ? '' : 's'}
+                      </span>
+                    </div>
+                    <div className="sessions-project-rows">
+                      {otherSessions.map((session) => {
+                        const adoptableProject = !session.record
+                          ? projectForCwd(session.cwd, projects)
+                          : null
+                        return (
+                          <SessionListRow
+                            key={session.key}
+                            session={session}
+                            onOpen={(background) => onOpenSession(session.key, background)}
+                            onAdopt={
+                              adoptableProject
+                                ? () => handleAdopt(session, adoptableProject.id)
+                                : undefined
+                            }
+                            onOpenInIde={onOpenInIde ? () => onOpenInIde(session) : undefined}
+                            onFocusTerminal={
+                              onFocusTerminal ? () => onFocusTerminal(session) : undefined
+                            }
+                            onDeleted={handleSessionRowChanged}
+                            onRenamed={handleSessionRowChanged}
+                          />
+                        )
+                      })}
+                    </div>
+                  </section>
+                )}
+              </div>
+            )}
+
+            {hasAnySessions &&
+              view === 'grid' &&
+              GROUP_ORDER.map((groupId) => {
+                const groupSessions = groups.get(groupId) ?? []
+                if (groupSessions.length === 0) return null
+                return (
+                  <section key={groupId} className="sessions-group-section">
+                    <div className="sessions-group-header">
+                      <span className="sessions-group-label">{GROUP_LABEL[groupId]}</span>
+                      <span className="sessions-group-count">{groupSessions.length}</span>
+                    </div>
+
+                    <div className="sessions-card-grid">
+                      {groupSessions.map((session) => {
+                        const adoptableProject = !session.record
+                          ? projectForCwd(session.cwd, projects)
+                          : null
+                        return (
+                          <SessionCard
+                            key={session.key}
+                            session={session}
+                            projectName={
+                              session.record
+                                ? (projects.find((p) => p.id === session.record!.projectId)?.name ??
+                                  null)
+                                : null
+                            }
+                            pr={prOf(session)}
+                            onOpen={(background) => onOpenSession(session.key, background)}
+                            onAdopt={
+                              adoptableProject
+                                ? () => handleAdopt(session, adoptableProject.id)
+                                : undefined
+                            }
+                          />
+                        )
+                      })}
+                    </div>
+                  </section>
+                )
+              })}
+          </div>
         </div>
-      </div>
-    </SessionSelection.Provider>
+      </SessionSelection.Provider>
+    </SessionPrs.Provider>
   )
 }

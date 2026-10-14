@@ -11,6 +11,9 @@ import {
   lastCommitTime,
   removeWorktreeClean,
   deleteLocalBranch,
+  forceDeleteBranch,
+  branchTip,
+  pullRequestsByBranch,
   pruneWorktrees,
   gitStatus
 } from './exec/git'
@@ -19,6 +22,13 @@ import { openInCursor } from './exec/cursor'
 import { discoverLiveSessions } from './engine/discovery'
 import { retireSessionsInWorktree } from './engine/sessions'
 import type { LiveSession } from './store/types'
+
+interface WrapUpOutcome {
+  ok: boolean
+  error?: string
+  branchDeleted: boolean
+  note?: string
+}
 
 // A worktree path as git reports it, resolved and with any trailing slash
 // stripped, so it compares equal to a session's cwd or stored worktreePath
@@ -231,6 +241,41 @@ export function registerProjectsIpc(): void {
       return { removed, branchesDeleted, failed }
     }
   )
+
+  // "Wrap up" for a worktree whose pull request merged: end its sessions,
+  // remove the worktree and delete the local branch. The merge is re-read
+  // from GitHub here, never taken from the renderer or the card cache.
+  ipcMain.handle('worktrees:wrapUp', async (_evt, projectId: string, worktreePath: string) => {
+    const fail = (error: string): WrapUpOutcome => ({ ok: false, error, branchDeleted: false })
+    const wt = await projectWorktree(projectId, worktreePath)
+    if (!wt) return fail('Not a worktree of this project.')
+    const listed = await listWorktrees(wt.repoPath)
+    const branch = listed
+      .find((w) => w.path === worktreePath)
+      ?.branch?.replace(/^refs\/heads\//, '')
+    if (!branch) return fail('This worktree has no branch.')
+    const pr = (await pullRequestsByBranch(wt.repoPath)).get(branch)
+    if (pr?.state !== 'MERGED') return fail('Could not confirm the pull request is merged.')
+    if (await hasUncommittedChanges(worktreePath))
+      return fail('This worktree has uncommitted changes. Commit or discard them first.')
+
+    const tip = await branchTip(wt.repoPath, branch)
+    await retireSessionsInWorktree(worktreePath)
+    const removed = await removeWorktreeClean(wt.repoPath, worktreePath)
+    if (!removed.ok) return fail(removed.error ?? 'Could not remove the worktree.')
+    await pruneWorktrees(wt.repoPath)
+
+    let branchDeleted = (await deleteLocalBranch(wt.repoPath, branch)).ok
+    if (!branchDeleted && tip && pr.headRefOid && tip === pr.headRefOid)
+      branchDeleted = (await forceDeleteBranch(wt.repoPath, branch)).ok
+    return {
+      ok: true,
+      branchDeleted,
+      note: branchDeleted
+        ? undefined
+        : `Kept the branch ${branch}: it has commits that are not on GitHub.`
+    }
+  })
 
   // Pin a session (plan 7 step 3): a session-level preference, independent
   // of a project's own `pinned` above — keeps it at the top of Home's

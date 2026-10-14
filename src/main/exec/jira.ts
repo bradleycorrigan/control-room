@@ -483,6 +483,33 @@ interface FixtureStore {
 
 let fixture: FixtureStore | null | undefined
 
+// jira-issues.json is written as if today were this date. Loading it moves
+// every date forward by whole days, so "ended yesterday" and "20d old" stay
+// true however long ago the file was written.
+export const FIXTURE_ANCHOR = '2026-10-01T00:00:00.000Z'
+
+function shiftFixtureDates<T>(value: T, shiftMs: number): T {
+  if (typeof value === 'string') {
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(value)) return value
+    return new Date(Date.parse(value) + shiftMs).toISOString() as T
+  }
+  if (Array.isArray(value)) return value.map((v) => shiftFixtureDates(v, shiftMs)) as T
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([k, v]) => [k, shiftFixtureDates(v, shiftMs)])
+    ) as T
+  }
+  return value
+}
+
+/** Milliseconds from the anchor to the start (UTC) of today. */
+function fixtureShiftMs(): number {
+  const now = new Date()
+  return (
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - Date.parse(FIXTURE_ANCHOR)
+  )
+}
+
 /**
  * Dev only: fills the fixture with `count` realistic tickets (0 removes them),
  * so a check can see a screen at real volume. The base fixture stays small so
@@ -545,7 +572,7 @@ function fixtureStore(): FixtureStore | null {
   if (fixture !== undefined) return fixture
   const path = !app.isPackaged ? process.env.CR_JIRA_FIXTURE : undefined
   if (!path || !existsSync(path)) return (fixture = null)
-  const raw = JSON.parse(readFileSync(path, 'utf8')) as {
+  const raw = shiftFixtureDates(JSON.parse(readFileSync(path, 'utf8')), fixtureShiftMs()) as {
     issues: (Omit<JiraIssue, 'url' | 'blockedBy' | 'blocking'> &
       Partial<Pick<JiraIssue, 'blockedBy' | 'blocking'>>)[]
     statuses: { name: string; category: string }[]
@@ -580,7 +607,7 @@ function fixtureStore(): FixtureStore | null {
     details['DSD-101'].comments.push({
       id: 'fixture-mention',
       author: 'Someone Else',
-      created: '2026-09-20T10:00:00.000Z',
+      created: new Date(Date.parse('2026-09-20T10:00:00.000Z') + fixtureShiftMs()).toISOString(),
       body: '[~accountid:fixture-joanna] can you check the March totals?'
     })
     details['DSD-101'].people = { 'fixture-joanna': 'Joanna Fixture' }

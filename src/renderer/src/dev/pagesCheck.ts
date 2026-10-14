@@ -3814,12 +3814,16 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
 
   // ---- An empty duplicate cycle, as Jira's Complete leaves behind ----
   {
+    const nowDate = new Date()
+    const todayUtc = Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth(), nowDate.getUTCDate())
     await api.invoke('jira:createSprint', {
       boardId: 1,
       // As Jira makes it: right after the pre-made kestrel.
       name: 'kestrel 2',
-      startDate: '2026-10-13T17:00:00.000Z',
-      endDate: '2026-10-27T17:00:00.000Z'
+      // A fortnight from where kestrel ends (12 days out at 17:00 UTC, as the
+      // fixture shifts its own dates to today).
+      startDate: new Date(todayUtc + 12 * 86_400_000 + 17 * 3_600_000).toISOString(),
+      endDate: new Date(todayUtc + 26 * 86_400_000 + 17 * 3_600_000).toISOString()
     })
     await ctx.goTo('backlog')
     await wait(400)
