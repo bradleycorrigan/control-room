@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react'
-import type { SessionRecord } from '../../../main/store/types'
+import type { LiveSession, SessionRecord } from '../../../main/store/types'
 import type { CliHistoryEntry } from '../../../main/exec/transcripts'
-import { SegmentedControl, Button } from '../components/primitives'
-import { archiveSession, listCliHistory, resumeCliSession, resumeSession } from '../api'
+import { Button, StatusDot } from '../components/primitives'
+import { STATUS_WORDS } from '../components/primitives/Badge'
+import {
+  archiveSession,
+  listCliHistory,
+  listWorktreePullRequests,
+  openExternal,
+  resumeCliSession,
+  resumeSession,
+  type WorktreePullRequest
+} from '../api'
 import { relativeTime } from '../lib/format-time'
+import { useTicketKeys } from '../state/useTicketKeys'
 
 // Plan 3, Part 4 — Recent (this app's own sessions) and CLI (transcripts
 // written by Claude Code sessions started outside the app) history, both
@@ -39,6 +49,10 @@ interface Props {
    * everything and told these three states apart not at all.
    */
   isRunning: (recordId: string) => boolean
+  /** The record's live session, for its status and last activity. */
+  liveOf: (recordId: string) => LiveSession | undefined
+  /** Opens a Jira ticket in the side panel. */
+  onOpenTicket?: (key: string) => void
   onOpenSession: (liveKey: string) => void
   pushToast: (message: string) => void
   /** Refreshes the project's records after one is put back on the board. */
@@ -52,6 +66,8 @@ export default function HistoryPanel({
   records,
   findLiveKey,
   isRunning,
+  liveOf,
+  onOpenTicket,
   onOpenSession,
   pushToast,
   onRecordsChanged,
@@ -62,6 +78,18 @@ export default function HistoryPanel({
   const [cliLoaded, setCliLoaded] = useState(false)
   const [busySessionId, setBusySessionId] = useState<string | null>(null)
   const [state, setState] = useState<SessionState>('active')
+  const ticketKey = useTicketKeys()
+  // Each branch's latest pull request, filled in once gh answers.
+  const [prs, setPrs] = useState<Record<string, WorktreePullRequest>>({})
+  useEffect(() => {
+    let live = true
+    void listWorktreePullRequests(projectId).then((p) => {
+      if (live) setPrs(p)
+    })
+    return () => {
+      live = false
+    }
+  }, [projectId])
 
   const onArchive = async (record: SessionRecord): Promise<void> => {
     const result = await archiveSession(record.id)
@@ -138,27 +166,97 @@ export default function HistoryPanel({
   const ended = records.filter((r) => stateOf(r) === 'ended')
   const shown = state === 'active' ? active : state === 'done' ? done : ended
 
+  // Most recently active first: the session you were just in is the one
+  // you're looking for.
+  const lastActive = (r: SessionRecord): number => liveOf(r.id)?.activityAt ?? r.createdAt
+  const sorted = [...shown].sort((a, b) => lastActive(b) - lastActive(a))
+
   const renderRow = (
     record: SessionRecord,
     action: 'done' | 'resume' | null
   ): React.JSX.Element => {
     const liveKey = findLiveKey(record.id)
+    const live = liveOf(record.id)
+    const ticket = ticketKey(record)
+    const pr = record.branch ? prs[record.branch] : undefined
+    const activeAt = live?.activityAt ?? null
     return (
       <li
         key={record.id}
-        className={`recent-session-row${liveKey ? ' recent-session-row-clickable' : ''}`}
+        className={`history-row${liveKey ? ' history-row--clickable' : ''}`}
+        data-record={record.id}
         onClick={liveKey ? () => onOpenSession(liveKey) : undefined}
+        onKeyDown={
+          liveKey
+            ? (e) => {
+                if (e.key === 'Enter') onOpenSession(liveKey)
+              }
+            : undefined
+        }
         role={liveKey ? 'button' : undefined}
         tabIndex={liveKey ? 0 : undefined}
+        title={record.lastPrompt ?? undefined}
       >
-        <span className="recent-session-title">{record.title}</span>
-        <span className="recent-session-branch">{record.branch}</span>
-        <span className="recent-session-time">{relativeTime(record.createdAt)}</span>
+        <span className="history-row-status">
+          {live && state !== 'ended' ? (
+            <>
+              <StatusDot status={live.status} size={8} />
+              <span>{STATUS_WORDS[live.status]}</span>
+            </>
+          ) : (
+            <span className="history-row-faint">
+              {state === 'ended' ? (record.deletedAt ? 'deleted' : 'no chat') : 'not running'}
+            </span>
+          )}
+        </span>
+        <span className="history-row-title">{record.title}</span>
+        <span className="history-row-meta">
+          {ticket &&
+            (onOpenTicket ? (
+              <button
+                type="button"
+                className="history-chip history-chip--mono"
+                title={`Open ${ticket} in Tickets`}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenTicket(ticket)
+                }}
+              >
+                {ticket}
+              </button>
+            ) : (
+              <span className="history-chip history-chip--mono">{ticket}</span>
+            ))}
+          {pr && (
+            <button
+              type="button"
+              className={`history-chip history-chip--pr-${pr.state.toLowerCase()}`}
+              title="Open the pull request on GitHub"
+              onClick={(e) => {
+                e.stopPropagation()
+                void openExternal(pr.url)
+              }}
+            >
+              <span className="history-chip-dot" aria-hidden />
+              PR #{pr.number} {pr.state.toLowerCase()}
+            </button>
+          )}
+          {record.branch && (
+            <span className="history-row-branch" title={record.branch}>
+              {record.branch}
+            </span>
+          )}
+          <span
+            className="history-row-time"
+            title={`Started ${new Date(record.createdAt).toLocaleString()}`}
+          >
+            {activeAt
+              ? `active ${relativeTime(activeAt)}`
+              : `started ${relativeTime(record.createdAt)}`}
+          </span>
+        </span>
         {action && (
-          <span className="recent-session-actions">
-            {/* The same Button the CLI rows opposite use. This was a bespoke
-                outlined pill, so the two halves of one panel had two different
-                button styles and neither was the app's. */}
+          <span className="history-row-actions">
             <Button
               variant="ghost"
               size="compact"
@@ -180,14 +278,18 @@ export default function HistoryPanel({
   return (
     <section className="overview-section">
       <div className="overview-section-header-row">
-        <h3 className="overview-section-header">HISTORY</h3>
-        <SegmentedControl
+        <h3 className="overview-section-header">History</h3>
+        <PillTabs
           value={tab}
           onChange={(v) => setTab(v as 'recent' | 'cli')}
-          aria-label="Session history source"
+          label="Session history source"
           options={[
             { value: 'recent', label: 'Started here' },
-            { value: 'cli', label: 'Started in a terminal' }
+            {
+              value: 'cli',
+              label: 'Started in a terminal',
+              count: cliLoaded ? cliEntries.length : undefined
+            }
           ]}
         />
       </div>
@@ -211,14 +313,14 @@ export default function HistoryPanel({
                 you asked for. Counts, so an empty state is a fact rather than
                 a surprise. */}
             <div className="history-state-row">
-              <SegmentedControl
+              <PillTabs
                 value={state}
                 onChange={(v) => setState(v as SessionState)}
-                aria-label="Which sessions to show"
+                label="Which sessions to show"
                 options={[
-                  { value: 'active', label: `Active ${active.length}` },
-                  { value: 'done', label: `Done ${done.length}` },
-                  { value: 'ended', label: `Ended ${ended.length}` }
+                  { value: 'active', label: 'Active', count: active.length },
+                  { value: 'done', label: 'Done', count: done.length },
+                  { value: 'ended', label: 'Ended', count: ended.length }
                 ]}
               />
             </div>
@@ -228,8 +330,8 @@ export default function HistoryPanel({
             {shown.length === 0 ? (
               <p className="empty-state">{STATE_EMPTY[state]}</p>
             ) : (
-              <ul className="recent-session-list">
-                {shown.map((record) =>
+              <ul className="history-list">
+                {sorted.map((record) =>
                   renderRow(
                     record,
                     state === 'active' ? 'done' : state === 'done' ? 'resume' : null
@@ -247,20 +349,24 @@ export default function HistoryPanel({
           up.
         </p>
       ) : (
-        <ul className="recent-session-list">
+        <ul className="history-list">
           {cliEntries.map((entry) => (
-            <li key={entry.sessionId} className="recent-session-row cli-history-row">
-              <span className="recent-session-title" title={entry.label}>
-                {entry.label}
+            <li key={entry.sessionId} className="history-row" title={entry.label}>
+              <span className="history-row-title">{entry.label}</span>
+              <span className="history-row-meta">
+                <span className="history-row-faint">
+                  {entry.messageCount} message{entry.messageCount === 1 ? '' : 's'}
+                </span>
+                {entry.gitBranch && (
+                  <span className="history-row-branch" title={entry.gitBranch}>
+                    {entry.gitBranch}
+                  </span>
+                )}
+                <span className="history-row-time">
+                  {entry.updatedAt ? `active ${relativeTime(entry.updatedAt)}` : ''}
+                </span>
               </span>
-              {entry.gitBranch && <span className="recent-session-branch">{entry.gitBranch}</span>}
-              <span className="cli-history-count">
-                {entry.messageCount} msg{entry.messageCount === 1 ? '' : 's'}
-              </span>
-              <span className="recent-session-time">
-                {entry.updatedAt ? relativeTime(entry.updatedAt) : '-'}
-              </span>
-              <span className="cli-history-actions">
+              <span className="history-row-actions">
                 <Button
                   variant="ghost"
                   size="compact"
@@ -283,5 +389,36 @@ export default function HistoryPanel({
         </ul>
       )}
     </section>
+  )
+}
+
+/** Quiet pill tabs, as on Tickets and Sessions: the chosen one gets a soft fill. */
+function PillTabs({
+  value,
+  onChange,
+  label,
+  options
+}: {
+  value: string
+  onChange: (v: string) => void
+  label: string
+  options: { value: string; label: string; count?: number }[]
+}): React.JSX.Element {
+  return (
+    <div className="history-tabs" role="radiogroup" aria-label={label}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          className={value === o.value ? 'history-tab history-tab--selected' : 'history-tab'}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+          {o.count !== undefined && <span className="history-tab-count">{o.count}</span>}
+        </button>
+      ))}
+    </div>
   )
 }

@@ -28,11 +28,10 @@ import {
   removeProject,
   renameSession,
   getAppSettings,
-  getJiraStatus,
-  getSessionTicketLinks,
   listWorktreePullRequests
 } from '../api'
 import { useStoredState } from '../state/useStoredState'
+import { useTicketKeys } from '../state/useTicketKeys'
 import { resolveSessionProjectId } from '../state/useSessions'
 import { sessionTitle } from '../lib/session-title'
 import './sessions-list.css'
@@ -275,8 +274,7 @@ function useSessionLinks(
   projects: Project[]
 ): { openPr: (s: LiveSession) => boolean; ticketOf: (s: LiveSession) => string | null } {
   const [prBranches, setPrBranches] = useState<Map<string, Set<string>>>(new Map())
-  const [links, setLinks] = useState<Record<string, string>>({})
-  const [jiraProjects, setJiraProjects] = useState<string[]>([])
+  const ticketKey = useTicketKeys()
   const projectIds = useMemo(
     () =>
       [...new Set(sessions.map((s) => s.record?.projectId).filter((id): id is string => !!id))]
@@ -301,11 +299,6 @@ function useSessionLinks(
       ).then((entries) => {
         if (live) setPrBranches(new Map(entries))
       })
-      void Promise.all([getJiraStatus(), getSessionTicketLinks()]).then(([status, l]) => {
-        if (!live || !status.configured) return
-        setJiraProjects(status.projects.map((p) => p.toUpperCase()))
-        setLinks(l)
-      })
     }
     load()
     const id = setInterval(load, 120_000)
@@ -319,17 +312,8 @@ function useSessionLinks(
     const r = s.record
     return Boolean(r?.branch && prBranches.get(r.projectId)?.has(r.branch))
   }
-  const ticketOf = (s: LiveSession): string | null => {
-    const r = s.record
-    if (r && links[r.id]) return links[r.id]
-    if (jiraProjects.length === 0) return null
-    return (
-      `${r?.title ?? ''} ${r?.branch ?? ''}`
-        .toUpperCase()
-        .match(/\b[A-Z][A-Z0-9]+-\d+\b/g)
-        ?.find((k) => jiraProjects.includes(k.split('-')[0])) ?? null
-    )
-  }
+  const ticketOf = (s: LiveSession): string | null => ticketKey(s.record)
+
   return { openPr, ticketOf }
 }
 

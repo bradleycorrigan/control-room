@@ -3240,6 +3240,45 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       )
     }
 
+    // Clicking a card (not one of its buttons) opens its overlay.
+    {
+      const card = $$('.cr-worktree-card--clickable').find((c) =>
+        /fixture\/working/.test(c.querySelector('.cr-worktree-card-title')?.textContent ?? '')
+      )
+      await click(card?.querySelector<HTMLElement>('.cr-worktree-card-path') ?? null)
+      const opened = await until(() => Boolean($('.wt-overlay')), 2000)
+      const filesShown = await until(() => $$('.wt-overlay-files li').length > 0, 4000)
+      await check(
+        'clicking a worktree card opens its overlay: branch, session, and the uncommitted files',
+        opened &&
+          /fixture\/working/.test($('.cr-modal-title')?.textContent ?? '') &&
+          Boolean($('.wt-overlay .status-badge')) &&
+          filesShown &&
+          Boolean(byText('.wt-overlay-tools button', 'Open in Cursor')),
+        `opened=${opened}; title ${$('.cr-modal-title')?.textContent}; ${$$('.wt-overlay-files li').length} files; ${$('.wt-overlay')?.textContent?.slice(0, 160)}`
+      )
+      await key('Escape')
+      await check('Esc closes the worktree overlay', await until(() => !$('.wt-overlay')))
+    }
+
+    // History: quiet tabs and rows in the Tickets list's style.
+    {
+      const rows = $$('.history-row')
+      await check(
+        'History uses pill tabs (no segmented switch) and rows with a status, title and time',
+        Boolean($('.history-tabs')) &&
+          !$('.overview-section .cr-segmented') &&
+          rows.length > 0 &&
+          rows.every(
+            (r) =>
+              Boolean(r.querySelector('.history-row-title')?.textContent) &&
+              Boolean(r.querySelector('.history-row-time')?.textContent)
+          ) &&
+          Boolean(rows[0]?.querySelector('.history-row-status .status-dot')),
+        `${rows.length} rows; ${rows[0]?.textContent}`
+      )
+    }
+
     const cleanupButton = byText('.overview-worktrees-actions button', 'Clean up worktrees')
     await click(cleanupButton)
     await until(

@@ -11,8 +11,11 @@ import {
   lastCommitTime,
   removeWorktreeClean,
   deleteLocalBranch,
-  pruneWorktrees
+  pruneWorktrees,
+  gitStatus
 } from './exec/git'
+import { handoffGitSummary } from './exec/sessionGit'
+import { openInCursor } from './exec/cursor'
 import { discoverLiveSessions } from './engine/discovery'
 import { retireSessionsInWorktree } from './engine/sessions'
 import type { LiveSession } from './store/types'
@@ -61,6 +64,55 @@ export function registerProjectsIpc(): void {
     const project = getState().projects.find((p) => p.id === projectId)
     if (!project) return 'Project not found.'
     return shell.openPath(project.repoPath)
+  })
+
+  // The worktree overlay. Every handler takes a path the renderer got from
+  // worktrees:list, and acts only if git still lists it as one of this
+  // project's worktrees (never the main checkout).
+  const projectWorktree = async (
+    projectId: string,
+    worktreePath: string
+  ): Promise<{ repoPath: string; baseRef: string } | null> => {
+    const project = getState().projects.find((p) => p.id === projectId)
+    if (!project || worktreePath === project.repoPath) return null
+    const listed = await listWorktrees(project.repoPath)
+    if (!listed.some((w) => w.path === worktreePath && !w.bare)) return null
+    return { repoPath: project.repoPath, baseRef: project.baseRef ?? 'origin/main' }
+  }
+
+  ipcMain.handle('worktrees:detail', async (_evt, projectId: string, worktreePath: string) => {
+    const wt = await projectWorktree(projectId, worktreePath)
+    if (!wt) return null
+    const [git, status, lastCommitAt] = await Promise.all([
+      handoffGitSummary(worktreePath, wt.baseRef),
+      gitStatus(worktreePath),
+      lastCommitTime(worktreePath)
+    ])
+    return {
+      baseRef: wt.baseRef,
+      git,
+      upstream: status.upstream,
+      ahead: status.ahead,
+      behind: status.behind,
+      // Enough to see what's uncommitted; the count says if there's more.
+      changes: status.files.slice(0, 50).map((f) => ({
+        path: f.path,
+        code: (f.index + f.worktree).trim() || '?'
+      })),
+      changeCount: status.files.length,
+      lastCommitAt
+    }
+  })
+
+  ipcMain.handle('worktrees:openIde', async (_evt, projectId: string, worktreePath: string) => {
+    if (!(await projectWorktree(projectId, worktreePath)))
+      return { ok: false, error: 'not a worktree of this project' }
+    return openInCursor(worktreePath)
+  })
+
+  ipcMain.handle('worktrees:reveal', async (_evt, projectId: string, worktreePath: string) => {
+    if (!(await projectWorktree(projectId, worktreePath))) return 'Not a worktree of this project.'
+    return shell.openPath(worktreePath)
   })
 
   // "Clean up worktrees" dialog (plan 7 step 2). Lists every worktree under

@@ -911,3 +911,218 @@ button.cr-worktree-card-ticket:hover {
   color: var(--text-muted);
   font-size: var(--text-caption-size);
 }
+
+/* ---- History: the Tickets list's look ----
+   Quiet pill tabs, rows with rounded hover and hairline dividers, status at
+   the start, ticket, PR and branch on the right, actions on hover. */
+
+.history-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.history-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 30px;
+  padding: 0 var(--space-12);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.history-tab:hover {
+  color: var(--text);
+}
+
+.history-tab--selected {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.history-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.history-tab-count {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  /* Rows pad themselves; pull them out so their text lines up with the
+     headings above. */
+  margin: 0 calc(-1 * var(--space-12));
+  padding: 0;
+  list-style: none;
+}
+
+.history-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  min-height: 44px;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: var(--text-label-size);
+}
+
+/* Hairline between rows, inset so it never meets a hovered row's corners. */
+.history-row + .history-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: var(--space-12);
+  right: var(--space-12);
+  height: 1px;
+  background: var(--border);
+}
+
+.history-row:hover::before,
+.history-row:hover + .history-row::before {
+  background: transparent;
+}
+
+.history-row:hover {
+  background: var(--surface);
+}
+
+.history-row--clickable {
+  cursor: pointer;
+}
+
+.history-row--clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.history-row-status {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: 120px;
+  font-size: var(--text-meta-size);
+  white-space: nowrap;
+}
+
+.history-row-faint {
+  color: var(--text-faint);
+  font-size: var(--text-meta-size);
+  white-space: nowrap;
+}
+
+.history-row-title {
+  flex: 1 1 160px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: var(--text-body-size);
+}
+
+.history-row-meta {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+.history-row-branch {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+}
+
+.history-row-time {
+  flex: none;
+  min-width: 96px;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: var(--text-meta-size);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.history-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 22px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-meta-size);
+  white-space: nowrap;
+}
+
+button.history-chip {
+  cursor: pointer;
+}
+
+button.history-chip:hover {
+  border-color: var(--text-faint);
+}
+
+.history-chip--mono {
+  font-family: var(--font-mono);
+}
+
+.history-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--text-faint);
+}
+
+.history-chip--pr-open .history-chip-dot {
+  background: var(--status-done);
+}
+
+.history-chip--pr-merged .history-chip-dot {
+  background: var(--accent);
+}
+
+/* Actions show on hover or focus, and keep their space so nothing shifts. */
+.history-row-actions {
+  flex: none;
+  display: inline-flex;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  min-width: 88px;
+  opacity: 0;
+}
+
+.history-row:hover .history-row-actions,
+.history-row:focus-within .history-row-actions {
+  opacity: 1;
+}
+
+.cr-worktree-card--clickable {
+  cursor: pointer;
+}

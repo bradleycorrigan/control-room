@@ -21,8 +21,10 @@ import { useSessionActions } from '../components/useSessionActions'
 import HomeScreen from './HomeScreen'
 import SessionCard from '../components/SessionCard'
 import WorktreeCleanupDialog from '../components/WorktreeCleanupDialog'
+import WorktreeOverlay from '../components/WorktreeOverlay'
 import { useWorktreeChoice } from '../state/useWorktreeChoice'
 import { useHomeDir } from '../state/useHomeDir'
+import { useTicketKeys } from '../state/useTicketKeys'
 import { formatHomePath } from '../lib/format-path'
 import { revealProjectInFinder } from '../api-projects'
 import {
@@ -33,8 +35,6 @@ import {
   listSessionRecordsForProject,
   updateWorktreeDefaults,
   listWorktreePullRequests,
-  getJiraStatus,
-  getSessionTicketLinks,
   openExternal,
   type ProjectWorktree,
   type WorktreePullRequest,
@@ -225,43 +225,25 @@ function OverviewTab({
   const [records, setRecords] = useState<SessionRecord[]>([])
   const [worktreesOpen, setWorktreesOpen] = useState(false)
   const [cleanupOpen, setCleanupOpen] = useState(false)
+  // The worktree whose overlay is open, by path.
+  const [openWorktree, setOpenWorktree] = useState<string | null>(null)
 
   // What each worktree is attached to beyond its session: the branch's pull
   // request, and the Jira ticket it's for. Both load after the cards.
   const [worktreePrs, setWorktreePrs] = useState<Record<string, WorktreePullRequest>>({})
-  const [ticketLinks, setTicketLinks] = useState<Record<string, string>>({})
-  const [jiraProjects, setJiraProjects] = useState<string[]>([])
+  const ticketKey = useTicketKeys()
 
   const refreshWorktrees = (): void => {
     listAllWorktrees(project.id).then((all) => setWorktrees(all.filter((w) => !w.isMainCheckout)))
     void listWorktreePullRequests(project.id).then(setWorktreePrs)
   }
 
-  useEffect(() => {
-    let live = true
-    void Promise.all([getJiraStatus(), getSessionTicketLinks()]).then(([status, links]) => {
-      if (!live || !status.configured) return
-      setJiraProjects(status.projects.map((p) => p.toUpperCase()))
-      setTicketLinks(links)
-    })
-    return () => {
-      live = false
-    }
-  }, [])
-
   // The ticket a worktree is for: the one its session is linked to, else a
   // key from one of your Jira projects in its branch or session title.
   const ticketFor = (w: ProjectWorktree, branch: string | null): string | null => {
     const recordId = w.sessionId ?? w.doneSession?.id
-    if (recordId && ticketLinks[recordId]) return ticketLinks[recordId]
-    if (jiraProjects.length === 0) return null
-    const title = recordId ? (records.find((r) => r.id === recordId)?.title ?? '') : ''
-    return (
-      `${branch ?? ''} ${title}`
-        .toUpperCase()
-        .match(/\b[A-Z][A-Z0-9]+-\d+\b/g)
-        ?.find((k) => jiraProjects.includes(k.split('-')[0])) ?? null
-    )
+    const record = recordId ? records.find((r) => r.id === recordId) : undefined
+    return ticketKey(record) ?? ticketKey({ id: '', branch })
   }
 
   // History reads this list, so anything that changes a record has to call it.
@@ -376,7 +358,7 @@ function OverviewTab({
       />
 
       <section className="overview-section">
-        <h3 className="overview-section-header">ACTIVE</h3>
+        <h3 className="overview-section-header">Active</h3>
         {activeSessions.length === 0 ? (
           <div className="cr-active-grid">
             <QuickEmptyTile onClick={handleStartEmpty} disabled={busy} />
@@ -432,7 +414,20 @@ function OverviewTab({
               const ticket = ticketFor(w, branch)
               const running = liveSession !== undefined && isLive(liveSession.status)
               return (
-                <div key={w.path} className="cr-worktree-card">
+                <div
+                  key={w.path}
+                  className="cr-worktree-card cr-worktree-card--clickable"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Details for ${branch ?? 'this worktree'}`}
+                  // The card opens its overlay; the buttons on it do their own thing.
+                  onClick={(e) => {
+                    if (!(e.target as HTMLElement).closest('button')) setOpenWorktree(w.path)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && e.target === e.currentTarget) setOpenWorktree(w.path)
+                  }}
+                >
                   <div className="cr-worktree-card-title" title={branch ?? undefined}>
                     {branch ?? 'No branch'}
                   </div>
@@ -541,6 +536,66 @@ function OverviewTab({
         </Disclosure>
       </section>
 
+      {(() => {
+        const w = worktrees.find((x) => x.path === openWorktree)
+        if (!w) return null
+        const branch = w.branch?.replace(/^refs\/heads\//, '') ?? null
+        const liveSession = w.sessionId
+          ? sessions.find((s) => s.record?.id === w.sessionId)
+          : undefined
+        const running = liveSession !== undefined && isLive(liveSession.status)
+        const pastTitle = w.sessionId
+          ? records.find((r) => r.id === w.sessionId)?.title
+          : w.doneSession?.title
+        const close = (): void => setOpenWorktree(null)
+        return (
+          <WorktreeOverlay
+            projectId={project.id}
+            worktree={w}
+            displayPath={formatHomePath(w.path, worktreeHomeDir)}
+            branch={branch}
+            liveSession={liveSession}
+            sessionTitle={liveSession ? undefined : pastTitle}
+            pr={branch ? worktreePrs[branch] : undefined}
+            ticket={ticketFor(w, branch)}
+            onOpenSession={
+              liveSession
+                ? () => {
+                    close()
+                    onOpenSession(liveSession.key)
+                  }
+                : undefined
+            }
+            onStartAgent={
+              w.sessionId
+                ? undefined
+                : () => {
+                    close()
+                    void handleAdopt(w.path)
+                  }
+            }
+            onRemove={
+              running
+                ? undefined
+                : () => {
+                    close()
+                    void handleRemoveWorktree(w.path, liveSession?.record?.title ?? pastTitle)
+                  }
+            }
+            onOpenTicket={
+              onOpenTicket
+                ? (key) => {
+                    close()
+                    onOpenTicket(key)
+                  }
+                : undefined
+            }
+            pushToast={pushToast}
+            onClose={close}
+          />
+        )
+      })()}
+
       {cleanupOpen && (
         <WorktreeCleanupDialog
           projectId={project.id}
@@ -564,6 +619,8 @@ function OverviewTab({
         isRunning={(recordId) =>
           sessions.some((s) => s.record?.id === recordId && isLive(s.status))
         }
+        liveOf={(recordId) => sessions.find((s) => s.record?.id === recordId)}
+        onOpenTicket={onOpenTicket}
         onOpenSession={onOpenSession}
         pushToast={pushToast}
         onRecordsChanged={() => {

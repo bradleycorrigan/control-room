@@ -54,3 +54,38 @@ export function removeWorktrees(
 export function setSessionPinned(id: string, pinned: boolean): Promise<SessionActionResult> {
   return window.api.invoke<SessionActionResult>('sessions:setPinned', id, pinned)
 }
+
+export interface WorktreeDetail {
+  baseRef: string
+  /** Commits and diffstat since the base; null when it shares no history with it. */
+  git: {
+    commits: { sha: string; subject: string }[]
+    commitsCapped: boolean
+    filesChanged: number
+    added: number
+    removed: number
+  } | null
+  upstream: string | null
+  ahead: number
+  behind: number
+  changes: { path: string; code: string }[]
+  changeCount: number
+  lastCommitAt: number | null
+}
+
+/** What's in a worktree: commits since the base, uncommitted files, push state. */
+export function getWorktreeDetail(projectId: string, path: string): Promise<WorktreeDetail | null> {
+  return window.api.invoke<WorktreeDetail | null>('worktrees:detail', projectId, path)
+}
+
+export function openWorktreeInIde(
+  projectId: string,
+  path: string
+): Promise<{ ok: boolean; error?: string }> {
+  return window.api.invoke<{ ok: boolean; error?: string }>('worktrees:openIde', projectId, path)
+}
+
+/** '' on success, an error message on failure. */
+export function revealWorktree(projectId: string, path: string): Promise<string> {
+  return window.api.invoke<string>('worktrees:reveal', projectId, path)
+}
