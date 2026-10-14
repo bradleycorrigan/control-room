@@ -2282,6 +2282,7 @@ function App(): React.JSX.Element {
                         onUnreadOnlyChange={setUnreadOnly}
                         statusFilter={statusFilter}
                         onStatusFilterChange={setStatusFilter}
+                        onOpenTicket={setPeekTicket}
                         onAdopted={refreshSessions}
                         onOpenSession={openSessionFrom}
                         onClearFilter={() => {

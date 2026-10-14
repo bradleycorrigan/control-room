@@ -1671,7 +1671,14 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           r.querySelector<HTMLElement>('.sessions-row-badge [data-status]')?.dataset.status ?? '?'
       )
     const tab = (id: string): HTMLElement | null => $(`[data-status-filter="${id}"]`)
-    const sw = (id: string): HTMLElement | null => $(`[data-filter-switch="${id}"]`)
+    // The switches live in the Filter menu: open it, flip one, close it.
+    const toggleFilter = async (id: string): Promise<void> => {
+      await click($('[data-sessions-filter-button]'))
+      await until(() => Boolean($(`[data-filter-option="${id}"]`)), 1500)
+      await click($(`[data-filter-option="${id}"]`))
+      await key('Escape')
+      await wait(150)
+    }
     const clear = async (): Promise<void> => {
       const b = byText('.sessions-filter-clear', 'Clear filters')
       if (b) await click(b)
@@ -1717,22 +1724,29 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     )
 
     const hadStopped = rowStatuses().includes('stopped')
-    await click(sw('finished'))
+    await toggleFilter('finished')
     await wait(200)
     const unfinished = rowStatuses()
     await check(
-      'Hide finished hides stopped, missing and errored sessions',
+      'Hide finished hides done, stopped, missing and errored sessions',
       hadStopped &&
         unfinished.length > 0 &&
-        !unfinished.some((st) => st === 'stopped' || st === 'missing' || st === 'errored'),
+        !unfinished.some(
+          (st) => st === 'done' || st === 'stopped' || st === 'missing' || st === 'errored'
+        ),
       unfinished.join(',')
+    )
+    await check(
+      'the filter switches sit in one Filter menu, which counts what is on',
+      !$('.sessions-unread-toggle') &&
+        $('[data-sessions-filter-button] .backlog-menu-badge')?.textContent === '1'
     )
     await clear()
     await check(
       'Clear filters turns every filter off',
       rowStatuses().length === before &&
         !$('.sessions-filter-clear') &&
-        sw('finished')?.getAttribute('aria-checked') === 'false',
+        !$('[data-sessions-filter-button] .backlog-menu-badge'),
       `${rowStatuses().length} of ${before}`
     )
   }
