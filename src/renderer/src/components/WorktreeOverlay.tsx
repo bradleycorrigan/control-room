@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
-import { Badge, Button, Modal } from './primitives'
+import { Badge, Button, IconButton, Modal } from './primitives'
 import { copyText, openExternal, type ProjectWorktree, type WorktreePullRequest } from '../api'
 import {
   getWorktreeDetail,
@@ -9,6 +9,7 @@ import {
   type WorktreeDetail
 } from '../api-projects'
 import { relativeTime } from '../lib/format-time'
+import '../screens/backlog.css'
 import './worktree-overlay.css'
 
 /**
@@ -65,159 +66,197 @@ export default function WorktreeOverlay({
   const loaded = detail !== 'loading' ? detail : null
   const commits = loaded?.git?.commits ?? []
 
+  const pushState = !loaded
+    ? null
+    : loaded.upstream
+      ? loaded.ahead > 0
+        ? `${loaded.ahead} not pushed`
+        : 'Pushed'
+      : 'Never pushed'
+  const prompt = liveSession?.record?.lastPrompt ? cleanPrompt(liveSession.record.lastPrompt) : null
+  const pending = detail === 'loading'
+
   return (
     <Modal title={branch ?? 'No branch'} icon="GitBranch" width={720} onClose={onClose}>
       <div className="wt-overlay">
-        <div className="wt-overlay-path">
-          <bdi title={worktree.path}>{displayPath}</bdi>
-        </div>
-        <div className="wt-overlay-tools">
-          <Button
-            variant="outlined"
-            size="compact"
+        <div className="wt-overlay-pathrow">
+          <div className="wt-overlay-path">
+            <bdi title={worktree.path}>{displayPath}</bdi>
+          </div>
+          <IconButton
+            icon="Code"
+            label="Open in Cursor"
+            size={28}
+            variant="ghost"
             onClick={() =>
               void openWorktreeInIde(projectId, worktree.path).then((r) => {
                 if (!r.ok) pushToast(r.error ?? 'Could not open it in Cursor.')
               })
             }
-          >
-            Open in Cursor
-          </Button>
-          <Button
-            variant="outlined"
-            size="compact"
+          />
+          <IconButton
+            icon="FolderOpen"
+            label="Show in Finder"
+            size={28}
+            variant="ghost"
             onClick={() =>
               void revealWorktree(projectId, worktree.path).then((err) => {
                 if (err) pushToast(err)
               })
             }
-          >
-            Show in Finder
-          </Button>
-          <Button
+          />
+          <IconButton
+            icon="Copy"
+            label="Copy path"
+            size={28}
             variant="ghost"
-            size="compact"
             onClick={() => void copyText(worktree.path).then(() => pushToast('Path copied.'))}
-          >
-            Copy path
-          </Button>
+          />
         </div>
 
-        <section className="wt-overlay-section">
-          <h4>Session</h4>
-          <div className="wt-overlay-line">
-            {liveSession ? (
-              <>
-                <Badge status={liveSession.status} variant="bare" />
-                <span className="wt-overlay-strong">{liveSession.record?.title}</span>
-              </>
-            ) : sessionTitle ? (
-              <span className="wt-overlay-muted">
-                Not running: <span className="wt-overlay-strong">{sessionTitle}</span>
-              </span>
-            ) : (
-              <span className="wt-overlay-muted">No session in this worktree.</span>
-            )}
-            <span className="wt-overlay-spacer" />
-            {onOpenSession && (
-              <Button variant="outlined" size="compact" onClick={onOpenSession}>
-                Open session
-              </Button>
-            )}
-            {onStartAgent && (
-              <Button variant="outlined" size="compact" onClick={onStartAgent}>
-                Start agent
-              </Button>
-            )}
+        {/* The ticket panel's ruled grid, label over value. */}
+        <div className="backlog-props">
+          <div className="backlog-prop backlog-prop--wide">
+            <span className="backlog-prop-label">Session</span>
+            <div className="backlog-prop-value">
+              {liveSession ? (
+                <>
+                  <Badge status={liveSession.status} variant="bare" />
+                  <span className="backlog-prop-text">{liveSession.record?.title}</span>
+                </>
+              ) : sessionTitle ? (
+                <span className="backlog-prop-text wt-overlay-muted">
+                  Not running: {sessionTitle}
+                </span>
+              ) : (
+                <span className="wt-overlay-muted">None</span>
+              )}
+              <span className="wt-overlay-spacer" />
+              {onOpenSession && (
+                <Button variant="outlined" size="compact" onClick={onOpenSession}>
+                  Open session
+                </Button>
+              )}
+              {onStartAgent && (
+                <Button variant="outlined" size="compact" onClick={onStartAgent}>
+                  Start agent
+                </Button>
+              )}
+            </div>
           </div>
-          {liveSession?.record?.lastPrompt && (
-            <p className="wt-overlay-prompt">{liveSession.record.lastPrompt}</p>
-          )}
-        </section>
-
-        <section className="wt-overlay-section wt-overlay-links">
-          <div>
-            <h4>Pull request</h4>
-            {pr ? (
-              <button
-                type="button"
-                className={`wt-overlay-chip wt-overlay-chip--${pr.state.toLowerCase()}`}
-                title="Open the pull request on GitHub"
-                onClick={() => void openExternal(pr.url)}
-              >
-                <span className="wt-overlay-chip-dot" aria-hidden />
-                PR #{pr.number} {pr.state.toLowerCase()}
-              </button>
-            ) : (
-              <span className="wt-overlay-muted">None for this branch</span>
-            )}
-          </div>
-          <div>
-            <h4>Ticket</h4>
-            {ticket ? (
-              onOpenTicket ? (
+          <div className="backlog-prop backlog-prop--third">
+            <span className="backlog-prop-label">Pull request</span>
+            <div className="backlog-prop-value">
+              {pr ? (
                 <button
                   type="button"
-                  className="wt-overlay-chip wt-overlay-chip--mono"
-                  title={`Open ${ticket} in Tickets`}
-                  onClick={() => onOpenTicket(ticket)}
+                  className={`wt-overlay-chip wt-overlay-chip--${pr.state.toLowerCase()}`}
+                  title="Open the pull request on GitHub"
+                  onClick={() => void openExternal(pr.url)}
                 >
-                  {ticket}
+                  <span className="wt-overlay-chip-dot" aria-hidden />#{pr.number}{' '}
+                  {pr.state.toLowerCase()}
                 </button>
               ) : (
-                <span className="wt-overlay-chip wt-overlay-chip--mono">{ticket}</span>
-              )
-            ) : (
-              <span className="wt-overlay-muted">None linked</span>
-            )}
-          </div>
-        </section>
-
-        <section className="wt-overlay-section">
-          <h4>Branch</h4>
-          {detail === 'loading' ? (
-            <span className="wt-overlay-muted">Reading git…</span>
-          ) : !loaded ? (
-            <span className="wt-overlay-muted">Git couldn&apos;t read this worktree.</span>
-          ) : (
-            <>
-              <p className="wt-overlay-summary">
-                {loaded.git
-                  ? `${commits.length}${loaded.git.commitsCapped ? '+' : ''} commit${commits.length === 1 ? '' : 's'} since ${loaded.baseRef}, ${loaded.git.filesChanged} file${loaded.git.filesChanged === 1 ? '' : 's'} changed`
-                  : `No history shared with ${loaded.baseRef}`}
-                {loaded.git && (loaded.git.added > 0 || loaded.git.removed > 0) && (
-                  <>
-                    {' '}
-                    <span className="wt-overlay-added">+{loaded.git.added}</span>{' '}
-                    <span className="wt-overlay-removed">−{loaded.git.removed}</span>
-                  </>
-                )}
-              </p>
-              <p className="wt-overlay-muted">
-                {loaded.upstream
-                  ? loaded.ahead > 0
-                    ? `${loaded.ahead} commit${loaded.ahead === 1 ? '' : 's'} not pushed to ${loaded.upstream}`
-                    : `Pushed to ${loaded.upstream}`
-                  : 'Never pushed'}
-                {loaded.behind > 0 ? `, ${loaded.behind} behind it` : ''}
-                {loaded.lastCommitAt ? `. Last commit ${relativeTime(loaded.lastCommitAt)}.` : '.'}
-              </p>
-              {commits.length > 0 && (
-                <ul className="wt-overlay-commits">
-                  {commits.slice(0, 8).map((c) => (
-                    <li key={c.sha}>
-                      <span className="wt-overlay-sha">{c.sha.slice(0, 7)}</span>
-                      <span className="wt-overlay-subject">{c.subject}</span>
-                    </li>
-                  ))}
-                  {commits.length > 8 && (
-                    <li className="wt-overlay-muted">and {commits.length - 8} more</li>
-                  )}
-                </ul>
+                <span className="wt-overlay-muted">None</span>
               )}
-            </>
-          )}
-        </section>
+            </div>
+          </div>
+          <div className="backlog-prop backlog-prop--third">
+            <span className="backlog-prop-label">Ticket</span>
+            <div className="backlog-prop-value">
+              {ticket ? (
+                onOpenTicket ? (
+                  <button
+                    type="button"
+                    className="wt-overlay-chip wt-overlay-chip--mono"
+                    title={`Open ${ticket} in Tickets`}
+                    onClick={() => onOpenTicket(ticket)}
+                  >
+                    {ticket}
+                  </button>
+                ) : (
+                  <span className="wt-overlay-chip wt-overlay-chip--mono">{ticket}</span>
+                )
+              ) : (
+                <span className="wt-overlay-muted">None</span>
+              )}
+            </div>
+          </div>
+          <div className="backlog-prop backlog-prop--third">
+            <span className="backlog-prop-label">Pushed</span>
+            <div className="backlog-prop-value" title={loaded?.upstream ?? undefined}>
+              {pending ? <span className="wt-overlay-muted">…</span> : (pushState ?? '-')}
+              {loaded && loaded.behind > 0 && (
+                <span className="wt-overlay-muted">{loaded.behind} behind</span>
+              )}
+            </div>
+          </div>
+          <div className="backlog-prop backlog-prop--third">
+            <span className="backlog-prop-label">Since {loaded?.baseRef ?? 'the base'}</span>
+            <div className="backlog-prop-value">
+              {pending ? (
+                <span className="wt-overlay-muted">…</span>
+              ) : loaded?.git ? (
+                `${commits.length}${loaded.git.commitsCapped ? '+' : ''} commit${commits.length === 1 ? '' : 's'}`
+              ) : (
+                <span className="wt-overlay-muted">No shared history</span>
+              )}
+            </div>
+          </div>
+          <div className="backlog-prop backlog-prop--third">
+            <span className="backlog-prop-label">Changed</span>
+            <div className="backlog-prop-value">
+              {pending ? (
+                <span className="wt-overlay-muted">…</span>
+              ) : loaded?.git ? (
+                <>
+                  {loaded.git.filesChanged} file{loaded.git.filesChanged === 1 ? '' : 's'}
+                  <span className="wt-overlay-added">+{loaded.git.added}</span>
+                  <span className="wt-overlay-removed">−{loaded.git.removed}</span>
+                </>
+              ) : (
+                <span className="wt-overlay-muted">-</span>
+              )}
+            </div>
+          </div>
+          <div className="backlog-prop backlog-prop--third">
+            <span className="backlog-prop-label">Last commit</span>
+            <div className="backlog-prop-value">
+              {pending ? (
+                <span className="wt-overlay-muted">…</span>
+              ) : loaded?.lastCommitAt ? (
+                relativeTime(loaded.lastCommitAt)
+              ) : (
+                <span className="wt-overlay-muted">-</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {prompt && (
+          <section className="wt-overlay-section">
+            <h4>Last prompt</h4>
+            <p className="wt-overlay-prompt">{prompt}</p>
+          </section>
+        )}
+
+        {commits.length > 0 && (
+          <section className="wt-overlay-section">
+            <h4>Commits</h4>
+            <ul className="wt-overlay-commits">
+              {commits.slice(0, 8).map((c) => (
+                <li key={c.sha}>
+                  <span className="wt-overlay-sha">{c.sha.slice(0, 7)}</span>
+                  <span className="wt-overlay-subject">{c.subject}</span>
+                </li>
+              ))}
+              {commits.length > 8 && (
+                <li className="wt-overlay-muted">and {commits.length - 8} more</li>
+              )}
+            </ul>
+          </section>
+        )}
 
         {loaded && (
           <section className="wt-overlay-section">
@@ -252,6 +291,14 @@ export default function WorktreeOverlay({
       </div>
     </Modal>
   )
+}
+
+/**
+ * What you asked, without the app's own boilerplate: a prompt with files
+ * attached carries a paragraph of instructions about reading them.
+ */
+function cleanPrompt(text: string): string {
+  return text.replace(/\s*Attached files - read these[\s\S]*$/, '').trim()
 }
 
 /** git's status letters as words: "??" means nothing to most people. */

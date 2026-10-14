@@ -3254,7 +3254,8 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           /fixture\/working/.test($('.cr-modal-title')?.textContent ?? '') &&
           Boolean($('.wt-overlay .status-badge')) &&
           filesShown &&
-          Boolean(byText('.wt-overlay-tools button', 'Open in Cursor')),
+          Boolean($('.wt-overlay-pathrow [aria-label="Open in Cursor"]')) &&
+          $$('.wt-overlay .backlog-prop').length >= 6,
         `opened=${opened}; title ${$('.cr-modal-title')?.textContent}; ${$$('.wt-overlay-files li').length} files; ${$('.wt-overlay')?.textContent?.slice(0, 160)}`
       )
       await key('Escape')
