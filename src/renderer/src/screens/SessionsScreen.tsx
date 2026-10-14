@@ -27,7 +27,10 @@ import {
   updateProject,
   removeProject,
   renameSession,
-  getAppSettings
+  getAppSettings,
+  getJiraStatus,
+  getSessionTicketLinks,
+  listWorktreePullRequests
 } from '../api'
 import { useStoredState } from '../state/useStoredState'
 import { resolveSessionProjectId } from '../state/useSessions'
@@ -78,8 +81,9 @@ interface Props {
   onClearAttentionFilter?: () => void
   unreadOnly: boolean
   onUnreadOnlyChange: (next: boolean) => void
-  statusFilter: StatusFilterId | null
-  onStatusFilterChange: (next: StatusFilterId | null) => void
+  /** Statuses to show; empty shows every status. */
+  statusFilter: StatusFilterId[]
+  onStatusFilterChange: (next: StatusFilterId[]) => void
 }
 
 function projectForCwd(cwd: string, projects: Project[]): Project | null {
@@ -252,9 +256,81 @@ function sentenceCase(word: string): string {
   return word.charAt(0).toUpperCase() + word.slice(1)
 }
 
-function matchesStatus(session: LiveSession, filter: StatusFilterId | null): boolean {
-  if (!filter) return true
-  return STATUS_FILTERS.find((f) => f.id === filter)!.statuses.includes(session.status)
+function matchesStatus(session: LiveSession, filter: StatusFilterId[]): boolean {
+  if (filter.length === 0) return true
+  return STATUS_FILTERS.some((f) => filter.includes(f.id) && f.statuses.includes(session.status))
+}
+
+// What "Hide finished" hides: nothing is running, and nothing will until you
+// start it again.
+const FINISHED: SessionStatus[] = ['stopped', 'missing', 'errored']
+
+/**
+ * The open pull request on each session's branch, and the Jira ticket each
+ * session is for, so the list can filter and search by them. PRs come from
+ * one `gh pr list` per project (cached in main), refreshed every two minutes.
+ */
+function useSessionLinks(
+  sessions: LiveSession[],
+  projects: Project[]
+): { openPr: (s: LiveSession) => boolean; ticketOf: (s: LiveSession) => string | null } {
+  const [prBranches, setPrBranches] = useState<Map<string, Set<string>>>(new Map())
+  const [links, setLinks] = useState<Record<string, string>>({})
+  const [jiraProjects, setJiraProjects] = useState<string[]>([])
+  const projectIds = useMemo(
+    () =>
+      [...new Set(sessions.map((s) => s.record?.projectId).filter((id): id is string => !!id))]
+        .filter((id) => projects.some((p) => p.id === id))
+        .sort()
+        .join(','),
+    [sessions, projects]
+  )
+
+  useEffect(() => {
+    let live = true
+    const load = (): void => {
+      const ids = projectIds ? projectIds.split(',') : []
+      void Promise.all(
+        ids.map(async (id) => {
+          const prs = await listWorktreePullRequests(id).catch(() => ({}))
+          const open = Object.entries(prs)
+            .filter(([, pr]) => pr.state === 'OPEN')
+            .map(([branch]) => branch)
+          return [id, new Set(open)] as const
+        })
+      ).then((entries) => {
+        if (live) setPrBranches(new Map(entries))
+      })
+      void Promise.all([getJiraStatus(), getSessionTicketLinks()]).then(([status, l]) => {
+        if (!live || !status.configured) return
+        setJiraProjects(status.projects.map((p) => p.toUpperCase()))
+        setLinks(l)
+      })
+    }
+    load()
+    const id = setInterval(load, 120_000)
+    return () => {
+      live = false
+      clearInterval(id)
+    }
+  }, [projectIds])
+
+  const openPr = (s: LiveSession): boolean => {
+    const r = s.record
+    return Boolean(r?.branch && prBranches.get(r.projectId)?.has(r.branch))
+  }
+  const ticketOf = (s: LiveSession): string | null => {
+    const r = s.record
+    if (r && links[r.id]) return links[r.id]
+    if (jiraProjects.length === 0) return null
+    return (
+      `${r?.title ?? ''} ${r?.branch ?? ''}`
+        .toUpperCase()
+        .match(/\b[A-Z][A-Z0-9]+-\d+\b/g)
+        ?.find((k) => jiraProjects.includes(k.split('-')[0])) ?? null
+    )
+  }
+  return { openPr, ticketOf }
 }
 
 interface ProjectGroup {
@@ -617,7 +693,6 @@ function SessionListRow({
               </div>
             )
           )}
-
 
           {activeSubagentCount > 0 && (
             <button
@@ -1118,8 +1193,36 @@ export default function SessionsScreen({
   // Owned by App, so the bell can switch Unread on from anywhere.
   const setUnreadOnly = onUnreadOnlyChange
   const setStatusFilter = onStatusFilterChange
-  const filtersOn = unreadOnly || statusFilter !== null
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+  const [hideFinished, setHideFinished] = useStoredState('sessions-hide-finished', false)
+  const [prOnly, setPrOnly] = useStoredState('sessions-pr-only', false)
+  const [ticketOnly, setTicketOnly] = useStoredState('sessions-ticket-only', false)
+  const { openPr, ticketOf } = useSessionLinks(sessions, projects)
+  const filtersOn =
+    unreadOnly ||
+    statusFilter.length > 0 ||
+    query.trim() !== '' ||
+    hideFinished ||
+    prOnly ||
+    ticketOnly
   const [sortOpen, setSortOpen] = useState(false)
+
+  // "/" jumps to search, as on Tickets. Only while this list is on screen: it
+  // stays mounted, hidden, under an open session.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const t = e.target as HTMLElement | null
+      const typing = t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))
+      const input = searchRef.current
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || typing || !input) return
+      if (input.offsetParent === null) return
+      e.preventDefault()
+      input.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const sortAnchor = useRef<HTMLDivElement>(null)
 
   // Everything in scope (project, or the bell) before this screen's own filters.
@@ -1129,22 +1232,48 @@ export default function SessionsScreen({
     return sessions.filter((s) => resolveSessionProjectId(s, projects) === effectiveProjectId)
   }, [sessions, effectiveProjectId, projects, attentionOnly])
 
-  const visibleSessions = useMemo(
-    () => scopedSessions.filter((s) => (!unreadOnly || s.unread) && matchesStatus(s, statusFilter)),
-    [scopedSessions, unreadOnly, statusFilter]
-  )
+  // Every word has to appear in the title, branch, project or ticket key.
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const matchesQuery = (s: LiveSession): boolean => {
+    if (words.length === 0) return true
+    const projectId = resolveSessionProjectId(s, projects)
+    const hay = [
+      sessionTitle(s),
+      s.record?.branch,
+      projects.find((p) => p.id === projectId)?.name,
+      ticketOf(s)
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+    return words.every((w) => hay.includes(w))
+  }
 
-  // Each count answers "what would I get if I clicked this", so it honours
-  // the other filter but not its own.
-  const unreadCount = scopedSessions.filter(
-    (s) => s.unread && matchesStatus(s, statusFilter)
-  ).length
-  const allCount = scopedSessions.filter((s) => !unreadOnly || s.unread).length
+  // Every filter but the one named, so each count can answer "what would I
+  // get if I clicked this": it honours the other filters but not its own.
+  type FilterName = 'status' | 'unread' | 'pr' | 'ticket' | 'finished'
+  const passes = (s: LiveSession, except?: FilterName): boolean =>
+    matchesQuery(s) &&
+    (except === 'status' || matchesStatus(s, statusFilter)) &&
+    (except === 'unread' || !unreadOnly || s.unread) &&
+    (except === 'pr' || !prOnly || openPr(s)) &&
+    (except === 'ticket' || !ticketOnly || ticketOf(s) !== null) &&
+    (except === 'finished' || !hideFinished || !FINISHED.includes(s.status))
+
+  const visibleSessions = scopedSessions.filter((s) => passes(s))
+
+  const countWith = (except: FilterName, test: (s: LiveSession) => boolean): number =>
+    scopedSessions.filter((s) => passes(s, except) && test(s)).length
+  const unreadCount = countWith('unread', (s) => s.unread)
+  const prCount = countWith('pr', openPr)
+  const ticketCount = countWith('ticket', (s) => ticketOf(s) !== null)
+  const finishedCount = countWith('finished', (s) => FINISHED.includes(s.status))
+  const allCount = countWith('status', () => true)
   const statusCounts = new Map<StatusFilterId, number>()
   for (const f of STATUS_FILTERS) {
     statusCounts.set(
       f.id,
-      scopedSessions.filter((s) => (!unreadOnly || s.unread) && matchesStatus(s, f.id)).length
+      countWith('status', (s) => f.statuses.includes(s.status))
     )
   }
 
@@ -1266,7 +1395,11 @@ export default function SessionsScreen({
   const filteredToNothing = !hasAnySessions && scopedSessions.length > 0 && filtersOn
   const clearFilters = (): void => {
     setUnreadOnly(false)
-    setStatusFilter(null)
+    setStatusFilter([])
+    setQuery('')
+    setHideFinished(false)
+    setPrOnly(false)
+    setTicketOnly(false)
   }
   const filterProjectName = effectiveProjectId
     ? (projects.find((p) => p.id === effectiveProjectId)?.name ?? null)
@@ -1405,63 +1538,145 @@ export default function SessionsScreen({
             </div>
           </div>
 
-          {/* One quiet row: status tabs (pick one, or All), and Unread as a
-            toggle on the end so it still combines with a status. */}
+          {/* Two quiet rows. Statuses: pick any number, or All. Under them,
+            search and the switches that narrow whatever statuses are on. */}
           {scopedSessions.length > 0 && (
             <div className="sessions-filters">
-              <div className="sessions-filter-tabs" role="radiogroup" aria-label="Filter by status">
+              <div
+                className="sessions-filter-tabs"
+                role="group"
+                aria-label="Filter by status: pick any number"
+              >
                 <button
                   type="button"
-                  role="radio"
-                  aria-checked={statusFilter === null}
+                  aria-pressed={statusFilter.length === 0}
                   className={
-                    statusFilter === null
+                    statusFilter.length === 0
                       ? 'sessions-filter-tab sessions-filter-tab--selected'
                       : 'sessions-filter-tab'
                   }
-                  onClick={() => setStatusFilter(null)}
+                  title="Show every status"
+                  onClick={() => setStatusFilter([])}
                 >
                   All
                   <span className="sessions-filter-count">{allCount}</span>
                 </button>
-                {/* Only statuses something actually has — plus the selected
+                {/* Only statuses something actually has, plus any selected
                   one, so it can always be switched off again. */}
                 {STATUS_FILTERS.filter(
-                  (f) => (statusCounts.get(f.id) ?? 0) > 0 || statusFilter === f.id
-                ).map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={statusFilter === f.id}
-                    className={
-                      statusFilter === f.id
-                        ? 'sessions-filter-tab sessions-filter-tab--selected'
-                        : 'sessions-filter-tab'
-                    }
-                    onClick={() => setStatusFilter(statusFilter === f.id ? null : f.id)}
-                  >
-                    <StatusDot status={f.statuses[0]} size={8} />
-                    {sentenceCase(STATUS_WORDS[f.statuses[0]])}
-                    <span className="sessions-filter-count">{statusCounts.get(f.id) ?? 0}</span>
-                  </button>
-                ))}
+                  (f) => (statusCounts.get(f.id) ?? 0) > 0 || statusFilter.includes(f.id)
+                ).map((f) => {
+                  const on = statusFilter.includes(f.id)
+                  return (
+                    <button
+                      key={f.id}
+                      type="button"
+                      aria-pressed={on}
+                      data-status-filter={f.id}
+                      className={
+                        on
+                          ? 'sessions-filter-tab sessions-filter-tab--selected'
+                          : 'sessions-filter-tab'
+                      }
+                      title={on ? 'Stop showing these' : 'Show these too; click others to add them'}
+                      onClick={() =>
+                        setStatusFilter(
+                          on ? statusFilter.filter((id) => id !== f.id) : [...statusFilter, f.id]
+                        )
+                      }
+                    >
+                      <StatusDot status={f.statuses[0]} size={8} />
+                      {sentenceCase(STATUS_WORDS[f.statuses[0]])}
+                      <span className="sessions-filter-count">{statusCounts.get(f.id) ?? 0}</span>
+                    </button>
+                  )
+                })}
               </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={unreadOnly}
-                className={
-                  unreadOnly
-                    ? 'sessions-unread-toggle sessions-unread-toggle--on'
-                    : 'sessions-unread-toggle'
-                }
-                onClick={() => setUnreadOnly(!unreadOnly)}
-              >
-                <span className="sessions-unread-switch" aria-hidden="true" />
-                Unread only
-                <span className="sessions-filter-count">{unreadCount}</span>
-              </button>
+              <div className="sessions-filter-row">
+                <label className="sessions-search">
+                  <Icon name="Search" size={14} />
+                  <input
+                    ref={searchRef}
+                    type="search"
+                    aria-label="Search sessions"
+                    placeholder="Search title, branch, project or ticket"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.stopPropagation()
+                        setQuery('')
+                        e.currentTarget.blur()
+                      }
+                    }}
+                  />
+                  {!query && <kbd>/</kbd>}
+                </label>
+                {(
+                  [
+                    {
+                      id: 'unread',
+                      label: 'Unread',
+                      on: unreadOnly,
+                      set: setUnreadOnly,
+                      count: unreadCount,
+                      help: 'Only sessions with something new since you last opened them'
+                    },
+                    {
+                      id: 'pr',
+                      label: 'Open PR',
+                      on: prOnly,
+                      set: setPrOnly,
+                      count: prCount,
+                      help: 'Only sessions whose branch has an open pull request'
+                    },
+                    {
+                      id: 'ticket',
+                      label: 'Has ticket',
+                      on: ticketOnly,
+                      set: setTicketOnly,
+                      count: ticketCount,
+                      help: 'Only sessions linked to a Jira ticket'
+                    },
+                    {
+                      id: 'finished',
+                      label: 'Hide finished',
+                      on: hideFinished,
+                      set: setHideFinished,
+                      count: finishedCount,
+                      help: 'Hide stopped, missing and errored sessions'
+                    }
+                  ] as const
+                )
+                  // Open PR and Has ticket only once something has one (or
+                  // while on): without gh or Jira they could never match.
+                  .filter((t) => t.id === 'unread' || t.id === 'finished' || t.on || t.count > 0)
+                  .map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      role="switch"
+                      aria-checked={t.on}
+                      data-filter-switch={t.id}
+                      title={t.help}
+                      className={
+                        t.on
+                          ? 'sessions-unread-toggle sessions-unread-toggle--on'
+                          : 'sessions-unread-toggle'
+                      }
+                      onClick={() => t.set(!t.on)}
+                    >
+                      <span className="sessions-unread-switch" aria-hidden="true" />
+                      {t.label}
+                      <span className="sessions-filter-count">{t.count}</span>
+                    </button>
+                  ))}
+                {filtersOn && (
+                  <button type="button" className="sessions-filter-clear" onClick={clearFilters}>
+                    Clear filters
+                  </button>
+                )}
+              </div>
             </div>
           )}
 

@@ -1663,6 +1663,80 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     Boolean($('.sessions-filter-tab') && $('.sessions-sort-button'))
   )
 
+  // Filters: several statuses at once, search, and the switches.
+  {
+    const rowStatuses = (): string[] =>
+      $$('.sessions-row').map(
+        (r) =>
+          r.querySelector<HTMLElement>('.sessions-row-badge [data-status]')?.dataset.status ?? '?'
+      )
+    const tab = (id: string): HTMLElement | null => $(`[data-status-filter="${id}"]`)
+    const sw = (id: string): HTMLElement | null => $(`[data-filter-switch="${id}"]`)
+    const clear = async (): Promise<void> => {
+      const b = byText('.sessions-filter-clear', 'Clear filters')
+      if (b) await click(b)
+      await wait(200)
+    }
+    await clear()
+    const before = rowStatuses().length
+
+    await click(tab('working'))
+    await click(tab('errored'))
+    await wait(200)
+    const picked = rowStatuses()
+    await check(
+      'two status tabs on at once show both statuses and nothing else',
+      picked.length > 1 &&
+        picked.length < before &&
+        picked.every((st) => st === 'working' || st === 'errored') &&
+        picked.includes('working') &&
+        picked.includes('errored'),
+      picked.join(',')
+    )
+    await clear()
+
+    await key('/')
+    const search = $<HTMLInputElement>('.sessions-search input')
+    const focused = document.activeElement === search
+    await typeText('waiting')
+    const titles = $$('.sessions-row .sessions-row-title').map((t) => t.textContent ?? '')
+    await check(
+      '/ focuses Sessions search, and typing narrows the list to matching titles',
+      focused &&
+        titles.length >= 1 &&
+        titles.length < before &&
+        titles.every((t) => /waiting/i.test(t)),
+      `focused=${focused}; ${titles.join(' | ')}`
+    )
+    await key('Escape')
+    await wait(200)
+    await check(
+      'Esc in Sessions search clears it',
+      search?.value === '' && rowStatuses().length === before,
+      `value "${search?.value}", ${rowStatuses().length} of ${before} rows`
+    )
+
+    const hadStopped = rowStatuses().includes('stopped')
+    await click(sw('finished'))
+    await wait(200)
+    const unfinished = rowStatuses()
+    await check(
+      'Hide finished hides stopped, missing and errored sessions',
+      hadStopped &&
+        unfinished.length > 0 &&
+        !unfinished.some((st) => st === 'stopped' || st === 'missing' || st === 'errored'),
+      unfinished.join(',')
+    )
+    await clear()
+    await check(
+      'Clear filters turns every filter off',
+      rowStatuses().length === before &&
+        !$('.sessions-filter-clear') &&
+        sw('finished')?.getAttribute('aria-checked') === 'false',
+      `${rowStatuses().length} of ${before}`
+    )
+  }
+
   // ---- Settings -----------------------------------------------------------
   await ctx.goTo('settings')
   await wait(600)

@@ -63,9 +63,10 @@ function App(): React.JSX.Element {
   // The Sessions list's own filters live here rather than in the list, so
   // the bell can switch Unread on from anywhere.
   const [unreadOnly, setUnreadOnly] = useStoredState('sessions-unread-only', false)
-  const [statusFilter, setStatusFilter] = useStoredState<StatusFilterId | null>(
-    'sessions-status-filter',
-    null
+  // Any number of statuses at once; none means every status.
+  const [statusFilter, setStatusFilter] = useStoredState<StatusFilterId[]>(
+    'sessions-status-filters',
+    []
   )
   // Sidebar visibility and width persist per viewer. localStorage can throw or
   // come back empty (private window, cleared site data), so every read is
@@ -1990,7 +1991,7 @@ function App(): React.JSX.Element {
   // The bell: every unread session, whatever filter or project you had on.
   const handleShowUnread = useCallback(() => {
     setUnreadOnly(true)
-    setStatusFilter(null)
+    setStatusFilter([])
     setSelectedProjectId(null)
     setOpenSessionKey(null)
     setGridView(false)

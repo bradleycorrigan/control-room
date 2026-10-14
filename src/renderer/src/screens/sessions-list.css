@@ -351,17 +351,80 @@
   outline-offset: 2px;
 }
 
-/* ---- filter row: status tabs + unread switch ----
+/* ---- filter rows: status tabs, then search and switches ----
    No borders anywhere: the chosen tab is a soft fill, the rest is text. Seven
    outlined pills plus two segmented bars read as a wall of controls. */
 
 .sessions-filters {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-12);
+  flex-direction: column;
+  gap: var(--space-8);
   margin: var(--space-12) 0 var(--space-16);
+}
+
+/* Search, then the switches that narrow whatever statuses are on. */
+.sessions-filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-8);
+}
+
+.sessions-search {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  height: 32px;
+  width: 300px;
+  max-width: 100%;
+  margin-right: var(--space-8);
+  padding: 0 var(--space-8) 0 var(--space-12);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.sessions-search:focus-within {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.sessions-search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+}
+
+.sessions-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.sessions-search kbd {
+  padding: 0 5px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+}
+
+.sessions-filter-clear {
+  height: 30px;
+  padding: 0 var(--space-8);
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  cursor: pointer;
+}
+
+.sessions-filter-clear:hover {
+  text-decoration: underline;
 }
 
 .sessions-filter-tabs {
