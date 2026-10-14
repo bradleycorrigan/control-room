@@ -23,6 +23,7 @@
     "verify:clean-description": "tsx scripts/verify-clean-description.ts",
     "verify:status-key-stability": "tsx scripts/verify-status-key-stability.ts",
     "verify:hook-state-cwd": "tsx scripts/verify-hook-state-cwd.ts",
+    "verify:local-only-changes": "tsx scripts/verify-local-only-changes.ts",
     "generate-tokens-css": "tsx scripts/generate-tokens-css.ts",
     "gate": "node scripts/gate.mjs",
     "install-app": "node scripts/install-app.mjs",

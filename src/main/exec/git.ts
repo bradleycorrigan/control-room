@@ -283,6 +283,7 @@ export async function diffPatch(worktreePath: string, base: string): Promise<str
   return res.code === 0 ? res.stdout : ''
 }
 
+/** Untracked files, not ignored ones, minus local editor and tool state (see LOCAL_ONLY). */
 export async function untrackedFiles(worktreePath: string): Promise<string[]> {
   const res = await run('git', [
     '-C',
@@ -293,7 +294,10 @@ export async function untrackedFiles(worktreePath: string): Promise<string[]> {
     '-z'
   ])
   if (res.code !== 0) return []
-  return res.stdout.split('\0').filter(Boolean)
+  return res.stdout
+    .split('\0')
+    .filter(Boolean)
+    .filter((p) => !isLocalOnly(p))
 }
 
 /** dbt leaves target/ behind; `git worktree remove` refuses a dirty worktree otherwise. */
@@ -314,16 +318,25 @@ export async function removeWorktree(repoPath: string, dir: string): Promise<boo
 // per-worktree action), this is driven by a bulk selection the user may not
 // have looked at as closely.
 export async function removeWorktreeClean(repoPath: string, dir: string): Promise<GitOpResult> {
-  // `git worktree remove` refuses any untracked file, so the editor entries
-  // hasUncommittedChanges ignores would block every removal. Delete them
-  // first, but only when untracked: a tracked one is the repo's own content.
-  for (const entry of EDITOR_ENTRIES) {
-    const tracked = await run('git', ['-C', dir, 'ls-files', '--', entry])
-    if (tracked.code === 0 && tracked.stdout.trim() === '') {
-      const path = join(dir, entry)
+  // `git worktree remove` refuses any untracked file, so the local-only
+  // files hasUncommittedChanges lets off would block every removal. Delete
+  // them first: only untracked ones, and a symlink (`.cursor`, usually) is
+  // unlinked, never followed, since its target is the main checkout's copy.
+  const listed = await run('git', [
+    '-C',
+    dir,
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all'
+  ])
+  if (listed.code === 0) {
+    for (const record of listed.stdout.split('\0')) {
+      if (!record.startsWith('?? ')) continue
+      const rel = record.slice(3).replace(/\/+$/, '')
+      if (!isLocalOnly(rel)) continue
+      const path = join(dir, rel)
       const stat = await lstat(path).catch(() => null)
-      // A symlink (the usual case) is unlinked, never followed: its target is
-      // the main checkout's real copy.
       if (stat?.isSymbolicLink()) await unlink(path)
       else if (stat) await rm(path, { recursive: true })
     }
@@ -475,24 +488,63 @@ export async function lastCommitTime(worktreePath: string): Promise<number | nul
 }
 
 /**
- * Untracked editor entries that never count as uncommitted work. Worktree
- * setup links `.cursor` back to the main checkout's copy so Cursor's rules
- * and features work in every worktree; nobody ever commits it, so counting
- * it flagged nearly every worktree as dirty and blocked cleanup.
+ * Local editor and tool state that never counts as uncommitted work, when
+ * untracked. Worktree setup links `.cursor` back to the main checkout's copy,
+ * and copies `.claude/settings.local.json` in, so nearly every worktree has
+ * them; counting them flagged worktrees as dirty and blocked cleanup. A
+ * tracked file at one of these paths is the repo's own content and still
+ * counts: only untracked entries are let off.
  */
-const EDITOR_ENTRIES = ['.cursor']
+const LOCAL_ONLY = ['.cursor', '.vscode', '.idea', '.claude/settings.local.json']
 
-export async function hasUncommittedChanges(worktreePath: string): Promise<boolean> {
+/** True for an untracked path that is editor or tool state, not work. */
+export function isLocalOnly(path: string): boolean {
+  const p = path.replace(/\/+$/, '')
+  if (p === '.DS_Store' || p.endsWith('/.DS_Store')) return true
+  return LOCAL_ONLY.some((e) => p === e || p.startsWith(`${e}/`))
+}
+
+export interface UncommittedChange {
+  path: string
+  /** git's two status letters, e.g. " M", "A ", "??". */
+  code: string
+}
+
+/**
+ * Every uncommitted change in a worktree, untracked files listed one by one,
+ * minus untracked local-only files (see LOCAL_ONLY). Ignored files never
+ * appear. Null when git can't read it.
+ */
+export async function uncommittedChanges(
+  worktreePath: string
+): Promise<UncommittedChange[] | null> {
   const res = await run('git', [
     '-C',
     worktreePath,
     'status',
-    '--porcelain',
-    '--',
-    '.',
-    ...EDITOR_ENTRIES.map((e) => `:(exclude)${e}`)
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all'
   ])
-  return res.code === 0 && res.stdout.trim().length > 0
+  if (res.code !== 0) return null
+  const out: UncommittedChange[] = []
+  const records = res.stdout.split('\0')
+  for (let i = 0; i < records.length; i++) {
+    const record = records[i]
+    if (record.length < 4) continue
+    const code = record.slice(0, 2)
+    const path = record.slice(3)
+    // A rename or copy is followed by its original path, as its own record.
+    if (code[0] === 'R' || code[0] === 'C') i++
+    if (code === '??' && isLocalOnly(path)) continue
+    out.push({ path, code })
+  }
+  return out
+}
+
+export async function hasUncommittedChanges(worktreePath: string): Promise<boolean> {
+  const changes = await uncommittedChanges(worktreePath)
+  return changes !== null && changes.length > 0
 }
 
 // ---------------------------------------------------------------------------

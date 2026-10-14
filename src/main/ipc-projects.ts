@@ -15,7 +15,8 @@ import {
   branchTip,
   pullRequestsByBranch,
   pruneWorktrees,
-  gitStatus
+  gitStatus,
+  uncommittedChanges
 } from './exec/git'
 import { handoffGitSummary } from './exec/sessionGit'
 import { openInCursor } from './exec/cursor'
@@ -93,9 +94,10 @@ export function registerProjectsIpc(): void {
   ipcMain.handle('worktrees:detail', async (_evt, projectId: string, worktreePath: string) => {
     const wt = await projectWorktree(projectId, worktreePath)
     if (!wt) return null
-    const [git, status, lastCommitAt] = await Promise.all([
+    const [git, status, changes, lastCommitAt] = await Promise.all([
       handoffGitSummary(worktreePath, wt.baseRef),
       gitStatus(worktreePath),
+      uncommittedChanges(worktreePath),
       lastCommitTime(worktreePath)
     ])
     return {
@@ -105,11 +107,8 @@ export function registerProjectsIpc(): void {
       ahead: status.ahead,
       behind: status.behind,
       // Enough to see what's uncommitted; the count says if there's more.
-      changes: status.files.slice(0, 50).map((f) => ({
-        path: f.path,
-        code: (f.index + f.worktree).trim() || '?'
-      })),
-      changeCount: status.files.length,
+      changes: (changes ?? []).slice(0, 50).map((c) => ({ path: c.path, code: c.code.trim() })),
+      changeCount: changes?.length ?? 0,
       lastCommitAt
     }
   })
