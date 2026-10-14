@@ -67,7 +67,7 @@ interface Props {
   // Dev shot harness only: lands the Overview tab's History section on CLI.
   initialHistoryTab?: 'recent' | 'cli'
   /** Opens a Jira ticket in the side panel, as a session header's ticket pill does. */
-  onOpenTicket?: (key: string) => void
+  onOpenTicket?: (key: string, list?: string[]) => void
 }
 
 export default function ProjectDetail({
@@ -204,7 +204,7 @@ function OverviewTab({
   onProjectsChanged: () => void
   onOpenSession: (liveKey: string, background?: boolean) => void
   pushToast: (message: string) => void
-  onOpenTicket?: (key: string) => void
+  onOpenTicket?: (key: string, list?: string[]) => void
   initialHistoryTab?: 'recent' | 'cli'
 }): React.JSX.Element {
   const worktreeHomeDir = useHomeDir()
@@ -244,7 +244,14 @@ function OverviewTab({
     const recordId = w.sessionId ?? w.doneSession?.id
     const record = recordId ? records.find((r) => r.id === recordId) : undefined
     return ticketKey(record) ?? ticketKey({ id: '', branch })
-  }
+  } // Every worktree's ticket, in card order, so J/K steps through them.
+  const worktreeTickets = [
+    ...new Set(
+      worktrees
+        .map((w) => ticketFor(w, w.branch?.replace(/^refs\/heads\//, '') ?? null))
+        .filter((k): k is string => k !== null)
+    )
+  ]
 
   // History reads this list, so anything that changes a record has to call it.
   // It used to be loaded once per project and never again: `onRecordsChanged`
@@ -508,7 +515,7 @@ function OverviewTab({
                             type="button"
                             className="cr-worktree-card-ticket"
                             title={`Open ${ticket} in Tickets`}
-                            onClick={() => onOpenTicket(ticket)}
+                            onClick={() => onOpenTicket(ticket, worktreeTickets)}
                           >
                             {ticket}
                           </button>
@@ -650,7 +657,7 @@ function OverviewTab({
               onOpenTicket
                 ? (key) => {
                     close()
-                    onOpenTicket(key)
+                    onOpenTicket(key, worktreeTickets)
                   }
                 : undefined
             }

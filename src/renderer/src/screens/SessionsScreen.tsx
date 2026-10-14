@@ -86,7 +86,7 @@ interface Props {
   statusFilter: StatusFilterId[]
   onStatusFilterChange: (next: StatusFilterId[]) => void
   /** Opens a Jira ticket in the side panel, from a row's ticket pill. */
-  onOpenTicket?: (key: string) => void
+  onOpenTicket?: (key: string, list?: string[]) => void
 }
 
 function projectForCwd(cwd: string, projects: Project[]): Project | null {
@@ -241,12 +241,14 @@ function PrChip({ pr }: { pr: WorktreePullRequest }): React.JSX.Element {
 // cards the same way.
 const SessionTickets = createContext<{
   ticketOf: (s: LiveSession) => string | null
-  open?: (key: string) => void
-}>({ ticketOf: () => null })
+  /** Opens one, with every ticket in the list's order so J/K steps through them. */
+  open?: (key: string, list: string[]) => void
+  list: string[]
+}>({ ticketOf: () => null, list: [] })
 
 /** The ticket key, as in the session header: a button that opens the ticket. */
 function TicketPill({ session }: { session: LiveSession }): React.JSX.Element | null {
-  const { ticketOf, open } = useContext(SessionTickets)
+  const { ticketOf, open, list } = useContext(SessionTickets)
   const key = ticketOf(session)
   if (!key || !open) return null
   return (
@@ -256,7 +258,7 @@ function TicketPill({ session }: { session: LiveSession }): React.JSX.Element | 
       title={`Open ${key} in Tickets`}
       onClick={(e) => {
         e.stopPropagation()
-        open(key)
+        open(key, list)
       }}
       onKeyDown={(e) => e.stopPropagation()}
     >
@@ -1466,7 +1468,20 @@ export default function SessionsScreen({
 
   return (
     <SessionPrs.Provider value={prOf}>
-      <SessionTickets.Provider value={{ ticketOf, open: onOpenTicket }}>
+      <SessionTickets.Provider
+        value={{
+          ticketOf,
+          open: onOpenTicket,
+          // In the order the screen shows them: project by project.
+          list: [
+            ...new Set(
+              [...projectGroups.flatMap((g) => g.sessions), ...otherSessions]
+                .map(ticketOf)
+                .filter((k): k is string => k !== null)
+            )
+          ]
+        }}
+      >
         <SessionSelection.Provider value={selection}>
           <div className="sessions-view">
             {pickedRecords.length > 0 && (

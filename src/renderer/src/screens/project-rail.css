@@ -81,9 +81,16 @@
   background: var(--surface-raised);
 }
 
+/* Selected: a neutral fill and a little weight, not the accent. Four
+   sections each with an accent block read as four alarms. */
 .projects-rail-item-selected,
 .projects-rail-item-selected:hover {
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--text) 10%, var(--surface));
+  color: var(--text);
+  font-weight: var(--text-label-weight);
+}
+
+.projects-rail-item-selected .backlog-sidebar-icon {
   color: var(--text);
 }
 

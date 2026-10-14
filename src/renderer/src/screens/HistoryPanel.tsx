@@ -51,8 +51,8 @@ interface Props {
   isRunning: (recordId: string) => boolean
   /** The record's live session, for its status and last activity. */
   liveOf: (recordId: string) => LiveSession | undefined
-  /** Opens a Jira ticket in the side panel. */
-  onOpenTicket?: (key: string) => void
+  /** Opens a Jira ticket in the side panel, with the list's tickets for J/K. */
+  onOpenTicket?: (key: string, list?: string[]) => void
   onOpenSession: (liveKey: string) => void
   pushToast: (message: string) => void
   /** Refreshes the project's records after one is put back on the board. */
@@ -171,6 +171,11 @@ export default function HistoryPanel({
   const lastActive = (r: SessionRecord): number => liveOf(r.id)?.activityAt ?? r.createdAt
   const sorted = [...shown].sort((a, b) => lastActive(b) - lastActive(a))
 
+  // The shown rows' tickets, in order, so J/K steps through them.
+  const shownTickets = [
+    ...new Set(sorted.map((r) => ticketKey(r)).filter((k): k is string => k !== null))
+  ]
+
   const renderRow = (
     record: SessionRecord,
     action: 'done' | 'resume' | null
@@ -219,7 +224,7 @@ export default function HistoryPanel({
                 title={`Open ${ticket} in Tickets`}
                 onClick={(e) => {
                   e.stopPropagation()
-                  onOpenTicket(ticket)
+                  onOpenTicket(ticket, shownTickets)
                 }}
               >
                 {ticket}

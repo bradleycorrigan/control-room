@@ -585,6 +585,17 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     ),
     `panel ${$('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 12) ?? 'closed'}, focus ${(document.activeElement as HTMLElement | null)?.dataset?.issue ?? document.activeElement?.tagName}, wanted ${secondKey}`
   )
+  // Expand: the same panel as a wide reading view; Escape goes back to the
+  // panel first, then closes it.
+  await click($('[data-drawer-expand]'))
+  const expanded = await until(() => Boolean($('.backlog-drawer--wide')))
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  await key('Escape')
+  await check(
+    'Expand widens the ticket panel into a reading view, and Escape goes back to the panel',
+    expanded && (await until(() => !$('.backlog-drawer--wide'))) && Boolean($('.backlog-drawer')),
+    `expanded=${expanded}, wide now ${Boolean($('.backlog-drawer--wide'))}, panel ${Boolean($('.backlog-drawer'))}`
+  )
   await key('Escape')
 
   // Right-click menu
@@ -1658,6 +1669,41 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       Boolean(sessionRow?.querySelector('.sessions-row-line2 .sessions-row-badge')) &&
       !sessionRow?.querySelector('.sessions-row-line1 .sessions-row-badge')
   )
+  // Ticket pills on session rows open the ticket panel, and J steps it to
+  // the next session's ticket.
+  {
+    await api.invoke('jira:link', 'fixture-rec-working', 'DSD-101')
+    await api.invoke('jira:link', 'fixture-rec-ready', 'DSD-102')
+    await ctx.goTo('home')
+    await wait(300)
+    await ctx.goTo('sessions')
+    await until(() => $$('.sessions-ticket-pill').length >= 2, 4000)
+    const pills = $$('.sessions-ticket-pill')
+    const firstPill = pills[0]?.textContent ?? ''
+    const otherPill = pills.find((p) => p.textContent !== firstPill)?.textContent ?? ''
+    await click(pills[0] ?? null)
+    const opened = await until(() =>
+      ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith(firstPill)
+    )
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    const firstIndex = pills.findIndex((p) => p.textContent === firstPill)
+    const otherIndex = pills.findIndex((p) => p.textContent === otherPill)
+    await key(otherIndex > firstIndex ? 'j' : 'k')
+    const stepped = await until(() =>
+      ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith(otherPill)
+    )
+    await check(
+      "a session row's ticket pill opens the ticket, and J/K steps to the next session's ticket",
+      pills.length >= 2 && opened && stepped,
+      `${pills.length} pills (${firstPill}, ${otherPill}); opened=${opened}; panel ${$('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 10)}`
+    )
+    await key('Escape')
+    await api.invoke('jira:link', 'fixture-rec-working', null)
+    await api.invoke('jira:link', 'fixture-rec-ready', null)
+    await ctx.goTo('sessions')
+    await wait(300)
+  }
+
   await check(
     'the list has its status tabs and sort menu',
     Boolean($('.sessions-filter-tab') && $('.sessions-sort-button'))

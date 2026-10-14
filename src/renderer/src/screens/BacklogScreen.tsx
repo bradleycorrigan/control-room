@@ -127,6 +127,13 @@ interface Props {
   onPanelClose?: () => void
   /** Panel only: carry on with this ticket on the full Backlog. */
   onExpand?: (key: string) => void
+  /**
+   * Panel only: the tickets of the list behind the panel (Sessions, a
+   * project's worktrees or History), in its order, so J/K and the arrows
+   * step through them as they do on Tickets.
+   */
+  stepKeys?: string[] | null
+  onStepTo?: (key: string) => void
 }
 
 type Who = 'all' | 'mine' | 'unassigned'
@@ -307,6 +314,8 @@ export default function BacklogScreen({
   onSidebarResizeReset,
   panelOnly = false,
   onPanelClose,
+  stepKeys,
+  onStepTo,
   onExpand
 }: Props): React.JSX.Element {
   const [status, setStatus] = useState<JiraStatus | null>(null)
@@ -1908,8 +1917,21 @@ export default function BacklogScreen({
         myName={myName}
         sessions={sessions}
         linkedSessions={sessionsFor(openIssue)}
-        position={{ index: order.indexOf(openIssue.key), total: order.length }}
-        onStep={panelOnly ? undefined : step}
+        position={
+          panelOnly
+            ? { index: stepKeys?.indexOf(openIssue.key) ?? -1, total: stepKeys?.length ?? 0 }
+            : { index: order.indexOf(openIssue.key), total: order.length }
+        }
+        onStep={
+          !panelOnly
+            ? step
+            : stepKeys && stepKeys.length > 1 && onStepTo
+              ? (delta) => {
+                  const next = stepKeys[stepKeys.indexOf(openIssue.key) + delta]
+                  if (next) onStepTo(next)
+                }
+              : undefined
+        }
         onClose={() => setOpenKey(null)}
         onExpand={panelOnly && onExpand ? () => onExpand(openIssue.key) : undefined}
         write={write}
@@ -4522,6 +4544,9 @@ function IssueMenu({
 
 // ---------------------------------------------------------------------------
 
+/** Whether the ticket panel is expanded, across the remount each ticket gets. */
+let panelWide = false
+
 function IssueDrawer({
   issue,
   board,
@@ -4639,6 +4664,14 @@ function IssueDrawer({
   const [addingSubtask, setAddingSubtask] = useState(false)
   const [subtaskSummary, setSubtaskSummary] = useState('')
   const panel = useRef<HTMLElement>(null)
+  // Expanded: the same panel as a wide reading view over the page, for a
+  // long description. Kept while you step from ticket to ticket (each one
+  // remounts the panel); the app starts with the panel every time.
+  const [wide, setWide] = useState(() => panelWide)
+  const toggleWide = (): void => {
+    panelWide = !wide
+    setWide(panelWide)
+  }
   // Escape drops an edited summary; the blur that follows must not save it.
   const dropSummary = useRef(false)
 
@@ -4672,6 +4705,11 @@ function IssueDrawer({
         setEditingSummary(false)
       }
       active.blur()
+      return true
+    }
+    // Expanded, Escape goes back to the panel first.
+    if (wide) {
+      toggleWide()
       return true
     }
     onClose()
@@ -4751,866 +4789,888 @@ function IssueDrawer({
     : [...(issue.priority ? [issue.priority] : []), ...board.priorities]
 
   return (
-    <aside
-      ref={panel}
-      className="backlog-drawer"
-      role="dialog"
-      aria-label={`${issue.key} ${issue.summary}`}
-    >
-      <div className="backlog-drawer-header">
-        <div className="backlog-drawer-nav">
-          {onStep && (
-            <>
-              <IconButton
-                icon="ChevronUp"
-                label="Previous ticket"
-                tooltip="Previous ticket (K)"
-                size={28}
-                variant="ghost"
-                disabled={position.index <= 0}
-                onClick={() => onStep(-1)}
-              />
-              <IconButton
-                icon="ChevronDown"
-                label="Next ticket"
-                tooltip="Next ticket (J)"
-                size={28}
-                variant="ghost"
-                disabled={position.index < 0 || position.index >= position.total - 1}
-                onClick={() => onStep(1)}
-              />
-            </>
-          )}
-          {/* Where it sits: its epic, its parent ticket for a sub-task, then
+    <>
+      {wide && (
+        // Click outside the expanded view to go back to the panel.
+        <div className="backlog-drawer-scrim" aria-hidden="true" onClick={toggleWide} />
+      )}
+      <aside
+        ref={panel}
+        className={wide ? 'backlog-drawer backlog-drawer--wide' : 'backlog-drawer'}
+        role="dialog"
+        aria-label={`${issue.key} ${issue.summary}`}
+      >
+        <div className="backlog-drawer-header">
+          <div className="backlog-drawer-nav">
+            {onStep && (
+              <>
+                <IconButton
+                  icon="ChevronUp"
+                  label="Previous ticket"
+                  tooltip="Previous ticket (K)"
+                  size={28}
+                  variant="ghost"
+                  disabled={position.index <= 0}
+                  onClick={() => onStep(-1)}
+                />
+                <IconButton
+                  icon="ChevronDown"
+                  label="Next ticket"
+                  tooltip="Next ticket (J)"
+                  size={28}
+                  variant="ghost"
+                  disabled={position.index < 0 || position.index >= position.total - 1}
+                  onClick={() => onStep(1)}
+                />
+              </>
+            )}
+            {/* Where it sits: its epic, its parent ticket for a sub-task, then
               its own key. */}
-          {(() => {
-            const parentIssue = issue.isSubtask
-              ? board.issues.find((i) => i.key === issue.parent?.key)
-              : null
-            const epic = issue.isSubtask ? parentIssue?.parent : issue.parent
-            return (
-              <span className="backlog-drawer-crumbs">
-                {epic && (
-                  <span className="backlog-drawer-crumb" title={`Epic ${epic.key}`}>
-                    <EpicMark />
-                    <span className="backlog-drawer-crumb-text">{epic.summary}</span>
-                  </span>
-                )}
-                {issue.isSubtask && issue.parent && (
+            {(() => {
+              const parentIssue = issue.isSubtask
+                ? board.issues.find((i) => i.key === issue.parent?.key)
+                : null
+              const epic = issue.isSubtask ? parentIssue?.parent : issue.parent
+              return (
+                <span className="backlog-drawer-crumbs">
+                  {epic && (
+                    <span className="backlog-drawer-crumb" title={`Epic ${epic.key}`}>
+                      <EpicMark />
+                      <span className="backlog-drawer-crumb-text">{epic.summary}</span>
+                    </span>
+                  )}
+                  {issue.isSubtask && issue.parent && (
+                    <button
+                      type="button"
+                      className="backlog-drawer-crumb backlog-drawer-crumb--link"
+                      title={issue.parent.summary}
+                      onClick={() => onOpenKey(issue.parent!.key)}
+                    >
+                      {issue.parent.key}
+                    </button>
+                  )}
                   <button
                     type="button"
-                    className="backlog-drawer-crumb backlog-drawer-crumb--link"
-                    title={issue.parent.summary}
-                    onClick={() => onOpenKey(issue.parent!.key)}
+                    className="backlog-drawer-key"
+                    title="Copy key"
+                    onClick={() => copy(issue.key, issue.key)}
                   >
-                    {issue.parent.key}
+                    {issue.key}
                   </button>
-                )}
-                <button
-                  type="button"
-                  className="backlog-drawer-key"
-                  title="Copy key"
-                  onClick={() => copy(issue.key, issue.key)}
-                >
-                  {issue.key}
-                </button>
-              </span>
-            )
-          })()}
-        </div>
-        <div className="backlog-drawer-header-actions">
-          {onExpand && (
+                </span>
+              )
+            })()}
+          </div>
+          <div className="backlog-drawer-header-actions">
             <IconButton
-              icon="PanelRight"
-              label="Open in Tickets"
-              tooltip="Open in Tickets"
+              icon={wide ? 'Minimize2' : 'Maximize2'}
+              label={wide ? 'Back to the panel' : 'Expand'}
+              tooltip={wide ? 'Back to the panel (Esc)' : 'Expand to read'}
               size={28}
               variant="ghost"
-              onClick={onExpand}
+              data-drawer-expand
+              onClick={toggleWide}
             />
-          )}
-          {headPr && (
-            <Tooltip label={`Open ${headPr.number || 'pull request'} in GitHub (${headPr.state})`}>
-              <button
-                type="button"
-                className="cr-icon-button cr-icon-button--28 cr-icon-button--ghost"
-                aria-label="Open in GitHub"
-                onClick={() => void openExternal(headPr.url)}
+            {onExpand && (
+              <IconButton
+                icon="PanelRight"
+                label="Open in Tickets"
+                tooltip="Open in Tickets"
+                size={28}
+                variant="ghost"
+                onClick={onExpand}
+              />
+            )}
+            {headPr && (
+              <Tooltip
+                label={`Open ${headPr.number || 'pull request'} in GitHub (${headPr.state})`}
               >
-                <GitHubGlyph size={15} />
-              </button>
-            </Tooltip>
-          )}
-          {slack ? (
-            <Tooltip label="Open in Slack">
-              <button
-                type="button"
-                className="cr-icon-button cr-icon-button--28 cr-icon-button--ghost"
-                aria-label="Open in Slack"
-                onClick={() => void openExternal(slack.url)}
-              >
-                <SlackGlyph size={15} />
-              </button>
-            </Tooltip>
-          ) : (
-            <AddSlackLink
-              onAdd={async (url) => {
-                const ok = await write(() => addJiraSlackLink(issue.key, url))
-                if (ok)
-                  setDetail((d) =>
-                    d ? { ...d, links: [...d.links, { url, title: 'Open in Slack' }] } : d
-                  )
-                return ok
-              }}
+                <button
+                  type="button"
+                  className="cr-icon-button cr-icon-button--28 cr-icon-button--ghost"
+                  aria-label="Open in GitHub"
+                  onClick={() => void openExternal(headPr.url)}
+                >
+                  <GitHubGlyph size={15} />
+                </button>
+              </Tooltip>
+            )}
+            {slack ? (
+              <Tooltip label="Open in Slack">
+                <button
+                  type="button"
+                  className="cr-icon-button cr-icon-button--28 cr-icon-button--ghost"
+                  aria-label="Open in Slack"
+                  onClick={() => void openExternal(slack.url)}
+                >
+                  <SlackGlyph size={15} />
+                </button>
+              </Tooltip>
+            ) : (
+              <AddSlackLink
+                onAdd={async (url) => {
+                  const ok = await write(() => addJiraSlackLink(issue.key, url))
+                  if (ok)
+                    setDetail((d) =>
+                      d ? { ...d, links: [...d.links, { url, title: 'Open in Slack' }] } : d
+                    )
+                  return ok
+                }}
+              />
+            )}
+            <IconButton
+              icon="ExternalLink"
+              label={`Open ${issue.key} in Jira`}
+              size={28}
+              variant="ghost"
+              onClick={() => void openExternal(issue.url)}
             />
-          )}
-          <IconButton
-            icon="ExternalLink"
-            label={`Open ${issue.key} in Jira`}
-            size={28}
-            variant="ghost"
-            onClick={() => void openExternal(issue.url)}
-          />
-          <IconButton
-            icon="X"
-            label="Close"
-            tooltip="Close (Esc)"
-            size={28}
-            variant="ghost"
-            onClick={onClose}
-          />
+            <IconButton
+              icon="X"
+              label="Close"
+              tooltip="Close (Esc)"
+              size={28}
+              variant="ghost"
+              onClick={onClose}
+            />
+          </div>
         </div>
-      </div>
 
-      {editingSummary ? (
-        <form
-          className="backlog-drawer-summary-form"
-          onSubmit={(e) => {
-            e.preventDefault()
-            saveSummary()
-          }}
-        >
-          <Input
-            autoFocus
-            aria-label="Summary"
-            value={summary}
-            onChange={(e) => setSummary(e.target.value)}
-            onBlur={saveSummary}
-          />
-          <Button
-            variant="filled"
-            size="compact"
-            type="submit"
-            disabled={!summary.trim()}
-            onMouseDown={(e) => e.preventDefault()}
+        {editingSummary ? (
+          <form
+            className="backlog-drawer-summary-form"
+            onSubmit={(e) => {
+              e.preventDefault()
+              saveSummary()
+            }}
           >
-            Save
-          </Button>
-        </form>
-      ) : (
-        <h2
-          className="backlog-drawer-summary"
-          title="Click to edit"
-          tabIndex={0}
-          onClick={() => {
-            setSummary(issue.summary)
-            setEditingSummary(true)
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+            <Input
+              autoFocus
+              aria-label="Summary"
+              value={summary}
+              onChange={(e) => setSummary(e.target.value)}
+              onBlur={saveSummary}
+            />
+            <Button
+              variant="filled"
+              size="compact"
+              type="submit"
+              disabled={!summary.trim()}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              Save
+            </Button>
+          </form>
+        ) : (
+          <h2
+            className="backlog-drawer-summary"
+            title="Click to edit"
+            tabIndex={0}
+            onClick={() => {
               setSummary(issue.summary)
               setEditingSummary(true)
-            }
-          }}
-        >
-          {issue.summary}
-        </h2>
-      )}
-
-      <p className="backlog-drawer-byline">
-        <span className="backlog-person">
-          <Pill>{typeName(issue)}</Pill>
-          <Avatar name={issue.reporter} size={16} />
-          <span title={issue.created ? fullDate(issue.created) : undefined}>
-            {issue.reporter ?? 'Someone'} reported this
-            {issue.created ? ` ${when(issue.created)}` : ''}
-          </span>
-        </span>
-        {issue.updated && (
-          <span title={fullDate(issue.updated)}>Updated {when(issue.updated)}</span>
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setSummary(issue.summary)
+                setEditingSummary(true)
+              }
+            }}
+          >
+            {issue.summary}
+          </h2>
         )}
-      </p>
 
-      {/* The ticket's fields as a ruled grid, label over value, each cell as wide
+        <p className="backlog-drawer-byline">
+          <span className="backlog-person">
+            <Pill>{typeName(issue)}</Pill>
+            <Avatar name={issue.reporter} size={16} />
+            <span title={issue.created ? fullDate(issue.created) : undefined}>
+              {issue.reporter ?? 'Someone'} reported this
+              {issue.created ? ` ${when(issue.created)}` : ''}
+            </span>
+          </span>
+          {issue.updated && (
+            <span title={fullDate(issue.updated)}>Updated {when(issue.updated)}</span>
+          )}
+        </p>
+
+        {/* The ticket's fields as a ruled grid, label over value, each cell as wide
           as its content needs: small values in thirds, people and labels in
           halves, cycle and epic across. */}
-      <div className="backlog-props">
-        <div className="backlog-prop backlog-prop--third">
-          <span className="backlog-prop-label">Status</span>
-          <div className="backlog-prop-value">
-            <StatusGlyph name={issue.status} category={issue.statusCategory} />
-            <Select
-              aria-label="Status"
-              className="backlog-select"
-              value={issue.status}
-              onChange={(e) => {
-                const s = statuses.find((x) => x.name === e.target.value)
-                if (s) void actions.status(issue, s)
-              }}
-            >
-              {statuses.map((s) => (
-                <option key={s.name} value={s.name}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </div>
-        <div className="backlog-prop backlog-prop--third">
-          <span className="backlog-prop-label">Priority</span>
-          <div className="backlog-prop-value">
-            <PriorityGlyph priority={issue.priority} />
-            <Select
-              aria-label="Priority"
-              className="backlog-select"
-              value={issue.priority ?? ''}
-              onChange={(e) => void actions.priority(issue, e.target.value)}
-            >
-              {!issue.priority && <option value="">No priority</option>}
-              {priorities.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </Select>
-          </div>
-        </div>
-        <div className="backlog-prop backlog-prop--third">
-          <span className="backlog-prop-label">Estimate</span>
-          <div className="backlog-prop-value">
-            <EstimateField issue={issue} onSave={(v) => actions.estimate(issue, v)} />
-          </div>
-        </div>
-        <div className="backlog-prop">
-          <span className="backlog-prop-label">Assignee</span>
-          <div className="backlog-prop-value">
-            <Avatar name={issue.assignee} size={20} />
-            {people.length > 0 ? (
+        <div className="backlog-props">
+          <div className="backlog-prop backlog-prop--third">
+            <span className="backlog-prop-label">Status</span>
+            <div className="backlog-prop-value">
+              <StatusGlyph name={issue.status} category={issue.statusCategory} />
               <Select
-                aria-label="Assignee"
+                aria-label="Status"
                 className="backlog-select"
-                value={
-                  issue.assignedToMe
-                    ? 'me'
-                    : (people.find((p) => p.name === issue.assignee)?.accountId ??
-                      (issue.assignee ? 'other' : 'none'))
-                }
+                value={issue.status}
                 onChange={(e) => {
-                  const v = e.target.value
-                  const person = people.find((p) => p.accountId === v)
-                  if (v === 'me' || v === 'none') void actions.setAssignee(issue, v)
-                  else if (person) void actions.setAssignee(issue, person)
+                  const s = statuses.find((x) => x.name === e.target.value)
+                  if (s) void actions.status(issue, s)
                 }}
               >
-                <option value="none">Unassigned</option>
-                <option value="me">{myName === 'You' ? 'You' : `${myName} (you)`}</option>
-                {issue.assignee &&
-                  !issue.assignedToMe &&
-                  !people.some((p) => p.name === issue.assignee) && (
-                    <option value="other">{issue.assignee}</option>
-                  )}
-                {people
-                  .filter((p) => p.name !== myName)
-                  .map((p) => (
-                    <option key={p.accountId} value={p.accountId}>
-                      {p.name}
-                    </option>
-                  ))}
+                {statuses.map((s) => (
+                  <option key={s.name} value={s.name}>
+                    {s.name}
+                  </option>
+                ))}
               </Select>
-            ) : (
-              <span className="backlog-person backlog-prop-text">
-                {issue.assignee ?? 'Unassigned'}
-              </span>
-            )}
-            <button
-              type="button"
-              className="backlog-link backlog-link--quiet backlog-prop-action"
-              onClick={() => void actions.assign(issue)}
-            >
-              {issue.assignedToMe ? 'Unassign' : 'Assign to me'}
-            </button>
+            </div>
           </div>
-        </div>
-        <div className="backlog-prop">
-          <span className="backlog-prop-label">Labels</span>
-          <div className="backlog-prop-value">
-            <LabelsField
-              issue={issue}
-              suggestions={board.labels}
-              onSave={(labels) => actions.labels(issue, labels)}
-            />
-          </div>
-        </div>
-        {issue.isSubtask ? (
-          <>
-            <div className="backlog-prop backlog-prop--wide">
-              <span className="backlog-prop-label">Cycle</span>
-              <div className="backlog-prop-value">
-                <Icon name={issue.sprint ? 'RefreshCw' : 'Inbox'} size={14} />
-                <span className="backlog-drawer-field-note">
-                  {issue.sprint ? `Follows ${issue.parent?.key ?? 'its parent'}` : 'Backlog'}
-                </span>
-              </div>
-            </div>
-            <div className="backlog-prop backlog-prop--wide">
-              <span className="backlog-prop-label">Parent</span>
-              <div className="backlog-prop-value">
-                {issue.parent ? (
-                  <button
-                    type="button"
-                    className="backlog-link backlog-prop-text"
-                    onClick={() => onOpenKey(issue.parent!.key)}
-                  >
-                    {issue.parent.key} {issue.parent.summary}
-                  </button>
-                ) : (
-                  <span className="backlog-drawer-field-note">None</span>
-                )}
-              </div>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="backlog-prop backlog-prop--wide">
-              <span className="backlog-prop-label">Cycle</span>
-              <div className="backlog-prop-value">
-                <Icon name={issue.sprint ? 'RefreshCw' : 'Inbox'} size={14} />
-                <Select
-                  aria-label="Cycle"
-                  className="backlog-select"
-                  value={issue.sprint ? String(issue.sprint.id) : ''}
-                  disabled={board.sprints.length === 0}
-                  onChange={(e) =>
-                    void actions.cycle(issue, e.target.value ? Number(e.target.value) : null)
-                  }
-                >
-                  <option value="">Backlog</option>
-                  {issue.sprint && !board.sprints.some((sp) => sp.id === issue.sprint!.id) && (
-                    <option value={String(issue.sprint.id)}>{issue.sprint.name}</option>
-                  )}
-                  {board.sprints.map((sp) => (
-                    <option key={sp.id} value={String(sp.id)}>
-                      {sp.state === 'active'
-                        ? `Current cycle · ${sp.name}`
-                        : `${sp.name} · upcoming`}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            </div>
-
-            <div className="backlog-prop backlog-prop--wide">
-              <span className="backlog-prop-label">Epic</span>
-              <div className="backlog-prop-value">
-                {issue.parent ? <EpicMark /> : <span className="backlog-drawer-field-blank" />}
-                <Select
-                  aria-label="Parent"
-                  className="backlog-select"
-                  value={issue.parent?.key ?? ''}
-                  onChange={(e) => void actions.parent(issue, e.target.value || null)}
-                >
-                  <option value="">No epic</option>
-                  {issue.parent && !board.epics.some((ep) => ep.key === issue.parent!.key) && (
-                    <option value={issue.parent.key}>
-                      {issue.parent.summary} ({issue.parent.key})
-                    </option>
-                  )}
-                  {board.epics.map((ep) => (
-                    <option key={ep.key} value={ep.key}>
-                      {ep.summary} ({ep.key})
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* One click to the next steps in the workflow, alongside the dropdown. */}
-      {(() => {
-        const at = statuses.findIndex((st) => st.name === issue.status)
-        const next = at >= 0 ? statuses.slice(at + 1, at + 3) : []
-        if (!next.length) return null
-        return (
-          <div className="backlog-next-status" role="group" aria-label="Move to">
-            <span className="backlog-next-status-label">Move to</span>
-            {next.map((st) => (
-              <button
-                key={st.name}
-                type="button"
-                className="backlog-next-status-option"
-                onClick={() => void actions.status(issue, st)}
+          <div className="backlog-prop backlog-prop--third">
+            <span className="backlog-prop-label">Priority</span>
+            <div className="backlog-prop-value">
+              <PriorityGlyph priority={issue.priority} />
+              <Select
+                aria-label="Priority"
+                className="backlog-select"
+                value={issue.priority ?? ''}
+                onChange={(e) => void actions.priority(issue, e.target.value)}
               >
-                <StatusGlyph name={st.name} category={st.category} size={12} />
-                {st.name}
-              </button>
-            ))}
-          </div>
-        )
-      })()}
-
-      {/* Work: the sessions on this ticket and their pull requests, in one box. */}
-      <section className="backlog-drawer-group" aria-label="Work">
-        {/* Heading first, then what to do. With sessions, the adds are quiet
-            and sit beside the heading; with none, Start session is the body. */}
-        {(() => {
-          const linkSelect = linkable.length > 0 && (
-            <Select
-              aria-label="Link a session"
-              className="backlog-select backlog-select--flat"
-              value=""
-              onChange={(e) => {
-                const id = e.target.value
-                if (id) void onLink(id, issue.key)
-              }}
-            >
-              <option value="">Link a session…</option>
-              {linkable.map((s) => (
-                <option key={s.key} value={s.record!.id}>
-                  {s.record!.title}
-                </option>
-              ))}
-            </Select>
-          )
-          return linkedSessions.length > 0 || prs.rows.length > 0 ? (
-            <div className="backlog-drawer-section-head">
-              <h3>
-                Work{' '}
-                {linkedSessions.length > 1 && (
-                  <span className="backlog-group-count">{linkedSessions.length}</span>
-                )}
-              </h3>
-              <div className="backlog-drawer-section-actions">
-                <Button variant="ghost" size="compact" onClick={onStartSession}>
-                  <Icon name="Plus" size={12} />
-                  Start session
-                </Button>
-                {linkSelect}
-              </div>
+                {!issue.priority && <option value="">No priority</option>}
+                {priorities.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </Select>
             </div>
-          ) : (
+          </div>
+          <div className="backlog-prop backlog-prop--third">
+            <span className="backlog-prop-label">Estimate</span>
+            <div className="backlog-prop-value">
+              <EstimateField issue={issue} onSave={(v) => actions.estimate(issue, v)} />
+            </div>
+          </div>
+          <div className="backlog-prop">
+            <span className="backlog-prop-label">Assignee</span>
+            <div className="backlog-prop-value">
+              <Avatar name={issue.assignee} size={20} />
+              {people.length > 0 ? (
+                <Select
+                  aria-label="Assignee"
+                  className="backlog-select"
+                  value={
+                    issue.assignedToMe
+                      ? 'me'
+                      : (people.find((p) => p.name === issue.assignee)?.accountId ??
+                        (issue.assignee ? 'other' : 'none'))
+                  }
+                  onChange={(e) => {
+                    const v = e.target.value
+                    const person = people.find((p) => p.accountId === v)
+                    if (v === 'me' || v === 'none') void actions.setAssignee(issue, v)
+                    else if (person) void actions.setAssignee(issue, person)
+                  }}
+                >
+                  <option value="none">Unassigned</option>
+                  <option value="me">{myName === 'You' ? 'You' : `${myName} (you)`}</option>
+                  {issue.assignee &&
+                    !issue.assignedToMe &&
+                    !people.some((p) => p.name === issue.assignee) && (
+                      <option value="other">{issue.assignee}</option>
+                    )}
+                  {people
+                    .filter((p) => p.name !== myName)
+                    .map((p) => (
+                      <option key={p.accountId} value={p.accountId}>
+                        {p.name}
+                      </option>
+                    ))}
+                </Select>
+              ) : (
+                <span className="backlog-person backlog-prop-text">
+                  {issue.assignee ?? 'Unassigned'}
+                </span>
+              )}
+              <button
+                type="button"
+                className="backlog-link backlog-link--quiet backlog-prop-action"
+                onClick={() => void actions.assign(issue)}
+              >
+                {issue.assignedToMe ? 'Unassign' : 'Assign to me'}
+              </button>
+            </div>
+          </div>
+          <div className="backlog-prop">
+            <span className="backlog-prop-label">Labels</span>
+            <div className="backlog-prop-value">
+              <LabelsField
+                issue={issue}
+                suggestions={board.labels}
+                onSave={(labels) => actions.labels(issue, labels)}
+              />
+            </div>
+          </div>
+          {issue.isSubtask ? (
             <>
-              <div className="backlog-drawer-section-head">
-                <h3>Work</h3>
-              </div>
-              <div className="backlog-work-empty">
-                <Button variant="filled" size="compact" onClick={onStartSession}>
-                  Start session
-                </Button>
-                {linkSelect}
-              </div>
-            </>
-          )
-        })()}
-        {(linkedSessions.length > 0 || prs.rows.length > 0 || prs.jiraError) && (
-          <div className="backlog-work">
-            {linkedSessions.map(({ session, linked }) => (
-              <div key={session.key} className="backlog-work-item">
-                <div className="backlog-work-row">
-                  <button
-                    type="button"
-                    className="backlog-work-open"
-                    onClick={() => onOpenSession(session.key)}
-                  >
-                    <StatusDot status={session.status} size={8} />
-                    <span className="backlog-work-title">{session.record?.title}</span>
-                    <span className="backlog-state-chip">{STATUS_WORDS[session.status]}</span>
-                  </button>
-                  {/* Always laid out, shown on hover: nothing shifts as you point. */}
-                  <span className="backlog-work-tools">
-                    {session.record?.branch && !session.record.investigation && (
-                      <BranchCopy
-                        branch={session.record.branch}
-                        projectId={session.record.projectId}
-                        recordId={session.record.id}
-                        hasPr={prs.ownRecordId === session.record.id}
-                        onCopy={(b) => copy(b, 'Branch name')}
-                      />
-                    )}
-                    {linked && (
-                      <IconButton
-                        icon="Unlink"
-                        label="Unlink this session"
-                        tooltip="Unlink"
-                        size={28}
-                        variant="ghost"
-                        onClick={() => void onLink(session.record!.id, null)}
-                      />
-                    )}
+              <div className="backlog-prop backlog-prop--wide">
+                <span className="backlog-prop-label">Cycle</span>
+                <div className="backlog-prop-value">
+                  <Icon name={issue.sprint ? 'RefreshCw' : 'Inbox'} size={14} />
+                  <span className="backlog-drawer-field-note">
+                    {issue.sprint ? `Follows ${issue.parent?.key ?? 'its parent'}` : 'Backlog'}
                   </span>
                 </div>
               </div>
-            ))}
-            <TicketPullRequests prs={prs} show="all" onComment={noteWithLink} />
-          </div>
-        )}
-      </section>
-
-      {!issue.isSubtask && ((issue.subtasks?.length ?? 0) > 0 || addingSubtask) && (
-        <section className="backlog-drawer-section">
-          <div className="backlog-drawer-section-head">
-            <h3>
-              Sub-tasks{' '}
-              {(issue.subtasks?.length ?? 0) > 0 && (
-                <span className="backlog-group-count">{issue.subtasks!.length}</span>
-              )}
-            </h3>
-            {!addingSubtask && (
-              <Button variant="ghost" size="compact" onClick={() => setAddingSubtask(true)}>
-                Add sub-task
-              </Button>
-            )}
-          </div>
-          {(issue.subtasks ?? [])
-            .map((k) => board.issues.find((i) => i.key === k))
-            .filter((i): i is JiraIssue => Boolean(i))
-            .map((sub) => (
-              <button
-                key={sub.key}
-                type="button"
-                className="backlog-drawer-subtask"
-                onClick={() => onOpenKey(sub.key)}
-              >
-                <StatusGlyph name={sub.status} category={sub.statusCategory} size={12} />
-                <span className="backlog-row-key">{sub.key}</span>
-                <span className="backlog-drawer-subtask-summary">{sub.summary}</span>
-              </button>
-            ))}
-          {addingSubtask && (
-            <form
-              className="backlog-drawer-summary-form"
-              onSubmit={(e) => {
-                e.preventDefault()
-                const text = subtaskSummary.trim()
-                if (!text) return
-                void onAddSubtask(issue, text).then((ok) => {
-                  if (ok) {
-                    setSubtaskSummary('')
-                    setAddingSubtask(false)
-                  }
-                })
-              }}
-            >
-              <Input
-                autoFocus
-                aria-label="Sub-task summary"
-                placeholder="Sub-task summary"
-                value={subtaskSummary}
-                onChange={(e) => setSubtaskSummary(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape') {
-                    e.stopPropagation()
-                    setAddingSubtask(false)
-                    setSubtaskSummary('')
-                  }
-                }}
-              />
-              <Button
-                variant="filled"
-                size="compact"
-                type="submit"
-                disabled={!subtaskSummary.trim()}
-              >
-                Add
-              </Button>
-            </form>
-          )}
-        </section>
-      )}
-
-      {(['blockedBy', 'blocking'] as const)
-        .filter((direction) => issue[direction].length > 0)
-        .map((direction) => (
-          <BlockSection
-            key={direction}
-            issue={issue}
-            direction={direction}
-            board={board}
-            onOpenKey={onOpenKey}
-            onAdd={(other) => onAddBlock(issue, other, direction)}
-            onRemove={(link) => onRemoveBlock(issue, link)}
-          />
-        ))}
-
-      {/* What's empty and rarely used takes one row of adds, not a section
-          each. A section appears once it has something in it. */}
-      {((!issue.isSubtask && (issue.subtasks?.length ?? 0) === 0 && !addingSubtask) ||
-        issue.blockedBy.length === 0 ||
-        issue.blocking.length === 0) && (
-        <div className="backlog-drawer-adds" role="group" aria-label="Add to this ticket">
-          {!issue.isSubtask && (issue.subtasks?.length ?? 0) === 0 && !addingSubtask && (
-            <Button
-              variant="ghost"
-              size="compact"
-              aria-label="Add sub-task"
-              onClick={() => setAddingSubtask(true)}
-            >
-              <Icon name="Plus" size={12} />
-              Sub-task
-            </Button>
-          )}
-          {(['blockedBy', 'blocking'] as const)
-            .filter((direction) => issue[direction].length === 0)
-            .map((direction) => (
-              <BlockSection
-                key={direction}
-                inline
-                issue={issue}
-                direction={direction}
-                board={board}
-                onOpenKey={onOpenKey}
-                onAdd={(other) => onAddBlock(issue, other, direction)}
-                onRemove={(link) => onRemoveBlock(issue, link)}
-              />
-            ))}
-        </div>
-      )}
-
-      {issue.why && (
-        <section className="backlog-drawer-section">
-          <div className="backlog-drawer-section-head">
-            <h3 title="Jira calls this field “Data source”">Why it matters</h3>
-          </div>
-          <WikiText source={issue.why} />
-        </section>
-      )}
-
-      <section className="backlog-drawer-section">
-        <div className="backlog-drawer-section-head">
-          <h3>Description</h3>
-          {!editingDescription && detail && (
-            <Button variant="ghost" size="compact" onClick={() => setEditingDescription(true)}>
-              Edit
-            </Button>
-          )}
-        </div>
-        {detailError && <p className="backlog-error">{detailError}</p>}
-        {!detail && !detailError && <p className="backlog-note">Loading…</p>}
-        {detail &&
-          (editingDescription ? (
-            <>
-              <Textarea
-                aria-label="Description"
-                className="backlog-drawer-textarea"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && e.metaKey) {
-                    e.preventDefault()
-                    ;(
-                      e.currentTarget
-                        .closest('.backlog-drawer-section')
-                        ?.querySelector('[data-save]') as HTMLButtonElement | null
-                    )?.click()
-                  }
-                }}
-                rows={10}
-              />
-              <p className="backlog-note">
-                Jira formatting: <code>*bold*</code> <code>_italic_</code> <code>h3. Heading</code>{' '}
-                <code>* list</code> <code>[text|https://…]</code>
-              </p>
-              <div className="backlog-drawer-buttons">
-                <Button
-                  variant="ghost"
-                  size="compact"
-                  onClick={() => {
-                    setDescription(detail.descriptionWiki)
-                    setEditingDescription(false)
-                  }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="filled"
-                  size="compact"
-                  data-save=""
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      const ok = await write(() =>
-                        updateJiraText(issue.key, { descriptionWiki: description })
-                      )
-                      if (ok) {
-                        setDetail({ ...detail, descriptionWiki: description })
-                        setEditingDescription(false)
-                      }
-                      return ok
-                    })
-                  }
-                >
-                  Save
-                </Button>
+              <div className="backlog-prop backlog-prop--wide">
+                <span className="backlog-prop-label">Parent</span>
+                <div className="backlog-prop-value">
+                  {issue.parent ? (
+                    <button
+                      type="button"
+                      className="backlog-link backlog-prop-text"
+                      onClick={() => onOpenKey(issue.parent!.key)}
+                    >
+                      {issue.parent.key} {issue.parent.summary}
+                    </button>
+                  ) : (
+                    <span className="backlog-drawer-field-note">None</span>
+                  )}
+                </div>
               </div>
             </>
-          ) : detail.descriptionWiki.trim() ? (
-            <FoldedText>
-              <WikiText source={detail.descriptionWiki} people={detail.people} />
-            </FoldedText>
           ) : (
-            <p className="backlog-note">No description.</p>
-          ))}
-      </section>
+            <>
+              <div className="backlog-prop backlog-prop--wide">
+                <span className="backlog-prop-label">Cycle</span>
+                <div className="backlog-prop-value">
+                  <Icon name={issue.sprint ? 'RefreshCw' : 'Inbox'} size={14} />
+                  <Select
+                    aria-label="Cycle"
+                    className="backlog-select"
+                    value={issue.sprint ? String(issue.sprint.id) : ''}
+                    disabled={board.sprints.length === 0}
+                    onChange={(e) =>
+                      void actions.cycle(issue, e.target.value ? Number(e.target.value) : null)
+                    }
+                  >
+                    <option value="">Backlog</option>
+                    {issue.sprint && !board.sprints.some((sp) => sp.id === issue.sprint!.id) && (
+                      <option value={String(issue.sprint.id)}>{issue.sprint.name}</option>
+                    )}
+                    {board.sprints.map((sp) => (
+                      <option key={sp.id} value={String(sp.id)}>
+                        {sp.state === 'active'
+                          ? `Current cycle · ${sp.name}`
+                          : `${sp.name} · upcoming`}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
 
-      {detail && detail.attachments.length > 0 && (
-        <section className="backlog-drawer-section">
-          <div className="backlog-drawer-section-head">
-            <h3>
-              Attachments <span className="backlog-group-count">{detail.attachments.length}</span>
-            </h3>
-          </div>
-          <div className="backlog-pills">
-            {detail.attachments.map((a) => (
-              <button
-                key={a.name}
-                type="button"
-                className="backlog-pill backlog-pill--link"
-                title="Open in Jira"
-                onClick={() => void openExternal(a.url)}
-              >
-                <Icon name="Paperclip" size={12} />
-                {a.name}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <section className="backlog-drawer-section">
-        <div className="backlog-drawer-section-head">
-          <h3>
-            Comments{' '}
-            {detail && <span className="backlog-group-count">{detail.comments.length}</span>}
-          </h3>
+              <div className="backlog-prop backlog-prop--wide">
+                <span className="backlog-prop-label">Epic</span>
+                <div className="backlog-prop-value">
+                  {issue.parent ? <EpicMark /> : <span className="backlog-drawer-field-blank" />}
+                  <Select
+                    aria-label="Parent"
+                    className="backlog-select"
+                    value={issue.parent?.key ?? ''}
+                    onChange={(e) => void actions.parent(issue, e.target.value || null)}
+                  >
+                    <option value="">No epic</option>
+                    {issue.parent && !board.epics.some((ep) => ep.key === issue.parent!.key) && (
+                      <option value={issue.parent.key}>
+                        {issue.parent.summary} ({issue.parent.key})
+                      </option>
+                    )}
+                    {board.epics.map((ep) => (
+                      <option key={ep.key} value={ep.key}>
+                        {ep.summary} ({ep.key})
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+            </>
+          )}
         </div>
-        <div className="backlog-comment-box">
-          <Textarea
-            aria-label="Add a comment"
-            className="backlog-drawer-textarea"
-            placeholder={
-              asNote
-                ? 'Add an internal note. Type @ to mention someone'
-                : 'Reply to the person who raised this. Type @ to mention someone'
-            }
-            value={comment}
-            onChange={(e) => {
-              setComment(e.target.value)
-              // An @ at the start or after a space, then the name so far.
-              const upTo = e.target.value.slice(0, e.target.selectionStart ?? 0)
-              const m = /(^|\s)@([^\s@]{0,30})$/.exec(upTo)
-              setMention(m ? { query: m[2], start: upTo.length - m[2].length - 1, index: 0 } : null)
-            }}
-            onKeyDown={(e) => {
-              if (mention && mentionMatches.length) {
-                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-                  e.preventDefault()
-                  const step = e.key === 'ArrowDown' ? 1 : -1
-                  const n = mentionMatches.length
-                  setMention({ ...mention, index: (mention.index + step + n) % n })
-                  return
-                }
-                if ((e.key === 'Enter' && !e.metaKey) || e.key === 'Tab') {
-                  e.preventDefault()
-                  pickMention(mentionMatches[mention.index] ?? mentionMatches[0], e.currentTarget)
-                  return
-                }
-                if (e.key === 'Escape') {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setMention(null)
-                  return
-                }
-              }
-              if (e.key === 'Enter' && e.metaKey) {
-                e.preventDefault()
-                sendComment()
-              }
-            }}
-            onBlur={() => setMention(null)}
-            rows={3}
-          />
-          {mention && mentionMatches.length > 0 && (
-            <div className="backlog-mention-list" role="listbox" aria-label="Mention someone">
-              {mentionMatches.map((p, i) => (
+
+        {/* One click to the next steps in the workflow, alongside the dropdown. */}
+        {(() => {
+          const at = statuses.findIndex((st) => st.name === issue.status)
+          const next = at >= 0 ? statuses.slice(at + 1, at + 3) : []
+          if (!next.length) return null
+          return (
+            <div className="backlog-next-status" role="group" aria-label="Move to">
+              <span className="backlog-next-status-label">Move to</span>
+              {next.map((st) => (
                 <button
-                  key={p.accountId}
+                  key={st.name}
                   type="button"
-                  role="option"
-                  aria-selected={i === mention.index}
-                  className={
-                    i === mention.index
-                      ? 'backlog-mention-option backlog-mention-option--active'
-                      : 'backlog-mention-option'
-                  }
-                  // mousedown, not click: the textarea's blur would close the list first.
-                  onMouseDown={(e) => {
-                    e.preventDefault()
-                    pickMention(
-                      p,
-                      e.currentTarget.closest('.backlog-comment-box')?.querySelector('textarea') ??
-                        null
-                    )
-                  }}
+                  className="backlog-next-status-option"
+                  onClick={() => void actions.status(issue, st)}
                 >
-                  <Avatar name={p.name} size={18} />
-                  {p.name}
+                  <StatusGlyph name={st.name} category={st.category} size={12} />
+                  {st.name}
                 </button>
               ))}
             </div>
+          )
+        })()}
+
+        {/* Work: the sessions on this ticket and their pull requests, in one box. */}
+        <section className="backlog-drawer-group" aria-label="Work">
+          {/* Heading first, then what to do. With sessions, the adds are quiet
+            and sit beside the heading; with none, Start session is the body. */}
+          {(() => {
+            const linkSelect = linkable.length > 0 && (
+              <Select
+                aria-label="Link a session"
+                className="backlog-select backlog-select--flat"
+                value=""
+                onChange={(e) => {
+                  const id = e.target.value
+                  if (id) void onLink(id, issue.key)
+                }}
+              >
+                <option value="">Link a session…</option>
+                {linkable.map((s) => (
+                  <option key={s.key} value={s.record!.id}>
+                    {s.record!.title}
+                  </option>
+                ))}
+              </Select>
+            )
+            return linkedSessions.length > 0 || prs.rows.length > 0 ? (
+              <div className="backlog-drawer-section-head">
+                <h3>
+                  Work{' '}
+                  {linkedSessions.length > 1 && (
+                    <span className="backlog-group-count">{linkedSessions.length}</span>
+                  )}
+                </h3>
+                <div className="backlog-drawer-section-actions">
+                  <Button variant="ghost" size="compact" onClick={onStartSession}>
+                    <Icon name="Plus" size={12} />
+                    Start session
+                  </Button>
+                  {linkSelect}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="backlog-drawer-section-head">
+                  <h3>Work</h3>
+                </div>
+                <div className="backlog-work-empty">
+                  <Button variant="filled" size="compact" onClick={onStartSession}>
+                    Start session
+                  </Button>
+                  {linkSelect}
+                </div>
+              </>
+            )
+          })()}
+          {(linkedSessions.length > 0 || prs.rows.length > 0 || prs.jiraError) && (
+            <div className="backlog-work">
+              {linkedSessions.map(({ session, linked }) => (
+                <div key={session.key} className="backlog-work-item">
+                  <div className="backlog-work-row">
+                    <button
+                      type="button"
+                      className="backlog-work-open"
+                      onClick={() => onOpenSession(session.key)}
+                    >
+                      <StatusDot status={session.status} size={8} />
+                      <span className="backlog-work-title">{session.record?.title}</span>
+                      <span className="backlog-state-chip">{STATUS_WORDS[session.status]}</span>
+                    </button>
+                    {/* Always laid out, shown on hover: nothing shifts as you point. */}
+                    <span className="backlog-work-tools">
+                      {session.record?.branch && !session.record.investigation && (
+                        <BranchCopy
+                          branch={session.record.branch}
+                          projectId={session.record.projectId}
+                          recordId={session.record.id}
+                          hasPr={prs.ownRecordId === session.record.id}
+                          onCopy={(b) => copy(b, 'Branch name')}
+                        />
+                      )}
+                      {linked && (
+                        <IconButton
+                          icon="Unlink"
+                          label="Unlink this session"
+                          tooltip="Unlink"
+                          size={28}
+                          variant="ghost"
+                          onClick={() => void onLink(session.record!.id, null)}
+                        />
+                      )}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              <TicketPullRequests prs={prs} show="all" onComment={noteWithLink} />
+            </div>
           )}
-        </div>
-        <div className="backlog-drawer-buttons">
-          <SegmentedControl<'note' | 'reply'>
-            aria-label="Comment type"
-            options={[
-              { value: 'note', label: 'Internal note' },
-              { value: 'reply', label: 'Reply' }
-            ]}
-            value={asNote ? 'note' : 'reply'}
-            onChange={(v) => setAsNote(v === 'note')}
-          />
-          <span className="backlog-note">⌘↩ to send</span>
-          <Button
-            variant="outlined"
-            size="compact"
-            disabled={busy || !comment.trim() || !detail}
-            onClick={sendComment}
-          >
-            {asNote ? 'Add note' : 'Reply'}
-          </Button>
-        </div>
-        {/* Newest first, like a feed; the box to add one sits above them. */}
-        {[...(detail?.comments ?? [])].reverse().map((c) => (
-          <div
-            key={c.id}
-            className={c.internal ? 'backlog-comment backlog-comment--internal' : 'backlog-comment'}
-          >
-            <div className="backlog-comment-head">
-              <span className="backlog-person">
-                <Avatar name={c.author} size={18} />
-                <strong>{c.author}</strong>
-                {c.internal && <span className="backlog-comment-tag">Internal note</span>}
-              </span>
-              <span title={fullDate(c.created)}>{when(c.created)}</span>
+        </section>
+
+        {!issue.isSubtask && ((issue.subtasks?.length ?? 0) > 0 || addingSubtask) && (
+          <section className="backlog-drawer-section">
+            <div className="backlog-drawer-section-head">
+              <h3>
+                Sub-tasks{' '}
+                {(issue.subtasks?.length ?? 0) > 0 && (
+                  <span className="backlog-group-count">{issue.subtasks!.length}</span>
+                )}
+              </h3>
+              {!addingSubtask && (
+                <Button variant="ghost" size="compact" onClick={() => setAddingSubtask(true)}>
+                  Add sub-task
+                </Button>
+              )}
             </div>
-            <div className="backlog-drawer-text">
-              <WikiText source={c.body} people={detail?.people} />
-            </div>
+            {(issue.subtasks ?? [])
+              .map((k) => board.issues.find((i) => i.key === k))
+              .filter((i): i is JiraIssue => Boolean(i))
+              .map((sub) => (
+                <button
+                  key={sub.key}
+                  type="button"
+                  className="backlog-drawer-subtask"
+                  onClick={() => onOpenKey(sub.key)}
+                >
+                  <StatusGlyph name={sub.status} category={sub.statusCategory} size={12} />
+                  <span className="backlog-row-key">{sub.key}</span>
+                  <span className="backlog-drawer-subtask-summary">{sub.summary}</span>
+                </button>
+              ))}
+            {addingSubtask && (
+              <form
+                className="backlog-drawer-summary-form"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const text = subtaskSummary.trim()
+                  if (!text) return
+                  void onAddSubtask(issue, text).then((ok) => {
+                    if (ok) {
+                      setSubtaskSummary('')
+                      setAddingSubtask(false)
+                    }
+                  })
+                }}
+              >
+                <Input
+                  autoFocus
+                  aria-label="Sub-task summary"
+                  placeholder="Sub-task summary"
+                  value={subtaskSummary}
+                  onChange={(e) => setSubtaskSummary(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.stopPropagation()
+                      setAddingSubtask(false)
+                      setSubtaskSummary('')
+                    }
+                  }}
+                />
+                <Button
+                  variant="filled"
+                  size="compact"
+                  type="submit"
+                  disabled={!subtaskSummary.trim()}
+                >
+                  Add
+                </Button>
+              </form>
+            )}
+          </section>
+        )}
+
+        {(['blockedBy', 'blocking'] as const)
+          .filter((direction) => issue[direction].length > 0)
+          .map((direction) => (
+            <BlockSection
+              key={direction}
+              issue={issue}
+              direction={direction}
+              board={board}
+              onOpenKey={onOpenKey}
+              onAdd={(other) => onAddBlock(issue, other, direction)}
+              onRemove={(link) => onRemoveBlock(issue, link)}
+            />
+          ))}
+
+        {/* What's empty and rarely used takes one row of adds, not a section
+          each. A section appears once it has something in it. */}
+        {((!issue.isSubtask && (issue.subtasks?.length ?? 0) === 0 && !addingSubtask) ||
+          issue.blockedBy.length === 0 ||
+          issue.blocking.length === 0) && (
+          <div className="backlog-drawer-adds" role="group" aria-label="Add to this ticket">
+            {!issue.isSubtask && (issue.subtasks?.length ?? 0) === 0 && !addingSubtask && (
+              <Button
+                variant="ghost"
+                size="compact"
+                aria-label="Add sub-task"
+                onClick={() => setAddingSubtask(true)}
+              >
+                <Icon name="Plus" size={12} />
+                Sub-task
+              </Button>
+            )}
+            {(['blockedBy', 'blocking'] as const)
+              .filter((direction) => issue[direction].length === 0)
+              .map((direction) => (
+                <BlockSection
+                  key={direction}
+                  inline
+                  issue={issue}
+                  direction={direction}
+                  board={board}
+                  onOpenKey={onOpenKey}
+                  onAdd={(other) => onAddBlock(issue, other, direction)}
+                  onRemove={(link) => onRemoveBlock(issue, link)}
+                />
+              ))}
           </div>
-        ))}
-      </section>
-    </aside>
+        )}
+
+        {issue.why && (
+          <section className="backlog-drawer-section">
+            <div className="backlog-drawer-section-head">
+              <h3 title="Jira calls this field “Data source”">Why it matters</h3>
+            </div>
+            <WikiText source={issue.why} />
+          </section>
+        )}
+
+        <section className="backlog-drawer-section">
+          <div className="backlog-drawer-section-head">
+            <h3>Description</h3>
+            {!editingDescription && detail && (
+              <Button variant="ghost" size="compact" onClick={() => setEditingDescription(true)}>
+                Edit
+              </Button>
+            )}
+          </div>
+          {detailError && <p className="backlog-error">{detailError}</p>}
+          {!detail && !detailError && <p className="backlog-note">Loading…</p>}
+          {detail &&
+            (editingDescription ? (
+              <>
+                <Textarea
+                  aria-label="Description"
+                  className="backlog-drawer-textarea"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && e.metaKey) {
+                      e.preventDefault()
+                      ;(
+                        e.currentTarget
+                          .closest('.backlog-drawer-section')
+                          ?.querySelector('[data-save]') as HTMLButtonElement | null
+                      )?.click()
+                    }
+                  }}
+                  rows={10}
+                />
+                <p className="backlog-note">
+                  Jira formatting: <code>*bold*</code> <code>_italic_</code>{' '}
+                  <code>h3. Heading</code> <code>* list</code> <code>[text|https://…]</code>
+                </p>
+                <div className="backlog-drawer-buttons">
+                  <Button
+                    variant="ghost"
+                    size="compact"
+                    onClick={() => {
+                      setDescription(detail.descriptionWiki)
+                      setEditingDescription(false)
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="filled"
+                    size="compact"
+                    data-save=""
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        const ok = await write(() =>
+                          updateJiraText(issue.key, { descriptionWiki: description })
+                        )
+                        if (ok) {
+                          setDetail({ ...detail, descriptionWiki: description })
+                          setEditingDescription(false)
+                        }
+                        return ok
+                      })
+                    }
+                  >
+                    Save
+                  </Button>
+                </div>
+              </>
+            ) : detail.descriptionWiki.trim() ? (
+              <FoldedText>
+                <WikiText source={detail.descriptionWiki} people={detail.people} />
+              </FoldedText>
+            ) : (
+              <p className="backlog-note">No description.</p>
+            ))}
+        </section>
+
+        {detail && detail.attachments.length > 0 && (
+          <section className="backlog-drawer-section">
+            <div className="backlog-drawer-section-head">
+              <h3>
+                Attachments <span className="backlog-group-count">{detail.attachments.length}</span>
+              </h3>
+            </div>
+            <div className="backlog-pills">
+              {detail.attachments.map((a) => (
+                <button
+                  key={a.name}
+                  type="button"
+                  className="backlog-pill backlog-pill--link"
+                  title="Open in Jira"
+                  onClick={() => void openExternal(a.url)}
+                >
+                  <Icon name="Paperclip" size={12} />
+                  {a.name}
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="backlog-drawer-section">
+          <div className="backlog-drawer-section-head">
+            <h3>
+              Comments{' '}
+              {detail && <span className="backlog-group-count">{detail.comments.length}</span>}
+            </h3>
+          </div>
+          <div className="backlog-comment-box">
+            <Textarea
+              aria-label="Add a comment"
+              className="backlog-drawer-textarea"
+              placeholder={
+                asNote
+                  ? 'Add an internal note. Type @ to mention someone'
+                  : 'Reply to the person who raised this. Type @ to mention someone'
+              }
+              value={comment}
+              onChange={(e) => {
+                setComment(e.target.value)
+                // An @ at the start or after a space, then the name so far.
+                const upTo = e.target.value.slice(0, e.target.selectionStart ?? 0)
+                const m = /(^|\s)@([^\s@]{0,30})$/.exec(upTo)
+                setMention(
+                  m ? { query: m[2], start: upTo.length - m[2].length - 1, index: 0 } : null
+                )
+              }}
+              onKeyDown={(e) => {
+                if (mention && mentionMatches.length) {
+                  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    const step = e.key === 'ArrowDown' ? 1 : -1
+                    const n = mentionMatches.length
+                    setMention({ ...mention, index: (mention.index + step + n) % n })
+                    return
+                  }
+                  if ((e.key === 'Enter' && !e.metaKey) || e.key === 'Tab') {
+                    e.preventDefault()
+                    pickMention(mentionMatches[mention.index] ?? mentionMatches[0], e.currentTarget)
+                    return
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    setMention(null)
+                    return
+                  }
+                }
+                if (e.key === 'Enter' && e.metaKey) {
+                  e.preventDefault()
+                  sendComment()
+                }
+              }}
+              onBlur={() => setMention(null)}
+              rows={3}
+            />
+            {mention && mentionMatches.length > 0 && (
+              <div className="backlog-mention-list" role="listbox" aria-label="Mention someone">
+                {mentionMatches.map((p, i) => (
+                  <button
+                    key={p.accountId}
+                    type="button"
+                    role="option"
+                    aria-selected={i === mention.index}
+                    className={
+                      i === mention.index
+                        ? 'backlog-mention-option backlog-mention-option--active'
+                        : 'backlog-mention-option'
+                    }
+                    // mousedown, not click: the textarea's blur would close the list first.
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      pickMention(
+                        p,
+                        e.currentTarget
+                          .closest('.backlog-comment-box')
+                          ?.querySelector('textarea') ?? null
+                      )
+                    }}
+                  >
+                    <Avatar name={p.name} size={18} />
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="backlog-drawer-buttons">
+            <SegmentedControl<'note' | 'reply'>
+              aria-label="Comment type"
+              options={[
+                { value: 'note', label: 'Internal note' },
+                { value: 'reply', label: 'Reply' }
+              ]}
+              value={asNote ? 'note' : 'reply'}
+              onChange={(v) => setAsNote(v === 'note')}
+            />
+            <span className="backlog-note">⌘↩ to send</span>
+            <Button
+              variant="outlined"
+              size="compact"
+              disabled={busy || !comment.trim() || !detail}
+              onClick={sendComment}
+            >
+              {asNote ? 'Add note' : 'Reply'}
+            </Button>
+          </div>
+          {/* Newest first, like a feed; the box to add one sits above them. */}
+          {[...(detail?.comments ?? [])].reverse().map((c) => (
+            <div
+              key={c.id}
+              className={
+                c.internal ? 'backlog-comment backlog-comment--internal' : 'backlog-comment'
+              }
+            >
+              <div className="backlog-comment-head">
+                <span className="backlog-person">
+                  <Avatar name={c.author} size={18} />
+                  <strong>{c.author}</strong>
+                  {c.internal && <span className="backlog-comment-tag">Internal note</span>}
+                </span>
+                <span title={fullDate(c.created)}>{when(c.created)}</span>
+              </div>
+              <div className="backlog-drawer-text">
+                <WikiText source={c.body} people={detail?.people} />
+              </div>
+            </div>
+          ))}
+        </section>
+      </aside>
+    </>
   )
 }
 

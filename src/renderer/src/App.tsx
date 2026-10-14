@@ -373,6 +373,21 @@ function App(): React.JSX.Element {
   const [openTicket, setOpenTicket] = useState<string | null>(null)
   // A ticket opened from a session: its panel, over the session.
   const [peekTicket, setPeekTicket] = useState<string | null>(null)
+  // The tickets of the list a ticket was opened from, in its order, so J/K
+  // steps through them as on Tickets. Null when it came from somewhere with
+  // only the one (a session's header).
+  const [peekList, setPeekList] = useState<string[] | null>(null)
+  const openPeek = useCallback((key: string, list?: string[]) => {
+    setPeekTicket(key)
+    setPeekList(list && list.length > 1 && list.includes(key) ? list : null)
+  }, [])
+  // J/K: the ticket panel over a list steps through that list's tickets.
+  const stepPeek = (delta: number): boolean => {
+    if (!peekTicket || !peekList || view === 'backlog') return false
+    const next = peekList[peekList.indexOf(peekTicket) + delta]
+    if (next) setPeekTicket(next)
+    return true
+  }
   // Test runs only: makes the current screen throw, to check ScreenBoundary.
   const [crashTest, setCrashTest] = useState(false)
   const clearOpenTicket = useCallback(() => setOpenTicket(null), [])
@@ -841,6 +856,17 @@ function App(): React.JSX.Element {
       await new Promise((r) => setTimeout(r, 300))
       document.querySelector<HTMLElement>('.backlog-row[data-issue="DSD-101"]')?.click()
       await new Promise((r) => setTimeout(r, 600))
+    })
+    registerShotScreen('backlog-drawer-wide', async () => {
+      setPaletteOpen(false)
+      setView('backlog')
+      await new Promise((r) => setTimeout(r, 800))
+      document.querySelector<HTMLButtonElement>('[aria-label="List view"]')?.click()
+      await new Promise((r) => setTimeout(r, 300))
+      document.querySelector<HTMLElement>('.backlog-row[data-issue="DSD-101"]')?.click()
+      await new Promise((r) => setTimeout(r, 600))
+      document.querySelector<HTMLElement>('[data-drawer-expand]')?.click()
+      await new Promise((r) => setTimeout(r, 400))
     })
     registerShotScreen('backlog-columns', async () => {
       setPaletteOpen(false)
@@ -2097,8 +2123,12 @@ function App(): React.JSX.Element {
     },
     help: () => setKeyboardHelpOpen((v) => !v),
     settings: () => setView('settings'),
-    'move-down': () => moveSessionFocus(1),
-    'move-up': () => moveSessionFocus(-1)
+    'move-down': () => {
+      if (!stepPeek(1)) moveSessionFocus(1)
+    },
+    'move-up': () => {
+      if (!stepPeek(-1)) moveSessionFocus(-1)
+    }
   })
 
   return (
@@ -2190,7 +2220,7 @@ function App(): React.JSX.Element {
                   setComposerSeed(seed)
                   setShowNewSessionForm(true)
                 }}
-                onOpenTicket={setPeekTicket}
+                onOpenTicket={openPeek}
               />
             ) : view === 'backlog' ? (
               <BacklogScreen
@@ -2224,7 +2254,7 @@ function App(): React.JSX.Element {
                   pushToast={pushToast}
                   initialTab={shotProjectTab}
                   initialHistoryTab={shotHistoryTab}
-                  onOpenTicket={setPeekTicket}
+                  onOpenTicket={openPeek}
                 />
               ) : (
                 <ProjectsListScreen
@@ -2282,7 +2312,7 @@ function App(): React.JSX.Element {
                         onUnreadOnlyChange={setUnreadOnly}
                         statusFilter={statusFilter}
                         onStatusFilterChange={setStatusFilter}
-                        onOpenTicket={setPeekTicket}
+                        onOpenTicket={openPeek}
                         onAdopted={refreshSessions}
                         onOpenSession={openSessionFrom}
                         onClearFilter={() => {
@@ -2321,7 +2351,9 @@ function App(): React.JSX.Element {
                       // Opens over the session, so you stay in it; the panel's
                       // "Open on Backlog" carries on there.
                       // The pill toggles: open, or closed if it's the one open.
-                      onOpenTicket={(key) => setPeekTicket((cur) => (cur === key ? null : key))}
+                      onOpenTicket={(key) =>
+                        peekTicket === key ? setPeekTicket(null) : openPeek(key)
+                      }
                     />
                   )}
                 </div>
@@ -2377,6 +2409,8 @@ function App(): React.JSX.Element {
           pushToast={pushToast}
           onOpenSession={openSessionByKey}
           openTicket={peekTicket}
+          stepKeys={peekList}
+          onStepTo={setPeekTicket}
           onPanelClose={() => setPeekTicket(null)}
           onExpand={(key) => {
             setPeekTicket(null)
