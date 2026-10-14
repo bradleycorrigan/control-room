@@ -62,6 +62,21 @@ export interface ProjectWorktree {
   dirty: boolean
   /** The session record whose worktree this is, or null when nothing runs in it. */
   sessionId: string | null
+  /** A session marked done that last ran here, when no open one does. */
+  doneSession: { id: string; title: string } | null
+}
+
+export interface WorktreePullRequest {
+  number: number
+  state: 'OPEN' | 'MERGED' | 'CLOSED'
+  url: string
+}
+
+/** Each branch's latest pull request, keyed by branch name. Empty when gh can't say. */
+export function listWorktreePullRequests(
+  projectId: string
+): Promise<Record<string, WorktreePullRequest>> {
+  return window.api.invoke<Record<string, WorktreePullRequest>>('worktrees:prs', projectId)
 }
 
 export function listAllWorktrees(projectId: string): Promise<ProjectWorktree[]> {

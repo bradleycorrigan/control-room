@@ -363,20 +363,40 @@ export async function mergedBranches(
 export async function prStatesForBranches(
   repoPath: string
 ): Promise<Map<string, 'OPEN' | 'MERGED' | 'CLOSED'>> {
+  const prs = await pullRequestsByBranch(repoPath)
+  return new Map([...prs].map(([branch, pr]) => [branch, pr.state]))
+}
+
+export interface BranchPullRequest {
+  number: number
+  state: 'OPEN' | 'MERGED' | 'CLOSED'
+  url: string
+}
+
+/** Each branch's most recent pull request, from one `gh pr list`. Empty when gh fails. */
+export async function pullRequestsByBranch(
+  repoPath: string
+): Promise<Map<string, BranchPullRequest>> {
   const res = await run(
     'gh',
-    ['pr', 'list', '--state', 'all', '--json', 'headRefName,state', '--limit', '500'],
+    ['pr', 'list', '--state', 'all', '--json', 'headRefName,state,number,url', '--limit', '500'],
     { cwd: repoPath, timeoutMs: 15_000 }
   )
   if (res.code !== 0) return new Map()
   try {
-    const list = JSON.parse(res.stdout) as Array<{ headRefName: string; state: string }>
-    const byBranch = new Map<string, 'OPEN' | 'MERGED' | 'CLOSED'>()
+    const list = JSON.parse(res.stdout) as Array<{
+      headRefName: string
+      state: string
+      number: number
+      url: string
+    }>
+    const byBranch = new Map<string, BranchPullRequest>()
     for (const pr of list) {
       if (pr.state === 'OPEN' || pr.state === 'MERGED' || pr.state === 'CLOSED') {
         // A branch can have more than one PR over its life; the most recent
         // (gh lists newest first) wins.
-        if (!byBranch.has(pr.headRefName)) byBranch.set(pr.headRefName, pr.state)
+        if (!byBranch.has(pr.headRefName))
+          byBranch.set(pr.headRefName, { number: pr.number, state: pr.state, url: pr.url })
       }
     }
     return byBranch

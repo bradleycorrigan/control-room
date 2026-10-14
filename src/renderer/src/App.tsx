@@ -1784,6 +1784,22 @@ function App(): React.JSX.Element {
       ).find((el) => /worktree settings/i.test(el.textContent ?? ''))
       toggle?.click()
     })
+    registerShotScreen('project-detail-worktrees', async () => {
+      setView('projects')
+      setOpenSessionKey(null)
+      setPaletteOpen(false)
+      setShotProjectTab(undefined)
+      setShotHistoryTab(undefined)
+      const list = projects.length > 0 ? projects : await listProjects()
+      setOpenProjectId(list[0]?.id ?? null)
+      await new Promise((resolve) => setTimeout(resolve, 300))
+      const toggle = Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.cr-disclosure-header')
+      ).find((el) => /^\s*worktrees/i.test(el.textContent ?? ''))
+      toggle?.click()
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      toggle?.scrollIntoView({ block: 'start' })
+    })
     // The diff overlay. The fixture's `feature-working` worktree carries a real
     // multi-file diff (added, modified, deleted, untracked) so this shot shows
     // every box shape the overlay has to render.
@@ -2177,6 +2193,7 @@ function App(): React.JSX.Element {
                   pushToast={pushToast}
                   initialTab={shotProjectTab}
                   initialHistoryTab={shotHistoryTab}
+                  onOpenTicket={setPeekTicket}
                 />
               ) : (
                 <ProjectsListScreen

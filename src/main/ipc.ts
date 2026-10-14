@@ -68,6 +68,8 @@ import {
   resolveRemoteBranch,
   getDefaultBranch,
   prStatesForBranches,
+  pullRequestsByBranch,
+  type BranchPullRequest,
   lastCommitTime,
   remoteTrackingRefExists
 } from './exec/git'
@@ -134,6 +136,7 @@ import {
   carryClaudeLocalSettings,
   createSession,
   deleteSession,
+  retireSessionsInWorktree,
   type CreateSessionInput,
   type DeleteSessionInput
 } from './engine/sessions'
@@ -181,6 +184,7 @@ export interface ProjectTidy {
   idleWorktrees: number
 }
 
+const worktreePrCache = new Map<string, { at: number; prs: Record<string, BranchPullRequest> }>()
 const TIDY_CACHE_MS = 2 * 60 * 1000
 const IDLE_AFTER_MS = 14 * 24 * 60 * 60 * 1000
 const tidyCache = new Map<string, { at: number; result: ProjectTidy }>()
@@ -388,6 +392,7 @@ export function registerIpcHandlers(): void {
     if (!project) return false
     const ok = await gitRemoveWorktree(project.repoPath, worktreePath)
     await pruneWorktrees(project.repoPath)
+    if (ok) await retireSessionsInWorktree(worktreePath)
     return ok
   })
 
@@ -1099,6 +1104,14 @@ export function registerIpcHandlers(): void {
         .sessions.filter((s) => s.projectId === projectId && !s.archivedAt)
         .map((s) => [s.worktreePath, s.id])
     )
+    // A session you marked done still owns its worktree: removing it ends
+    // that session's chance to resume, so the card says whose it is.
+    const doneByPath = new Map(
+      getState()
+        .sessions.filter((s) => s.projectId === projectId && s.archivedAt && !s.deletedAt)
+        .sort((a, b) => b.createdAt - a.createdAt)
+        .map((s) => [s.worktreePath, { id: s.id, title: s.title }])
+    )
 
     const worktrees = await listWorktrees(project.repoPath)
     return Promise.all(
@@ -1109,9 +1122,23 @@ export function registerIpcHandlers(): void {
           branch: w.branch,
           isMainCheckout: w.path === project.repoPath,
           dirty: await hasUncommittedChanges(w.path),
-          sessionId: sessionByPath.get(w.path) ?? null
+          sessionId: sessionByPath.get(w.path) ?? null,
+          doneSession: sessionByPath.has(w.path) ? null : (doneByPath.get(w.path) ?? null)
         }))
     )
+  })
+
+  // Each branch's latest pull request, for the worktree cards. Separate from
+  // worktrees:list because `gh` can take seconds: the cards show first and
+  // the PRs fill in. Cached for a minute per project.
+  ipcMain.handle('worktrees:prs', async (_evt, projectId: string) => {
+    const project = getState().projects.find((p) => p.id === projectId)
+    if (!project) return {}
+    const cached = worktreePrCache.get(projectId)
+    if (cached && Date.now() - cached.at < 60_000) return cached.prs
+    const prs = Object.fromEntries(await pullRequestsByBranch(project.repoPath))
+    worktreePrCache.set(projectId, { at: Date.now(), prs })
+    return prs
   })
 
   ipcMain.handle(

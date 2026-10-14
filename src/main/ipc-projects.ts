@@ -14,6 +14,7 @@ import {
   pruneWorktrees
 } from './exec/git'
 import { discoverLiveSessions } from './engine/discovery'
+import { retireSessionsInWorktree } from './engine/sessions'
 import type { LiveSession } from './store/types'
 
 // A worktree path as git reports it, resolved and with any trailing slash
@@ -165,6 +166,7 @@ export function registerProjectsIpc(): void {
           continue
         }
         removed.push(wtPath)
+        await retireSessionsInWorktree(wtPath)
 
         const branch = w.branch?.replace(/^refs\/heads\//, '')
         if (deleteBranches && branch && merged.has(branch)) {

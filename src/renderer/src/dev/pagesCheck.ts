@@ -3154,6 +3154,18 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       `${$$('.cr-worktree-card:not(.cr-worktree-card--new)').length} cards; hint ${byText('.cr-disclosure-label', 'Worktrees')?.parentElement?.textContent?.slice(0, 80)}`
     )
 
+    {
+      const cards = $$('.cr-worktree-card:not(.cr-worktree-card--new)')
+      const live = cards.filter((c) => /Open session/.test(c.textContent ?? ''))
+      await check(
+        'Worktree cards say which have a session, with its status word, and use the branch as the title',
+        live.length > 0 &&
+          live.every((c) => Boolean(c.querySelector('.cr-worktree-card-session .status-badge'))) &&
+          cards.every((c) => Boolean(c.querySelector('.cr-worktree-card-title')?.textContent)),
+        `${live.length} live of ${cards.length}; ${cards.map((c) => c.querySelector('.cr-worktree-card-session')?.textContent).join(' | ')}`
+      )
+    }
+
     const cleanupButton = byText('.overview-worktrees-actions button', 'Clean up worktrees')
     await click(cleanupButton)
     await until(
@@ -3746,6 +3758,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         .join(', ')
     )
     await setSelect(destOf('DSD-102'), 'backlog')
+    const dest102 = destOf('DSD-102')?.dataset.value
     // Ticked by default (cycles run back to back); untick it here so the
     // no-cycle-running prompt gets a turn.
     const startBox = $<HTMLInputElement>('.complete-cycle-start input')
@@ -3773,8 +3786,13 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         lane('current', 'DSD-101') &&
         lane('backlog', 'DSD-102'),
       `${$$('.backlog-group')
-        .map((g) => g.querySelector('.backlog-group-title')?.textContent)
-        .join(' | ')}`
+        .map(
+          (g) =>
+            `${g.dataset.lane}: ${Array.from(g.querySelectorAll<HTMLElement>('[data-issue]'))
+              .map((i) => i.dataset.issue)
+              .join(',')}`
+        )
+        .join(' | ')}; 102 set to ${dest102}; dialog ${Boolean($('.complete-cycle'))}`
     )
     await groupBy('Status')
   }

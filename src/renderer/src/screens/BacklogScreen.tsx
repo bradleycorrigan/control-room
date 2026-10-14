@@ -277,6 +277,23 @@ function useSettledOrder(ids: string[], resetKey: string): string[] {
   return base
 }
 
+/**
+ * When a cycle runs once started: its planned dates, unless the planned end
+ * has already passed (a cycle made ahead and started late). Then it starts
+ * today and runs as long as it was planned to, or two weeks.
+ */
+function startDates(cycle: JiraSprint): { from: Date; to: Date } {
+  const now = new Date()
+  const plannedFrom = cycle.startDate ? new Date(cycle.startDate) : null
+  const plannedTo = cycle.endDate ? new Date(cycle.endDate) : null
+  const length =
+    plannedFrom && plannedTo
+      ? plannedTo.getTime() - plannedFrom.getTime()
+      : 14 * 24 * 60 * 60 * 1000
+  if (plannedTo && plannedTo > now) return { from: plannedFrom ?? now, to: plannedTo }
+  return { from: now, to: new Date(now.getTime() + length) }
+}
+
 export default function BacklogScreen({
   sessions,
   onStartSession,
@@ -2050,10 +2067,7 @@ export default function BacklogScreen({
   // Starts the next cycle when none is running, with its own dates (or two
   // weeks from today if it has none).
   const startCycle = async (cycle: JiraSprint): Promise<void> => {
-    const from = cycle.startDate ? new Date(cycle.startDate) : new Date()
-    const to = cycle.endDate
-      ? new Date(cycle.endDate)
-      : new Date(from.getTime() + 14 * 24 * 60 * 60 * 1000)
+    const { from, to } = startDates(cycle)
     const ok = await confirm({
       title: `Start ${cycle.name}?`,
       body: `It runs ${from.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} to ${to.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}, and starts in Jira now.`,
@@ -2084,7 +2098,9 @@ export default function BacklogScreen({
           ? new Date(cycle.endDate).getTime() - new Date(cycle.startDate).getTime()
           : 14 * 24 * 60 * 60 * 1000
       const from = new Date()
-      const to = start.endDate ? new Date(start.endDate) : new Date(from.getTime() + length)
+      const plannedEnd = start.endDate ? new Date(start.endDate) : null
+      // A planned end that has already passed would start a cycle that's over.
+      const to = plannedEnd && plannedEnd > from ? plannedEnd : new Date(from.getTime() + length)
       const s2 = await startJiraSprint(start.id, from.toISOString(), to.toISOString())
       if (!s2.ok)
         pushToast?.(`${cycle.name} completed, but ${start.name} didn’t start: ${s2.error}`)

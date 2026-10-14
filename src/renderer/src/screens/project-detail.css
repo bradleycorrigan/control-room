@@ -639,7 +639,7 @@
 .cr-worktree-card-path {
   font-family: var(--font-mono);
   font-size: var(--text-caption-size);
-  color: var(--text);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -647,10 +647,79 @@
   text-align: left;
 }
 
-.cr-worktree-card-branch {
+.cr-worktree-card-title {
   font-family: var(--font-mono);
-  font-size: var(--text-caption-size);
+  font-size: var(--text-label-size);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-worktree-card-session {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-meta-size);
+}
+
+.cr-worktree-card-session-title {
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-worktree-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.cr-worktree-card-pr,
+.cr-worktree-card-ticket {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 22px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-meta-size);
+}
+
+button.cr-worktree-card-pr,
+button.cr-worktree-card-ticket {
+  cursor: pointer;
+}
+
+button.cr-worktree-card-pr:hover,
+button.cr-worktree-card-ticket:hover {
+  border-color: var(--text-faint);
+}
+
+.cr-worktree-card-ticket {
+  font-family: var(--font-mono);
+}
+
+.cr-worktree-card-pr-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--text-faint);
+}
+
+.cr-worktree-card-pr--open .cr-worktree-card-pr-dot {
+  background: var(--status-done);
+}
+
+.cr-worktree-card-pr--merged .cr-worktree-card-pr-dot {
+  background: var(--accent);
 }
 
 .cr-worktree-card-actions {
@@ -833,7 +902,6 @@
 
 /* A worktree with uncommitted work, and one whose session has ended. */
 .cr-worktree-card-dirty {
-  margin-left: var(--space-8);
   color: var(--status-attention);
   font-family: var(--font-ui);
   font-size: var(--text-caption-size);

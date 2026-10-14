@@ -9,6 +9,7 @@ import {
   Input,
   Row,
   SegmentedControl,
+  Badge,
   useConfirm
 } from '../components/primitives'
 import GitTab from './tabs/GitTab'
@@ -31,7 +32,12 @@ import {
   removeWorktree,
   listSessionRecordsForProject,
   updateWorktreeDefaults,
+  listWorktreePullRequests,
+  getJiraStatus,
+  getSessionTicketLinks,
+  openExternal,
   type ProjectWorktree,
+  type WorktreePullRequest,
   type WorktreeDefaultsPatch
 } from '../api'
 
@@ -60,6 +66,8 @@ interface Props {
   initialTab?: string
   // Dev shot harness only: lands the Overview tab's History section on CLI.
   initialHistoryTab?: 'recent' | 'cli'
+  /** Opens a Jira ticket in the side panel, as a session header's ticket pill does. */
+  onOpenTicket?: (key: string) => void
 }
 
 export default function ProjectDetail({
@@ -70,6 +78,7 @@ export default function ProjectDetail({
   onProjectsChanged,
   onOpenSession,
   pushToast,
+  onOpenTicket,
   initialTab,
   initialHistoryTab
 }: Props): React.JSX.Element {
@@ -153,6 +162,7 @@ export default function ProjectDetail({
             onProjectsChanged={onProjectsChanged}
             onOpenSession={onOpenSession}
             pushToast={pushToast}
+            onOpenTicket={onOpenTicket}
             initialHistoryTab={initialHistoryTab}
           />
         )}
@@ -185,6 +195,7 @@ function OverviewTab({
   onProjectsChanged,
   onOpenSession,
   pushToast,
+  onOpenTicket,
   initialHistoryTab
 }: {
   project: Project
@@ -193,6 +204,7 @@ function OverviewTab({
   onProjectsChanged: () => void
   onOpenSession: (liveKey: string, background?: boolean) => void
   pushToast: (message: string) => void
+  onOpenTicket?: (key: string) => void
   initialHistoryTab?: 'recent' | 'cli'
 }): React.JSX.Element {
   const worktreeHomeDir = useHomeDir()
@@ -214,8 +226,42 @@ function OverviewTab({
   const [worktreesOpen, setWorktreesOpen] = useState(false)
   const [cleanupOpen, setCleanupOpen] = useState(false)
 
+  // What each worktree is attached to beyond its session: the branch's pull
+  // request, and the Jira ticket it's for. Both load after the cards.
+  const [worktreePrs, setWorktreePrs] = useState<Record<string, WorktreePullRequest>>({})
+  const [ticketLinks, setTicketLinks] = useState<Record<string, string>>({})
+  const [jiraProjects, setJiraProjects] = useState<string[]>([])
+
   const refreshWorktrees = (): void => {
     listAllWorktrees(project.id).then((all) => setWorktrees(all.filter((w) => !w.isMainCheckout)))
+    void listWorktreePullRequests(project.id).then(setWorktreePrs)
+  }
+
+  useEffect(() => {
+    let live = true
+    void Promise.all([getJiraStatus(), getSessionTicketLinks()]).then(([status, links]) => {
+      if (!live || !status.configured) return
+      setJiraProjects(status.projects.map((p) => p.toUpperCase()))
+      setTicketLinks(links)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+
+  // The ticket a worktree is for: the one its session is linked to, else a
+  // key from one of your Jira projects in its branch or session title.
+  const ticketFor = (w: ProjectWorktree, branch: string | null): string | null => {
+    const recordId = w.sessionId ?? w.doneSession?.id
+    if (recordId && ticketLinks[recordId]) return ticketLinks[recordId]
+    if (jiraProjects.length === 0) return null
+    const title = recordId ? (records.find((r) => r.id === recordId)?.title ?? '') : ''
+    return (
+      `${branch ?? ''} ${title}`
+        .toUpperCase()
+        .match(/\b[A-Z][A-Z0-9]+-\d+\b/g)
+        ?.find((k) => jiraProjects.includes(k.split('-')[0])) ?? null
+    )
   }
 
   // History reads this list, so anything that changes a record has to call it.
@@ -277,10 +323,12 @@ function OverviewTab({
     }
   }
 
-  const handleRemoveWorktree = async (path: string): Promise<void> => {
+  const handleRemoveWorktree = async (path: string, sessionTitle?: string): Promise<void> => {
     const confirmed = await confirm({
       title: 'Remove this worktree?',
-      body: `${path} will be deleted from disk.`,
+      body: sessionTitle
+        ? `${path} will be deleted from disk. Its session, ${sessionTitle}, can't be resumed after this and moves to Ended in History.`
+        : `${path} will be deleted from disk.`,
       confirmLabel: 'Remove worktree',
       danger: true
     })
@@ -292,6 +340,8 @@ function OverviewTab({
         return
       }
       refreshWorktrees()
+      refreshRecords()
+      onSessionsChanged()
     } catch {
       pushToast(`Could not remove worktree at ${path}.`)
     }
@@ -370,42 +420,115 @@ function OverviewTab({
             </Button>
           </Row>
           <div className="cr-worktree-grid">
-            {worktrees.map((w) => (
-              <div key={w.path} className="cr-worktree-card">
-                <div className="cr-worktree-card-path" title={w.path}>
-                  <bdi>{formatHomePath(w.path, worktreeHomeDir)}</bdi>
-                </div>
-                <div className="cr-worktree-card-branch">
-                  {w.branch ?? 'detached'}
-                  {w.dirty && <span className="cr-worktree-card-dirty">uncommitted changes</span>}
-                </div>
-                <div className="cr-worktree-card-actions">
-                  {w.sessionId ? (
-                    // In use: open its session. Removing it here would pull the
-                    // worktree out from under a running agent.
-                    (() => {
-                      const live = findLiveKey(w.sessionId)
-                      return live ? (
-                        <button type="button" onClick={() => onOpenSession(live)}>
-                          Open session
+            {worktrees.map((w) => {
+              const branch = w.branch?.replace(/^refs\/heads\//, '') ?? null
+              const liveSession = w.sessionId
+                ? sessions.find((s) => s.record?.id === w.sessionId)
+                : undefined
+              const sessionRecord = w.sessionId
+                ? records.find((r) => r.id === w.sessionId)
+                : undefined
+              const pr = branch ? worktreePrs[branch] : undefined
+              const ticket = ticketFor(w, branch)
+              const running = liveSession !== undefined && isLive(liveSession.status)
+              return (
+                <div key={w.path} className="cr-worktree-card">
+                  <div className="cr-worktree-card-title" title={branch ?? undefined}>
+                    {branch ?? 'No branch'}
+                  </div>
+                  <div className="cr-worktree-card-path" title={w.path}>
+                    <bdi>{formatHomePath(w.path, worktreeHomeDir)}</bdi>
+                  </div>
+                  <div className="cr-worktree-card-session">
+                    {liveSession ? (
+                      <>
+                        <Badge status={liveSession.status} variant="bare" />
+                        <span className="cr-worktree-card-session-title">
+                          {liveSession.record?.title}
+                        </span>
+                      </>
+                    ) : w.sessionId ? (
+                      <span className="cr-worktree-card-note">
+                        Session ended{sessionRecord ? `: ${sessionRecord.title}` : ''}
+                      </span>
+                    ) : w.doneSession ? (
+                      <span className="cr-worktree-card-note">
+                        Marked done: {w.doneSession.title}
+                      </span>
+                    ) : (
+                      <span className="cr-worktree-card-note">No session</span>
+                    )}
+                  </div>
+                  {(pr || ticket || w.dirty) && (
+                    <div className="cr-worktree-card-links">
+                      {pr && (
+                        <button
+                          type="button"
+                          className={`cr-worktree-card-pr cr-worktree-card-pr--${pr.state.toLowerCase()}`}
+                          title="Open the pull request on GitHub"
+                          onClick={() => void openExternal(pr.url)}
+                        >
+                          <span className="cr-worktree-card-pr-dot" aria-hidden />
+                          PR #{pr.number} {pr.state.toLowerCase()}
                         </button>
-                      ) : (
-                        <span className="cr-worktree-card-note">Session ended</span>
-                      )
-                    })()
-                  ) : (
-                    <>
-                      <button type="button" onClick={() => handleAdopt(w.path)}>
-                        Start agent
-                      </button>
-                      <button type="button" onClick={() => handleRemoveWorktree(w.path)}>
-                        Remove
-                      </button>
-                    </>
+                      )}
+                      {ticket &&
+                        (onOpenTicket ? (
+                          <button
+                            type="button"
+                            className="cr-worktree-card-ticket"
+                            title={`Open ${ticket} in Tickets`}
+                            onClick={() => onOpenTicket(ticket)}
+                          >
+                            {ticket}
+                          </button>
+                        ) : (
+                          <span className="cr-worktree-card-ticket">{ticket}</span>
+                        ))}
+                      {w.dirty && (
+                        <span className="cr-worktree-card-dirty">uncommitted changes</span>
+                      )}
+                    </div>
                   )}
+                  <div className="cr-worktree-card-actions">
+                    {liveSession && running ? (
+                      // In use: open its session. Removing it here would pull the
+                      // worktree out from under a running agent.
+                      <button type="button" onClick={() => onOpenSession(liveSession.key)}>
+                        Open session
+                      </button>
+                    ) : (
+                      <>
+                        {liveSession ? (
+                          <button type="button" onClick={() => onOpenSession(liveSession.key)}>
+                            Open session
+                          </button>
+                        ) : (
+                          !w.sessionId && (
+                            <button type="button" onClick={() => handleAdopt(w.path)}>
+                              Start agent
+                            </button>
+                          )
+                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleRemoveWorktree(
+                              w.path,
+                              liveSession?.record?.title ??
+                                sessionRecord?.title ??
+                                w.doneSession?.title
+                            )
+                          }
+                        >
+                          Remove
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
             <button
               type="button"
               className="cr-worktree-card cr-worktree-card--new"

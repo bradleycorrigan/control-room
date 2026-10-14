@@ -870,6 +870,30 @@ export interface DeleteSessionResult {
   warning?: string
 }
 
+/**
+ * After a worktree is removed, the sessions that ran in it have nowhere to
+ * resume. File each one the way deleteSession does (archived and deleted, so
+ * History shows it under Ended), and close any tmux window it left behind.
+ * Only for a worktree already checked to have no live session.
+ */
+export async function retireSessionsInWorktree(worktreePath: string): Promise<void> {
+  const target = worktreePath.replace(/\/+$/, '')
+  const records = getState().sessions.filter(
+    (s) => s.worktreePath.replace(/\/+$/, '') === target && !s.deletedAt && !s.investigation
+  )
+  if (records.length === 0) return
+  for (const r of records) if (r.tmuxWindowId) await killWindow(r.tmuxWindowId)
+  const ids = new Set(records.map((r) => r.id))
+  const now = Date.now()
+  mutate((draft) => {
+    for (const s of draft.sessions) {
+      if (!ids.has(s.id)) continue
+      s.archivedAt ??= now
+      s.deletedAt = now
+    }
+  })
+}
+
 export async function deleteSession(input: DeleteSessionInput): Promise<DeleteSessionResult> {
   const { id, removeWorktree, discardChanges } = input
   const record = getState().sessions.find((s) => s.id === id)
