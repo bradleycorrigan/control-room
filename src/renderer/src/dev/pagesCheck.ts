@@ -2074,6 +2074,26 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   for (const id of fixtureRecords) await api.invoke('jira:link', id, null)
   await ctx.goTo('home')
   await ctx.openFirstSession()
+  {
+    // The header squares a top corner exactly when the active tab sits flush
+    // over it, so no rounded notch shows beside the tab.
+    await wait(400)
+    const screen = $('.cr-session-screen')
+    const tab = $('.cr-tab--active')?.getBoundingClientRect()
+    const header = $('.session-detail-header')
+    const h = header?.getBoundingClientRect()
+    const r = header ? parseFloat(getComputedStyle(header).borderTopRightRadius) : 0
+    const wantRight = Boolean(tab && h && tab.right >= h.right - 12)
+    const wantLeft = Boolean(tab && h && tab.left <= h.left + 12)
+    await check(
+      'the session header squares the corner under a flush active tab, and only then',
+      Boolean(screen && tab && h) &&
+        (screen!.dataset.tabFlushRight !== undefined) === wantRight &&
+        (screen!.dataset.tabFlushLeft !== undefined) === wantLeft &&
+        (wantRight ? r === 0 : r > 0),
+      `tab ${tab?.left}-${tab?.right}, header ${h?.left}-${h?.right}, flags L${screen?.dataset.tabFlushLeft !== undefined} R${screen?.dataset.tabFlushRight !== undefined}, radius ${r}`
+    )
+  }
   await wait(1500)
 
   const split = (await api.invoke('dev:split-check')) as {

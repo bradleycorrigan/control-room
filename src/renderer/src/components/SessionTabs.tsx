@@ -103,6 +103,43 @@ export default function SessionTabs({
       ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [activeKey, tabs.length])
 
+  // The active tab joins the session header beneath it. Where it sits flush
+  // with the header's left or right edge, that corner of the header goes
+  // square, or its rounding shows as a notch beside the tab. Measured, since
+  // scrolling and resizing move the tab.
+  useEffect(() => {
+    const strip = stripRef.current
+    const screen = strip?.closest<HTMLElement>('.cr-session-screen')
+    if (!strip || !screen) return
+    const measure = (): void => {
+      const tab = strip.querySelector<HTMLElement>('.cr-tab--active')
+      const header = screen.querySelector<HTMLElement>('.session-detail-header')
+      if (!tab || !header || header.offsetParent === null) {
+        delete screen.dataset.tabFlushLeft
+        delete screen.dataset.tabFlushRight
+        return
+      }
+      const t = tab.getBoundingClientRect()
+      const h = header.getBoundingClientRect()
+      const radius = parseFloat(getComputedStyle(header).borderTopLeftRadius) || 0
+      // The tab covers the corner when it starts or ends within the rounding.
+      if (t.left <= h.left + radius) screen.dataset.tabFlushLeft = ''
+      else delete screen.dataset.tabFlushLeft
+      if (t.right >= h.right - radius) screen.dataset.tabFlushRight = ''
+      else delete screen.dataset.tabFlushRight
+    }
+    // After layout: the header mounts with the session it belongs to.
+    const frame = requestAnimationFrame(measure)
+    strip.addEventListener('scroll', measure, { passive: true })
+    const ro = new ResizeObserver(measure)
+    ro.observe(strip)
+    return () => {
+      cancelAnimationFrame(frame)
+      strip.removeEventListener('scroll', measure)
+      ro.disconnect()
+    }
+  }, [activeKey, tabs.length])
+
   const menuSession = tabs.find((s) => s.key === menuKey) ?? null
   const menuIndex = menuSession ? tabs.indexOf(menuSession) : -1
   const menuItems = menuSession

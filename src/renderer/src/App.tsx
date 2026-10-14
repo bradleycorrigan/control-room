@@ -857,6 +857,18 @@ function App(): React.JSX.Element {
       document.querySelector<HTMLElement>('.backlog-row[data-issue="DSD-101"]')?.click()
       await new Promise((r) => setTimeout(r, 600))
     })
+    registerShotScreen('backlog-drawer-comments', async () => {
+      setPaletteOpen(false)
+      setView('backlog')
+      await new Promise((r) => setTimeout(r, 800))
+      document.querySelector<HTMLButtonElement>('[aria-label="List view"]')?.click()
+      await new Promise((r) => setTimeout(r, 300))
+      document.querySelector<HTMLElement>('.backlog-row[data-issue="DSD-101"]')?.click()
+      await new Promise((r) => setTimeout(r, 1000))
+      const panel = document.querySelector<HTMLElement>('.backlog-drawer')
+      if (panel) panel.scrollTop = panel.scrollHeight
+      await new Promise((r) => setTimeout(r, 300))
+    })
     registerShotScreen('backlog-drawer-wide', async () => {
       setPaletteOpen(false)
       setView('backlog')
@@ -990,6 +1002,17 @@ function App(): React.JSX.Element {
       const picks = list.filter((s) => s.record).slice(0, 4)
       setOpenTabs(picks.map((s) => s.key))
       setOpenSessionKey(picks[2]?.key ?? picks[0]?.key ?? null)
+    })
+    // Enough tabs to overflow the strip, the last one active: it sits flush
+    // with the header's right edge.
+    registerShotScreen('session-tabs-edge', async () => {
+      setView('sessions')
+      setPaletteOpen(false)
+      const list = sessions.length > 0 ? sessions : await listSessions()
+      const picks = list.filter((s) => s.record)
+      setOpenTabs(picks.map((s) => s.key))
+      setOpenSessionKey(picks[picks.length - 1]?.key ?? null)
+      await new Promise((r) => setTimeout(r, 800))
     })
     registerShotScreen('session-detail', async () => {
       setView('sessions')

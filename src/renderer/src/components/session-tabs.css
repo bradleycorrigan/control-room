@@ -286,3 +286,13 @@
   gap: var(--space-8);
   margin-top: var(--space-4);
 }
+
+/* An active tab flush with the header's edge: square that corner, so the tab
+   runs straight down into the header (measured in SessionTabs.tsx). */
+.cr-session-screen[data-tab-flush-left] .session-detail-header {
+  border-top-left-radius: 0;
+}
+
+.cr-session-screen[data-tab-flush-right] .session-detail-header {
+  border-top-right-radius: 0;
+}
