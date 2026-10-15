@@ -92,9 +92,12 @@ npm run dev
 | Your Jira token        | `jira.json` in the data folder, encrypted with a key kept in your Keychain           |
 
 Control Room reads Claude Code's own files in `~/.claude/` to find sessions, and listens for hooks
-on `127.0.0.1:47821`.
+on `127.0.0.1`, on the first free port from 47821 to 47830.
 
 ## Settings worth knowing
+
+Settings has a section for each area (Views, New sessions, Dev containers, Appearance, Hooks),
+listed down the left. These are the ones worth a look first:
 
 - **New sessions**: the model and thinking level every new session starts with.
 - **Terminal app**: the app that "Focus terminal" brings to the front. Terminal by default; set it
@@ -146,7 +149,8 @@ outside your projects and points it at any folder. In **Settings → Dev contain
 For a launcher script at `~/tools/dev-launcher/bin/exec.sh` that takes a folder and a command, you
 would empty the first box, set the second to `~/tools/dev-launcher/bin/exec.sh {folder} -- {agent}`,
 and turn off the devcontainer.json check. The toggle shows whenever the first word of each command
-is a program the app can find.
+is a program the app can find. The top of **Settings → Dev containers** says whether it can show,
+and if not, which program it couldn't find.
 
 Things to know:
 
@@ -268,14 +272,18 @@ public API, and a Claude Code update can change them. The rest of the list keeps
 
 ```bash
 npm run dev        # run from source
-npm run gate       # every check: typecheck, lint, build, contrast, and real-input
-                   # checks against a seeded fixture
+npm run gate       # every check (~2 minutes): typecheck, lint, build, contrast,
+                   # scripts/verify-*.ts, and real-input checks against seeded fixtures
+npm run gate -- --only=pages "--grep=Settings"   # just the page checks whose section matches
 npm run fixture    # rebuild the fixture: a fake project, sessions and tmux panes
 npm run shot -- <screen> <theme-id> [width]   # screenshot one screen to .dev/shots/
 ```
 
 Run `npm run gate` before every commit. It prints one PASS or FAIL. `CLAUDE.md` has the build
-rules. The fixture uses its own tmux session, `cr-fixture`, and never touches `wt`.
+rules. The page checks run in four app windows at once, each on its own copy of the fixture.
+Each copy of the repo gets its own tmux sessions (`cr-fixture-` plus a short hash), never `wt`,
+and gate runs on one Mac take turns. Logic that doesn't need the app gets a `scripts/verify-*.ts`
+script; the gate runs every one.
 
 - `src/main/`: the only part with access to your Mac. It runs tmux, git and claude, owns the data
   files and listens for hooks. Every command goes through `src/main/exec/run.ts`.
