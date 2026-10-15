@@ -1978,6 +1978,19 @@ function App(): React.JSX.Element {
       setView('settings')
       setPaletteOpen(false)
     })
+    // One Settings section per shot: the screen remembers the last section
+    // it showed, so the shot sets it before opening the screen.
+    for (const section of ['views', 'sessions', 'containers', 'appearance', 'hooks']) {
+      registerShotScreen(`settings-${section}`, () => {
+        try {
+          localStorage.setItem('settings-section', JSON.stringify(section))
+        } catch {
+          // Blocked storage: the shot shows whichever section it has.
+        }
+        setView('settings')
+        setPaletteOpen(false)
+      })
+    }
     registerShotScreen('command-palette', () => {
       setView('sessions')
       setOpenSessionKey(null)

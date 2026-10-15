@@ -52,6 +52,26 @@ for (const theme of themes) {
     })
   }
 
+  // A Switch: the on track is the accent against the card it sits on, and
+  // its thumb is --accent-fg on that track. The off outline is --text-muted,
+  // already held to 3:1 on each surface above.
+  for (const [surfaceName, surfaceHex] of surfaces) {
+    checks.push({
+      theme: theme.name,
+      label: `switch on-track (accent) on ${surfaceName}`,
+      fg: theme.accent,
+      bg: surfaceHex,
+      minRatio: 3
+    })
+  }
+  checks.push({
+    theme: theme.name,
+    label: 'switch thumb (accent-fg) on on-track',
+    fg: theme.accentFg,
+    bg: theme.accent,
+    minRatio: 3
+  })
+
   // The accent underline/rail also needs to read against the ground.
   checks.push({
     theme: theme.name,

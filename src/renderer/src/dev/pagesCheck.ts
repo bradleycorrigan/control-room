@@ -100,6 +100,16 @@ const $$ = <T extends Element = HTMLElement>(sel: string): T[] => [
 const byText = (sel: string, text: string): HTMLElement | undefined =>
   $$<HTMLElement>(sel).find((el) => el.textContent?.trim().startsWith(text))
 
+/** Settings shows one section at a time: opens the one a check reads from. */
+async function openSettingsSection(name: string): Promise<void> {
+  await click(
+    $$<HTMLElement>('nav[aria-label="Settings sections"] .projects-rail-item').find(
+      (el) => el.textContent?.trim() === name
+    )
+  )
+  await until(() => $('.settings-page-title')?.textContent === name)
+}
+
 export interface PagesCheckContext {
   goTo: (view: 'home' | 'sessions' | 'backlog' | 'settings') => Promise<void>
   openFirstSession: () => Promise<void>
@@ -2113,6 +2123,39 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       run: async () => {
         await ctx.goTo('settings')
         await wait(600)
+        {
+          const items = (): string[] =>
+            $$('nav[aria-label="Settings sections"] .projects-rail-item').map(
+              (el) => el.textContent?.trim() ?? ''
+            )
+          await check(
+            'the Settings sidebar lists its five sections',
+            items().join('|') === 'Views|New sessions|Dev containers|Appearance|Hooks',
+            items().join('|')
+          )
+          await openSettingsSection('Appearance')
+          await check(
+            'clicking Appearance shows it and hides Hooks',
+            $('.settings-page-title')?.textContent === 'Appearance' && !$('.settings-hooks-state'),
+            $('.settings-page-title')?.textContent ?? 'no title'
+          )
+          const themeHeader = (): HTMLElement | null => $('.settings-page .cr-disclosure-header')
+          await check(
+            'the theme list starts closed, with the current theme named beside it',
+            themeHeader()?.getAttribute('aria-expanded') === 'false' &&
+              !$('[role="radiogroup"][aria-label="Theme"]') &&
+              Boolean(themeHeader()?.querySelector('.settings-theme-hint')?.textContent?.trim())
+          )
+          await click(themeHeader())
+          await check(
+            'opening it shows the theme swatches',
+            await until(
+              () => $$('[role="radiogroup"][aria-label="Theme"] [role="radio"]').length > 1
+            )
+          )
+          await click(themeHeader())
+        }
+        await openSettingsSection('Hooks')
         await check(
           'Settings → Hooks explains itself in plain words',
           Boolean($('.settings-hooks-state')?.textContent?.trim())
@@ -2144,6 +2187,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             devContainerByDefault: boolean
             devContainerRunCommand: string
           }>('settings:get')
+          await openSettingsSection('Dev containers')
           await check(
             'Settings has "Start sessions in a dev container", off to begin with',
             Boolean(byDefault()) && byDefault()!.checked === false,
@@ -2173,6 +2217,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
               '[data-settings-dev-containers] textarea[aria-label="This Mac\'s address from inside a container"]'
             )?.value === 'host.docker.internal'
           )
+          await openSettingsSection('Hooks')
           await check(
             'Settings → Hooks says hooks are optional and offers the dev container hooks to copy',
             /optional/.test($('[data-settings-container-hooks]')?.textContent ?? '') &&
@@ -2245,6 +2290,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
 
           await ctx.goTo('settings')
           await wait(400)
+          await openSettingsSection('Dev containers')
           await click(byDefault())
           await check(
             'the dev container default turns on from Settings',

@@ -449,25 +449,6 @@
   }
 }
 
-.settings-defaults {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
-  margin-bottom: var(--space-32);
-}
-
-.settings-defaults-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-16);
-}
-
-.settings-defaults-label {
-  min-width: 96px;
-  color: var(--text-muted);
-  font-size: var(--text-label-size);
-}
-
 /* A project's name, contained: on cards it sits beside the branch, and can
    come from any project, so it reads as a tag rather than more path. */
 .cr-project-pill {

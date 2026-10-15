@@ -1,0 +1,75 @@
+/* ---- Switch ---------------------------------------------------------------
+   Off is an outline in --text-muted (3:1 against every surface, which the
+   contrast check enforces), on is the accent with --accent-fg for the thumb.
+   The real input sits over the track at full size, so a click or a tap
+   anywhere on it lands on the native control. */
+.cr-switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  width: 36px;
+  height: 20px;
+}
+
+.cr-switch-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.cr-switch-track {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--text-muted);
+  transition:
+    background var(--motion-fast) var(--motion-easing),
+    box-shadow var(--motion-fast) var(--motion-easing);
+}
+
+.cr-switch-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+  transition:
+    transform var(--motion-fast) var(--motion-easing),
+    background var(--motion-fast) var(--motion-easing);
+}
+
+.cr-switch-input:hover + .cr-switch-track {
+  background: color-mix(in srgb, var(--text-muted) 16%, transparent);
+}
+
+.cr-switch-input:checked + .cr-switch-track {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.cr-switch-input:checked + .cr-switch-track .cr-switch-thumb {
+  /* 36 wide, 4px padding each side, 12px thumb: 16px of travel. */
+  transform: translateX(16px);
+  background: var(--accent-fg);
+}
+
+.cr-switch-input:focus-visible + .cr-switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.cr-switch-input:disabled {
+  cursor: default;
+}
+
+.cr-switch-input:disabled + .cr-switch-track {
+  opacity: 0.4;
+}

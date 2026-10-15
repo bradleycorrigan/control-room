@@ -1,22 +1,130 @@
+/* Settings: the same floating sidebar as Tickets and Sessions (the rail's own
+   classes do the work), and one section at a time beside it. */
 
-.settings-gpu-row {
-  align-items: flex-start;
+.settings-layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
 }
 
-.settings-note {
-  display: block;
-  max-width: 420px;
-  margin-top: var(--space-4);
-  font-size: var(--text-caption-size);
+.settings-rail-items {
+  flex: none;
+}
+
+/* The scroll container is the whole pane, so the scrollbar sits at the
+   window's edge; the page inside holds the readable column. */
+.settings-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--space-32) var(--gutter-wide);
+}
+
+.app-root[data-shell-size='medium'] .settings-main {
+  padding: var(--space-24) var(--gutter-medium);
+}
+
+.app-root[data-shell-size='narrow'] .settings-main {
+  padding: var(--space-16) var(--gutter-narrow);
+}
+
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-24);
+  max-width: 720px;
+  margin: 0 auto;
+  padding-bottom: var(--space-48);
+}
+
+.settings-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.settings-page-title {
+  margin: 0;
+  font-size: var(--text-title-size);
+  line-height: var(--text-title-line);
+  font-weight: var(--text-title-weight);
+  color: var(--text);
+}
+
+.settings-page-caption {
+  margin: 0;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
   color: var(--text-muted);
-  font-weight: 400;
+}
+
+/* ---- A group of settings: one card, rows split by hairlines ------------- */
+
+.settings-group.cr-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+/* A group is not a button: it does not light up under the pointer. */
+.settings-group.cr-card:hover {
+  background: var(--surface);
+}
+
+.settings-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-24);
+  margin: 0;
+  padding: var(--space-16) var(--space-24);
+}
+
+.settings-item + .settings-item {
+  border-top: 1px solid var(--border);
+}
+
+label.settings-item {
+  cursor: pointer;
+}
+
+.settings-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.settings-item-label {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  color: var(--text);
+}
+
+.settings-item-note {
+  max-width: 480px;
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+}
+
+.settings-item-control {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+/* A switch sits level with the first line, not the middle of a long note. */
+label.settings-item .settings-item-control {
+  align-self: flex-start;
+  padding-top: 2px;
 }
 
 /* Command rows stack: label and note on top, the input full width below. */
-.settings-command-row {
+.settings-item--stack {
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-8);
+  gap: var(--space-12);
 }
 
 .settings-command-field {
@@ -31,9 +139,132 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
-  padding: var(--space-8) var(--space-16);
+  padding: var(--space-8) var(--space-12);
   font-family: var(--font-mono);
+  font-size: var(--text-label-size);
   resize: none;
   overflow: hidden;
   overflow-wrap: anywhere;
+}
+
+.settings-status {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+}
+
+/* ---- Hooks ---------------------------------------------------------------- */
+
+.settings-item--prose {
+  display: block;
+}
+
+.settings-item--prose > :last-child {
+  margin-bottom: 0;
+}
+
+.settings-item--prose .settings-hooks-state {
+  line-height: var(--text-body-line);
+}
+
+.settings-item--prose .settings-actions {
+  margin-top: var(--space-16);
+}
+
+/* ---- Theme picker --------------------------------------------------------- */
+
+/* The Disclosure's header bleeds 8px into the gutter, so the row pads less. */
+.settings-item--disclosure {
+  display: block;
+  padding: var(--space-8) var(--space-16) var(--space-8) var(--space-24);
+}
+
+.settings-item--disclosure .cr-disclosure-body {
+  margin: var(--space-8) 0 var(--space-8) 0;
+}
+
+.settings-theme-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  vertical-align: middle;
+  color: var(--text);
+}
+
+.settings-theme-hint-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.settings-theme-hint-chip > span {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+}
+
+.theme-swatch-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-8);
+}
+
+.theme-swatch-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  padding: var(--space-8) var(--space-12);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+}
+
+.theme-swatch-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.theme-swatch-row:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.theme-swatch-chip {
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--text-muted) 40%, transparent);
+  flex: none;
+}
+
+.theme-swatch-chip-text {
+  border-radius: var(--radius-pill);
+}
+
+.theme-swatch-dots {
+  display: flex;
+  gap: 3px;
+  flex: none;
+}
+
+.theme-swatch-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  flex: none;
+}
+
+.theme-swatch-name {
+  margin-left: var(--space-4);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
