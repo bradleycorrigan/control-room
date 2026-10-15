@@ -14,12 +14,16 @@
 // machine, run: tmux ls | grep cr-fixture-
 
 import { spawnSync } from 'node:child_process'
-import { join } from 'node:path'
-import { fixtureTmuxName, REPO_ROOT } from './fixture-name'
+import { join, resolve } from 'node:path'
+import { defaultFixtureRoot, fixtureTmuxName, REPO_ROOT } from './fixture-name'
 
-const SESSION = fixtureTmuxName(REPO_ROOT)
+// The fixture root to put panes in: the same CR_FIXTURE_ROOT build-fixture.ts reads.
+const fixtureRoot = process.env.CR_FIXTURE_ROOT
+  ? resolve(REPO_ROOT, process.env.CR_FIXTURE_ROOT)
+  : defaultFixtureRoot(REPO_ROOT)
+const SESSION = fixtureTmuxName(REPO_ROOT, fixtureRoot)
 const count = parseInt(process.argv[2] ?? '3', 10)
-const worktreeRoot = join(process.cwd(), '.dev', 'fixture', 'project.worktrees')
+const worktreeRoot = join(fixtureRoot, 'project.worktrees')
 
 // Matches build-fixture.ts's worktree dir names, so each window's cwd lands
 // findPaneForSession's cwd-match (src/main/engine/discovery.ts) without any

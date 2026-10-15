@@ -107,6 +107,9 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
   ipcMain.handle('dev:input', (_evt, input: Electron.InputEvent) => {
     win.webContents.sendInputEvent(input as Parameters<typeof win.webContents.sendInputEvent>[0])
   })
+  // Which page-check sections to run (the gate's --grep), from CR_PAGES_SECTIONS.
+  // Empty means all of them.
+  ipcMain.handle('dev:pages-sections', () => process.env.CR_PAGES_SECTIONS ?? '')
   // Minimise/restore, for checks of what a window looks like coming back.
   ipcMain.handle('dev:window', async (_evt, action: 'minimize' | 'restore') => {
     if (action === 'minimize') win.minimize()

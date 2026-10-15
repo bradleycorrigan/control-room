@@ -18,8 +18,9 @@ handed. If you don't, this file, the README and the code are the spec. Comments 
 npm run gate            # ONE command: typecheck, lint, build, contrast-check, hex-literal grep,
                          # native-module grep, and two interaction checks with real input against
                          # the fixture: tabs (strip, shortcuts, closing, J/K) and pages (Backlog,
-                         # Home, Sessions rows, Settings, session header, terminal find). ~3 minutes (pages alone ~140s, was ~200s);
-                         # builds the fixture if it's missing. A new page or behaviour gets its
+                         # Home, Sessions rows, Settings, session header, terminal find). ~1m50s
+                         # (pages ~60s, down from ~140s, because they run in parallel shards: see
+                         # below). Builds the fixtures it needs. A new page or behaviour gets its
                          # checks added to src/renderer/src/dev/pagesCheck.ts. Prints a
                          # single PASS/FAIL summary. Builders run this themselves before calling a
                          # milestone done; verifiers do not re-run it.
@@ -28,6 +29,25 @@ npm run gate            # ONE command: typecheck, lint, build, contrast-check, h
 npm run gate -- --only=pages   # while iterating on one area: static checks + the pages run.
                          # The full gate still runs before every commit — check its exit
                          # code, never pipe it through tail/grep in a && chain.
+npm run gate -- --only=pages "--grep=Home"   # only the pages sections whose name contains
+                         # the text (case-insensitive; commas for several), in their usual
+                         # order, plus the static checks. Prints "sections ran" and each
+                         # section's time. Sections are listed in pagesCheck.ts's `sections`
+                         # array. Quote a name with spaces. Each section sets up its own
+                         # starting screen, so one can run alone; "Completing a cycle" must
+                         # stay last in the full run because it closes the fixture's cycle.
+                         # --grep runs its sections in one app on .dev/fixture, not in shards.
+                         # Without --grep (the full gate, or --only=pages) the page sections
+                         # run as parallel shards, next.
+                         # Shards: gate.mjs PAGE_SHARDS. Four shard apps run at once, each with
+                         # its own fixture (.dev/fixture-1 to -4) and tmux session, built fresh
+                         # each run, and its own hook port. Balanced by the "section times" the
+                         # gate prints. PAGE_SERIAL sections (now "Title bar tooltips", which
+                         # reads window focus) run after the shards, alone, on .dev/fixture-serial,
+                         # because parallel windows take focus from each other. "Completing a
+                         # cycle" and the two cycle sections before it sit last in their shard,
+                         # in order. A new section goes in a shard, or PAGE_SERIAL if it needs
+                         # focus, the clock or the hook ports to itself; never after "Completing".
 npm run install-app      # build, quit the installed app, swap it into /Applications, reopen
 npm run fixture          # (re)builds the seeded project/worktrees/sessions fixture AND spins up
                          # real tmux panes in a dedicated "cr-fixture-<hash>" session for terminal testing
@@ -45,7 +65,7 @@ path's hash (see `scripts/fixtures/fixture-name.ts`), so worktrees do not share 
 same machine queue on a lock at `~/.cache/control-room/gate.lock`, so agents in separate worktrees may
 run the gate; a second run waits and prints whose run it is waiting for.
 
-**Spend gate runs carefully.** Each costs ~3 minutes, and one day once went on ~30 of them.
+**Spend gate runs carefully.** Each full run costs ~2 minutes (--only=pages ~1 minute), and one day once went on ~30 of them.
 - Before any re-run, ask what it will tell you that you don't already know. If the answer is
   "whether my guess was right", add detail to the failing check (or read its `[screen: …]`) first.
 - Iterate with `--only=pages` or `--only=tabs`; the full gate runs once, before merging.

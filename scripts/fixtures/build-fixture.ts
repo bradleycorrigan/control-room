@@ -12,15 +12,20 @@
 
 import { spawnSync } from 'node:child_process'
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { fixtureTmuxName } from './fixture-name'
+import { defaultFixtureRoot, fixtureTmuxName } from './fixture-name'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = join(__dirname, '..', '..')
-// This checkout's own fixture tmux session (see fixture-name.ts).
-const tmuxName = fixtureTmuxName(root)
-const fixtureRoot = join(root, '.dev', 'fixture')
+// Where the fixture is built: .dev/fixture unless CR_FIXTURE_ROOT says otherwise
+// (the gate's page-check shards each build their own). Never copy one fixture
+// to another: its git worktrees hold absolute paths, so each root is built.
+const fixtureRoot = process.env.CR_FIXTURE_ROOT
+  ? resolve(root, process.env.CR_FIXTURE_ROOT)
+  : defaultFixtureRoot(root)
+// This checkout's fixture tmux session for this root (see fixture-name.ts).
+const tmuxName = fixtureTmuxName(root, fixtureRoot)
 const repoPath = join(fixtureRoot, 'project')
 const worktreeRoot = join(fixtureRoot, 'project.worktrees')
 const sessionsDir = join(fixtureRoot, 'sessions')

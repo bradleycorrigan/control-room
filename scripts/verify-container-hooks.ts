@@ -59,6 +59,10 @@ function runHook(
   return new Promise((resolve) => {
     const child = spawn('sh', ['-c', command], { env: { PATH: process.env.PATH ?? '', ...env } })
     child.on('close', (status) => resolve({ status, ms: Date.now() - started }))
+    // A hook that exits before reading its stdin (it can, under load) raises
+    // EPIPE here and would crash the whole script. Its exit status is what the
+    // checks look at, so the write error is ignored.
+    child.stdin.on('error', () => {})
     child.stdin.end(JSON.stringify(payload))
   })
 }

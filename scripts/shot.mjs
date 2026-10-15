@@ -62,15 +62,16 @@ if (screensIdx !== -1 && themesIdx !== -1) {
 const electronBin = join(root, 'node_modules', '.bin', 'electron')
 const mainEntry = join(root, 'out', 'main', 'index.js')
 
-console.log('shot: building...')
-const build = spawnSync(
-  process.execPath,
-  [join(root, 'node_modules', '.bin', 'electron-vite'), 'build'],
-  {
-    cwd: root,
-    stdio: 'inherit'
-  }
-)
+// CR_SHOT_SKIP_BUILD=1: the caller built out/ already (the gate's page shards
+// run several of these at once, and they must not rebuild the same folder together).
+const skipBuild = process.env.CR_SHOT_SKIP_BUILD === '1'
+console.log(skipBuild ? 'shot: using the existing build...' : 'shot: building...')
+const build = skipBuild
+  ? { status: 0 }
+  : spawnSync(process.execPath, [join(root, 'node_modules', '.bin', 'electron-vite'), 'build'], {
+      cwd: root,
+      stdio: 'inherit'
+    })
 if (build.status !== 0) {
   process.exit(build.status ?? 1)
 }
