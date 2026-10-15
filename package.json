@@ -25,6 +25,8 @@
     "verify:hook-state-cwd": "tsx scripts/verify-hook-state-cwd.ts",
     "verify:local-only-changes": "tsx scripts/verify-local-only-changes.ts",
     "verify:container-hooks": "tsx scripts/verify-container-hooks.ts",
+    "verify:no-dev-ipc": "tsx scripts/verify-no-dev-ipc.ts",
+    "verify:pure-logic": "tsx scripts/verify-pure-logic.ts",
     "generate-tokens-css": "tsx scripts/generate-tokens-css.ts",
     "gate": "node scripts/gate.mjs",
     "install-app": "node scripts/install-app.mjs",

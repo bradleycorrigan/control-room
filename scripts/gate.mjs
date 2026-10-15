@@ -181,14 +181,12 @@ function runAsync(label, cmd, args, { tail } = {}) {
 // side by side. The results array keeps this order, whatever order they finish in.
 // `build` writes out/, which the interaction runs read, so those wait for every
 // static check to finish. The verify scripts are node-only logic checks (CLAUDE.md).
-const VERIFY_SCRIPTS = [
-  'verify-clean-description',
-  'verify-container-hooks',
-  'verify-files-write',
-  'verify-hook-state-cwd',
-  'verify-local-only-changes',
-  'verify-status-key-stability'
-]
+// Every scripts/verify-*.ts runs: a new one is picked up without editing this
+// list (a hand-kept list once left a broken script unrun for weeks).
+const VERIFY_SCRIPTS = readdirSync(join(root, 'scripts'))
+  .filter((f) => /^verify-.+\.ts$/.test(f))
+  .map((f) => f.replace(/\.ts$/, ''))
+  .sort()
 const STATIC_STEPS = [
   'typecheck',
   'lint',

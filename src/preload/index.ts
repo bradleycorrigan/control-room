@@ -17,7 +17,10 @@ const api = {
   // the File reference still in hand. The renderer sends the resulting
   // string on to main like any other attachment path; nothing more crosses
   // this bridge than that string.
-  getPathForFile: (file: File): string => webUtils.getPathForFile(file)
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+  // True only in a screenshot/check run (see additionalArguments in
+  // src/main/index.ts). The renderer calls dev:* handlers only when this is true.
+  isShotMode: process.argv.includes('--cr-shot')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

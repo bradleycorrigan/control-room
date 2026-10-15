@@ -68,6 +68,9 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      // Tells the renderer it is in a screenshot/check run (preload exposes it
+      // as api.isShotMode). Only then may it talk to the dev:* handlers.
+      additionalArguments: isScreenshotMode ? ['--cr-shot'] : [],
       // The gate's checks pace themselves with timers. Chromium throttles
       // those in a window you can't see (down to about one a minute), so a
       // gate run left behind other windows stalled for minutes at a time

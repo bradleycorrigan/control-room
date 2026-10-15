@@ -25,20 +25,15 @@ export function registerShotReset(activate: ShotActivator): void {
   reset = activate
 }
 
-let disposePrevious: (() => void) | null = null
+// Set once. App.tsx's effect re-runs on every poll, so the listener itself and
+// the `dev:shot-listening` announcement happen only on the first call. Later
+// calls just refresh the theme setter the listener uses.
+let started = false
+let currentSetTheme: (theme: string) => void = () => {}
 
-/**
- * Idempotent by design. App.tsx calls this from an effect whose deps include
- * `sessions`, which changes on every 2s poll, so it runs constantly — and this
- * used to add a listener each time without removing the last. Every stacked
- * listener then answered the same `dev:shot-command`, so main got N
- * `dev:shot-ready` replies for one command and captured on the first, which
- * could easily be a listener that had activated a different screen. That is how
- * a batch run produced one dialog's screenshot under another dialog's filename —
- * a verification harness quietly telling you about the wrong screen, which is
- * worse than no screenshot at all.
- */
 export function initShotListener(setTheme: (theme: string) => void): void {
+  currentSetTheme = setTheme
+  if (started) return
   const api = (
     window as unknown as {
       api?: {
@@ -48,16 +43,16 @@ export function initShotListener(setTheme: (theme: string) => void): void {
     }
   ).api
   if (!api) return
+  started = true
 
-  disposePrevious?.()
   // Main sends the command on did-finish-load, which happens before React has
   // mounted and run this. The event is not a queue, so a command that arrives
   // first is simply lost and the shot falls through to main's safety net —
   // capturing whatever screen the app booted to. Announcing here lets main
   // send once it knows someone is listening.
-  disposePrevious = api.on('dev:shot-command', async (payload: unknown) => {
+  api.on('dev:shot-command', async (payload: unknown) => {
     const { screen, theme } = payload as ShotCommand
-    if (theme) setTheme(theme)
+    if (theme) currentSetTheme(theme)
     const startedAt = Date.now()
 
     // The listener and the screen registry are set up by two different
@@ -112,5 +107,7 @@ export function initShotListener(setTheme: (theme: string) => void): void {
     })
   })
 
-  api.invoke('dev:shot-listening')
+  // Not awaited on purpose, but caught: an unhandled rejection here is logged as a
+  // renderer crash. Main only registers this handler in a screenshot run.
+  api.invoke('dev:shot-listening').catch((err) => console.error('dev-shot: listen failed', err))
 }

@@ -18,7 +18,7 @@ handed. If you don't, this file, the README and the code are the spec. Comments 
 npm run gate            # ONE command: typecheck, lint, build, contrast-check, hex-literal grep,
                          # native-module grep, and two interaction checks with real input against
                          # the fixture: tabs (strip, shortcuts, closing, J/K) and pages (Backlog,
-                         # Home, Sessions rows, Settings, session header, terminal find). ~4 minutes (pages alone ~200s);
+                         # Home, Sessions rows, Settings, session header, terminal find). ~3 minutes (pages alone ~140s, was ~200s);
                          # builds the fixture if it's missing. A new page or behaviour gets its
                          # checks added to src/renderer/src/dev/pagesCheck.ts. Prints a
                          # single PASS/FAIL summary. Builders run this themselves before calling a
@@ -45,7 +45,7 @@ path's hash (see `scripts/fixtures/fixture-name.ts`), so worktrees do not share 
 same machine queue on a lock at `~/.cache/control-room/gate.lock`, so agents in separate worktrees may
 run the gate; a second run waits and prints whose run it is waiting for.
 
-**Spend gate runs carefully.** Each costs ~4 minutes, and one day once went on ~30 of them.
+**Spend gate runs carefully.** Each costs ~3 minutes, and one day once went on ~30 of them.
 - Before any re-run, ask what it will tell you that you don't already know. If the answer is
   "whether my guess was right", add detail to the failing check (or read its `[screen: …]`) first.
 - Iterate with `--only=pages` or `--only=tabs`; the full gate runs once, before merging.

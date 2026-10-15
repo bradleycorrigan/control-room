@@ -480,8 +480,11 @@ function App(): React.JSX.Element {
   }, [reopenableKey, reopenClosedTab])
 
   // Dev-only: `npm run shot -- <screen> <theme>` drives this to reach a
-  // screen without clicking through the app by hand.
+  // screen without clicking through the app by hand. Outside a shot run this
+  // returns at once: the dev:* handlers only exist in that run, so calling
+  // them from the installed app just logs a rejected promise.
   useEffect(() => {
+    if (!window.api.isShotMode) return
     // Runs before every screen in a batch, so none of them inherits what the
     // last one left open. Closing the session detail and the New session
     // modal unmounts them, which is what clears the menu and dialog state

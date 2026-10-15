@@ -3,7 +3,6 @@
 // on, one PASS/FAIL line per behaviour. Uses the fixture sessions and the
 // CR_JIRA_FIXTURE sample issues. Only ever registered as a shot screen.
 
-import { parseEstimateHours, workingDays } from '../screens/backlog/cyclePlan'
 import { failureSnapshot, trackPointer } from './failureSnapshot'
 
 type Api = { invoke: <T>(channel: string, ...args: unknown[]) => Promise<T> }
@@ -37,9 +36,9 @@ async function click(el: Element | null | undefined, modifiers: Modifier[] = [])
   await input({ type: 'mouseMove', x, y, modifiers })
   await input({ type: 'mouseDown', x, y, button: 'left', clickCount: 1, modifiers })
   await input({ type: 'mouseUp', x, y, button: 'left', clickCount: 1, modifiers })
-  // Long enough for React to render the click; anything slower (a Jira
-  // write, a dialog opening) is awaited with until() where it's checked.
-  await wait(150)
+  // Wait until the browser has handled the click and painted it; anything
+  // slower (a Jira write, a dialog opening) is awaited with until() where it's checked.
+  await settle()
   return true
 }
 
@@ -58,7 +57,7 @@ function spills(root: Element | null): string[] {
 async function key(keyCode: string, modifiers: Modifier[] = []): Promise<void> {
   await input({ type: 'keyDown', keyCode, modifiers })
   await input({ type: 'keyUp', keyCode, modifiers })
-  await wait(150)
+  await settle()
 }
 
 async function typeText(text: string): Promise<void> {
@@ -67,7 +66,21 @@ async function typeText(text: string): Promise<void> {
     await input({ type: 'char', keyCode: ch })
     await input({ type: 'keyUp', keyCode: ch })
   }
-  await wait(400)
+  await settle()
+}
+
+/**
+ * Waits until the browser has handled the last input and painted it: two
+ * animation frames (the first runs before the next paint, the second after
+ * it), then a task so React's queued work has run. The 500ms cap stops a
+ * hidden window, which may not draw frames, from hanging the run.
+ */
+async function settle(): Promise<void> {
+  const frames = new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  )
+  await Promise.race([frames, wait(500)])
+  await wait(0)
 }
 
 /** Polls until `cond` holds (or the time runs out) — for UI that settles on its own clock. */
@@ -2672,21 +2685,6 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   )
   await click($('.backlog-drawer [aria-label="Unlink this session"]'))
   await key('Escape')
-
-  // Cycle planning — pure helpers first (unit-testable without a rendered
-  // screen: fabricated dates, not the fixture's real ones, since honey-buzzard's
-  // dates are pinned by the CycleProgress "N days left" check above).
-  await check(
-    'parseEstimateHours reads Jira shorthand (1w=5d, 1d=8h)',
-    parseEstimateHours('1d 4h') === 12 && parseEstimateHours('1w') === 40,
-    `${parseEstimateHours('1d 4h')}h, ${parseEstimateHours('1w')}h`
-  )
-  await check(
-    'workingDays counts weekdays only, and defaults to 10 with no dates',
-    workingDays('2026-09-14T00:00:00.000Z', '2026-09-18T00:00:00.000Z') === 5 &&
-      workingDays(undefined, undefined) === 10,
-    `${workingDays('2026-09-14T00:00:00.000Z', '2026-09-18T00:00:00.000Z')}, ${workingDays(undefined, undefined)}`
-  )
 
   // Planning: a mode of the Tickets list, grouped by cycle, opened from a
   // cycle's Plan action. Tickets open, filter and drag as anywhere in Tickets.
