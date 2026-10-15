@@ -359,6 +359,14 @@
   justify-content: flex-end;
 }
 
+/* The epic pill is the one that can be wider than the row. Alone on its line it
+   can't wrap, so it shrinks instead: its text ends in "…", the icon and both
+   rounded edges stay. Right-aligned overflow would otherwise spill off the left. */
+.backlog-row-meta .backlog-pills > .backlog-pill--accent {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
 .backlog-row-end {
   flex: none;
   display: flex;

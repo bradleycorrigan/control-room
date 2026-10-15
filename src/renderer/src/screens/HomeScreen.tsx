@@ -219,10 +219,16 @@ export default function HomeScreen({
     if (initial) setPickedProject(initial)
   }
   const selectedProject = lockProject ? lockedProject : pickedProject
-  // Start in dev container: offered only where it can work. With the default
-  // on in Settings, the main button uses it and the second one doesn't.
+  // Dev container toggle: offered only where it can work. Its starting state
+  // comes from the Settings default.
   const devContainer = useDevContainer(selectedProject?.id ?? 'general')
   const containerByDefault = devContainer.available && devContainer.byDefault
+  // The composer's dev container toggle starts where the Settings default says.
+  // A press holds only for this project and default: change either and it
+  // goes back to the default, with no effect needed to reset it.
+  const [containerPress, setContainerPress] = useState<{ key: string; on: boolean } | null>(null)
+  const containerKey = `${selectedProject?.id ?? 'general'}:${containerByDefault}`
+  const inContainer = containerPress?.key === containerKey ? containerPress.on : containerByDefault
 
   // Seeded from the app's default below, not hardcoded. The picker still
   // overrides it for this one session; changing what every new session starts
@@ -700,104 +706,98 @@ export default function HomeScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // `inContainer` is the button pressed; left out (⌘⏎, the main button), the
-  // Settings default decides.
-  const submit = useCallback(
-    async (inContainer?: boolean) => {
-      const text = prompt.trim()
-      if ((!text && attachments.length === 0) || busy || hasPendingAttachments) return
+  const submit = useCallback(async () => {
+    const text = prompt.trim()
+    if ((!text && attachments.length === 0) || busy || hasPendingAttachments) return
 
-      setBusy(true)
-      setError(null)
-      setNotice(null)
-      const creationId = crypto.randomUUID()
+    setBusy(true)
+    setError(null)
+    setNotice(null)
+    const creationId = crypto.randomUUID()
 
-      try {
-        const attachmentPaths = attachments
-          .filter(
-            (c): c is AttachmentChip & { path: string } => c.status === 'ok' && c.path !== null
-          )
-          .map((c) => c.path)
+    try {
+      const attachmentPaths = attachments
+        .filter((c): c is AttachmentChip & { path: string } => c.status === 'ok' && c.path !== null)
+        .map((c) => c.path)
 
-        // With no project there is no repo, so there is no worktree to make —
-        // whatever the switch last remembered. The switch is not even on screen
-        // in that state, but its value persists, so a worktree session was being
-        // requested in ~/ and the run died on "fatal: not a git repository".
-        const makesWorktree = !!selectedProject && effectiveWorktreeMode
-        const onBranch = !!selectedProject && !effectiveWorktreeMode
-        if (onBranch && branchCheck && branchCheck.state !== 'ok') {
-          setError(
-            branchCheck.state === 'checking'
-              ? 'Still checking that branch with GitHub.'
-              : (branchCheck.error ?? 'That branch isn’t on GitHub.')
-          )
-          return
-        }
-
-        const result = await createSession({
-          creationId,
-          projectId: selectedProject?.id ?? 'general',
-          // On a branch: the engine runs it in the project's own checkout when
-          // that's the branch there, and in a worktree of that branch otherwise.
-          // New worktree: always a fresh branch.
-          investigate: !selectedProject || (onBranch && !runOn),
-          branch: makesWorktree
-            ? branch.trim() || undefined
-            : onBranch
-              ? (runOn ?? undefined)
-              : undefined,
-          basedOn: makesWorktree ? 'new' : onBranch && runOn ? 'existing' : undefined,
-          prompt: text,
-          title: initialTitle,
-          model,
-          planMode,
-          effort,
-          attachmentPaths,
-          devContainer: inContainer ?? containerByDefault
-        })
-
-        if (!result.ok || !result.record) {
-          setError(result.error ?? 'Failed to start the session.')
-          return
-        }
-
-        setPrompt('')
-        setBranch('')
-        setAttachments([])
-        if (background) {
-          setNotice(`Started in ${selectedProject?.name ?? 'General'}.`)
-        } else {
-          onSessionCreated?.(result.record)
-        }
-      } catch {
-        setError('Failed to start the session.')
-      } finally {
-        setBusy(false)
+      // With no project there is no repo, so there is no worktree to make —
+      // whatever the switch last remembered. The switch is not even on screen
+      // in that state, but its value persists, so a worktree session was being
+      // requested in ~/ and the run died on "fatal: not a git repository".
+      const makesWorktree = !!selectedProject && effectiveWorktreeMode
+      const onBranch = !!selectedProject && !effectiveWorktreeMode
+      if (onBranch && branchCheck && branchCheck.state !== 'ok') {
+        setError(
+          branchCheck.state === 'checking'
+            ? 'Still checking that branch with GitHub.'
+            : (branchCheck.error ?? 'That branch isn’t on GitHub.')
+        )
+        return
       }
-    },
-    [
-      prompt,
-      initialTitle,
-      busy,
-      attachments,
-      hasPendingAttachments,
-      selectedProject,
-      model,
-      background,
-      onSessionCreated,
-      effectiveWorktreeMode,
-      runOn,
-      branchCheck,
-      // Missing, and it is the whole point of the branch box: the callback is
-      // rebuilt on every prompt keystroke, so filling the prompt and then the
-      // branch name captured the branch as it was before you typed it — empty.
-      // The engine then auto-named the branch and your name was thrown away.
-      branch,
-      planMode,
-      effort,
-      containerByDefault
-    ]
-  )
+
+      const result = await createSession({
+        creationId,
+        projectId: selectedProject?.id ?? 'general',
+        // On a branch: the engine runs it in the project's own checkout when
+        // that's the branch there, and in a worktree of that branch otherwise.
+        // New worktree: always a fresh branch.
+        investigate: !selectedProject || (onBranch && !runOn),
+        branch: makesWorktree
+          ? branch.trim() || undefined
+          : onBranch
+            ? (runOn ?? undefined)
+            : undefined,
+        basedOn: makesWorktree ? 'new' : onBranch && runOn ? 'existing' : undefined,
+        prompt: text,
+        title: initialTitle,
+        model,
+        planMode,
+        effort,
+        attachmentPaths,
+        devContainer: devContainer.available && inContainer
+      })
+
+      if (!result.ok || !result.record) {
+        setError(result.error ?? 'Failed to start the session.')
+        return
+      }
+
+      setPrompt('')
+      setBranch('')
+      setAttachments([])
+      if (background) {
+        setNotice(`Started in ${selectedProject?.name ?? 'General'}.`)
+      } else {
+        onSessionCreated?.(result.record)
+      }
+    } catch {
+      setError('Failed to start the session.')
+    } finally {
+      setBusy(false)
+    }
+  }, [
+    prompt,
+    initialTitle,
+    busy,
+    attachments,
+    hasPendingAttachments,
+    selectedProject,
+    model,
+    background,
+    onSessionCreated,
+    effectiveWorktreeMode,
+    runOn,
+    branchCheck,
+    // Missing, and it is the whole point of the branch box: the callback is
+    // rebuilt on every prompt keystroke, so filling the prompt and then the
+    // branch name captured the branch as it was before you typed it — empty.
+    // The engine then auto-named the branch and your name was thrown away.
+    branch,
+    planMode,
+    effort,
+    devContainer.available,
+    inContainer
+  ])
 
   // ⌘⏎ starts the session from anywhere in the composer, not only from the
   // prompt box. It used to be bound to the textarea alone, so the moment you
@@ -1025,21 +1025,26 @@ export default function HomeScreen({
                 aria-pressed={background}
                 onClick={() => setBackground((v) => !v)}
               />
+
+              {devContainer.available && (
+                <IconButton
+                  icon="Container"
+                  data-dev-container-toggle
+                  label={inContainer ? 'Dev container: on' : 'Dev container: off'}
+                  title={
+                    inContainer
+                      ? "Dev container: on - the agent runs inside the project's dev container"
+                      : 'Dev container: off - the agent runs on this Mac'
+                  }
+                  variant={inContainer ? 'filled' : 'ghost'}
+                  size={28}
+                  aria-pressed={inContainer}
+                  onClick={() => setContainerPress({ key: containerKey, on: !inContainer })}
+                />
+              )}
             </div>
 
             <div className="home-composer-start">
-              {devContainer.available && (
-                <Button
-                  variant="ghost"
-                  data-dev-container-start
-                  disabled={
-                    (!prompt.trim() && attachments.length === 0) || busy || hasPendingAttachments
-                  }
-                  onClick={() => void submit(!containerByDefault)}
-                >
-                  {containerByDefault ? 'Start without dev container' : 'Start in dev container'}
-                </Button>
-              )}
               <Button
                 variant="filled"
                 size="primary"
@@ -1047,7 +1052,6 @@ export default function HomeScreen({
                   (!prompt.trim() && attachments.length === 0) || busy || hasPendingAttachments
                 }
                 onClick={() => void submit()}
-                title={containerByDefault ? 'Runs the agent in the dev container' : undefined}
               >
                 <Icon name="Send" size={16} />
                 {busy

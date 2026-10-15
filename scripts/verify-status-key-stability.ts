@@ -26,6 +26,7 @@ import Module from 'node:module'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 let failures = 0
 function check(name: string, condition: boolean): void {
@@ -57,15 +58,50 @@ mkdirSync(sessionsDir, { recursive: true })
 process.env.CR_SESSIONS_DIR = sessionsDir
 
 async function main(): Promise<void> {
-  const { load: loadStore } = await import('../src/main/store/store')
+  const { load: loadStore, addProject } = await import('../src/main/store/store')
   const { seedFixtureHookEvents } = await import('../src/main/engine/hooks-server')
   const { discoverLiveSessions } = await import('../src/main/engine/discovery')
   const { acknowledgeSession } = await import('../src/main/engine/status')
 
   loadStore() // no state.json on disk yet -> empty state, exactly like a fresh install
 
-  const cwd = join(root, 'worktree-flaky')
+  const cwd = join(root, 'repo.worktrees', 'worktree-flaky')
   mkdirSync(cwd, { recursive: true })
+
+  // Discovery only lists a session Control Room didn't start (no SessionRecord)
+  // when its cwd sits inside one of the user's projects (a0226d4), and it reports
+  // every such session as 'external' (status.ts is never consulted) unless its
+  // pane is in a tmux session that belongs to a project. So the fixture is a real
+  // project with a real pane, in a tmux session this script creates and kills.
+  // It is a session of its own, never "wt" or the app's cr-fixture-<hash> one.
+  const tmuxSession = `cr-verify-status-key-${process.pid}`
+  const made = spawnSync('tmux', ['-u', 'new-session', '-d', '-s', tmuxSession, '-c', cwd], {
+    encoding: 'utf8'
+  })
+  if (made.status !== 0) throw new Error(`could not start tmux session: ${made.stderr}`)
+  // Tear the tmux session down however the script exits, including process.exit().
+  process.on('exit', () => {
+    spawnSync('tmux', ['kill-session', '-t', `=${tmuxSession}`])
+  })
+  const paneInfo = spawnSync(
+    'tmux',
+    ['-u', 'list-panes', '-t', `=${tmuxSession}`, '-F', '#{window_id} #{pane_id}'],
+    { encoding: 'utf8' }
+  ).stdout.trim()
+  const [windowId, paneId] = paneInfo.split(' ')
+  if (!windowId || !paneId) throw new Error(`no pane found in ${tmuxSession}: "${paneInfo}"`)
+
+  const repoPath = join(root, 'repo')
+  const worktreeRoot = join(root, 'repo.worktrees')
+  addProject({
+    name: 'repo',
+    repoPath,
+    worktreeRoot,
+    workspacesDir: join(worktreeRoot, '.workspaces'),
+    baseRef: 'origin/main',
+    tmuxSession,
+    agentCommand: 'claude'
+  })
 
   const now = Date.now()
   const sessionFilePath = join(sessionsDir, 'flaky.json')
@@ -76,6 +112,7 @@ async function main(): Promise<void> {
       JSON.stringify({
         pid: 1, // launchd — always "alive" via kill(pid, 0)
         ...(withSessionId ? { sessionId: 'real-session-abc' } : {}),
+        tmux: `${tmuxSession}:${windowId}.${paneId}`,
         cwd,
         startedAt: now - 30 * 60 * 1000,
         status: 'idle',
@@ -99,7 +136,7 @@ async function main(): Promise<void> {
   const s1 = tick1.find((s) => s.cwd === cwd)!
   console.log('tick1', { key: s1.key, claudeSessionId: s1.claudeSessionId, status: s1.status })
   check('tick1: resolves to done before any id is known', s1.status === 'done')
-  check('tick1: key falls back to a path-based identity', s1.key === `path:${cwd}`)
+  check('tick1: key falls back to the pane identity', s1.key === `pane:${paneId}`)
 
   // User opens the session detail view and acknowledges 'done', using
   // whatever key tick1 handed the renderer over IPC.

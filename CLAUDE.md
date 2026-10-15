@@ -23,6 +23,8 @@ npm run gate            # ONE command: typecheck, lint, build, contrast-check, h
                          # checks added to src/renderer/src/dev/pagesCheck.ts. Prints a
                          # single PASS/FAIL summary. Builders run this themselves before calling a
                          # milestone done; verifiers do not re-run it.
+                         # The gate also runs every scripts/verify-*.ts (node-only logic checks).
+                         # New node-only logic checks go there, not in the pages run.
 npm run gate -- --only=pages   # while iterating on one area: static checks + the pages run.
                          # The full gate still runs before every commit — check its exit
                          # code, never pipe it through tail/grep in a && chain.
@@ -48,6 +50,8 @@ run the gate; a second run waits and prints whose run it is waiting for.
   "whether my guess was right", add detail to the failing check (or read its `[screen: …]`) first.
 - Iterate with `--only=pages` or `--only=tabs`; the full gate runs once, before merging.
 - A flaky check: fix it, then two clean full runs. Not three, not one.
+- Stop a gate run by its own PID. Never `pkill -f gate.mjs` or any pattern: it kills other
+  worktrees' runs on the same machine.
 - A change that cannot reach the app (`README.md`, `.github/`, docs) needs typecheck and lint, not
   the interaction runs.
 - Never swap a fixed `wait()` for `until()` unless the condition is the exact state the next line

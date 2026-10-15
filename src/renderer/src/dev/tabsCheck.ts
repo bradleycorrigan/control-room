@@ -9,6 +9,15 @@ type Api = { invoke: <T>(channel: string, ...args: unknown[]) => Promise<T> }
 const api = (window as unknown as { api: Api }).api
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+/** Polls until `cond` holds (or the time runs out). Only for the state the next line needs. */
+async function until(cond: () => boolean, ms = 2000): Promise<boolean> {
+  const end = Date.now() + ms
+  while (Date.now() < end) {
+    if (cond()) return true
+    await wait(100)
+  }
+  return cond()
+}
 const log = (message: string): Promise<void> => api.invoke('dev:log', message)
 const input = (event: Record<string, unknown>): Promise<void> => api.invoke('dev:input', event)
 
@@ -255,27 +264,43 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
     stored().length === 1 || tabs().length < n,
     `${n} → ${stored().length}`
   )
-  // Re-add two, then close the others. By session, and only ones not open
-  // yet, for the same reason as above: by position, the plain click could land
-  // on a card that moved, open nothing, and leave no active tab to right-click.
+  // Re-add two, then close the others. Each pick reads the cards and the stored
+  // list fresh, after the click before it has landed: the stored list updates
+  // after an IPC round trip, so a pick made straight after a click still sees
+  // that session as not open. Picks are by session, never by position.
   await ctx.goHome()
   await wait(400)
-  const [thirdKey, fourthKey, fifthKey] = cards()
-    .map(keyOf)
-    .filter((k): k is string => Boolean(k) && !stored().includes(k!))
-  await click(cardFor(thirdKey) ?? null, 'left', ['meta'])
-  await click(cardFor(fourthKey) ?? null, 'left', ['meta'])
-  await click(cardFor(fifthKey) ?? null, 'left')
-  await wait(500)
-  await click(tabs()[activeIndex()], 'right')
-  const closeOthers = [
-    ...document.querySelectorAll<HTMLElement>('.cr-tab-menu .cr-popover-item')
-  ].find((b) => b.textContent === 'Close other tabs')
-  await click(closeOthers ?? null)
+  const openedBefore = stored().length
+  const unopenedKey = (): string | null =>
+    cards()
+      .map(keyOf)
+      .find((k): k is string => Boolean(k) && !stored().includes(k as string)) ?? null
+  const titleOf = (k: string | null): string =>
+    cardFor(k)?.querySelector('.cr-session-card-title')?.textContent ?? '?'
+  const picked: string[] = []
+  for (let i = 0; i < 2; i++) {
+    const k = unopenedKey()
+    picked.push(titleOf(k))
+    await click(cardFor(k) ?? null, 'left', ['meta'])
+    await until(() => stored().length === openedBefore + i + 1)
+  }
+  // A plain click switches to a session, which gives the strip an active tab.
+  const last = unopenedKey() ?? cards().map(keyOf).find((k): k is string => Boolean(k)) ?? null
+  picked.push(titleOf(last))
+  await click(cardFor(last) ?? null, 'left')
+  await until(onSessionScreen)
+  await until(() => activeIndex() >= 0)
+  await click(tabs()[activeIndex()] ?? null, 'right')
+  const closeOtherItem = (): HTMLElement | undefined =>
+    [...document.querySelectorAll<HTMLElement>('.cr-tab-menu .cr-popover-item')].find(
+      (b) => b.textContent === 'Close other tabs'
+    )
+  await until(() => Boolean(closeOtherItem()))
+  await click(closeOtherItem() ?? null)
   await check(
     'Close other tabs leaves one',
     stored().length === 1 && onSessionScreen(),
-    `stored=${stored().length}`
+    `stored=${stored().length} picked=${picked.join(', ')} active=${activeIndex()}`
   )
   // Only on a session: ⌘W anywhere else closes the window, and with it the run.
   if (onSessionScreen()) await key('w', ['meta'])

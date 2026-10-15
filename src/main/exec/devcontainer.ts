@@ -51,7 +51,7 @@ export function commandProgram(command: string): string | null {
   return word === '~' || word.startsWith('~/') ? join(homedir(), word.slice(1)) : word
 }
 
-async function programExists(program: string): Promise<boolean> {
+export async function programExists(program: string): Promise<boolean> {
   if (program.includes('/')) {
     try {
       accessSync(program, constants.X_OK)

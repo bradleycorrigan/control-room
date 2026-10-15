@@ -48,7 +48,7 @@ export interface RunResult {
 
 const REQUIRED_BINARIES = ['tmux', 'git', 'claude', 'cursor'] as const
 // Found or not, the app works. A missing one is logged, never toasted: the
-// feature that needs it just doesn't show (Start in dev container).
+// feature that needs it just doesn't show (the dev container toggle).
 const OPTIONAL_BINARIES = ['devcontainer'] as const
 
 export interface BinaryCheckResult {

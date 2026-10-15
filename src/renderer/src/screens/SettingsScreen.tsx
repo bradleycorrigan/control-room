@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   copyText,
   getAppSettings,
+  getDevContainerCommandStatus,
   getHooksStatus,
   installHooks,
   setAppSettings,
@@ -9,11 +10,12 @@ import {
   type HooksStatus
 } from '../api'
 import type { AppSettings } from '../../../main/store/types'
-import { Button, Input, SegmentedControl } from '../components/primitives'
+import { Button, SegmentedControl } from '../components/primitives'
 import { DEFAULT_DEV_CONTAINER_RUN, DEFAULT_DEV_CONTAINER_UP } from '../../../main/store/migrate'
 import { TERMINAL_FONT_SIZES } from '../components/Terminal'
 import type { ThemeController } from '../theme/ThemeProvider'
 import { themes } from '../theme/themes'
+import './settings.css'
 
 interface SettingsScreenProps {
   theme: ThemeController
@@ -25,6 +27,7 @@ export default function SettingsScreen({ theme }: SettingsScreenProps): React.JS
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [devStatus, setDevStatus] = useState<string | null>(null)
 
   const refresh = (): void => {
     getHooksStatus().then(setStatus)
@@ -34,6 +37,32 @@ export default function SettingsScreen({ theme }: SettingsScreenProps): React.JS
     refresh()
     void getAppSettings().then(setSettings)
   }, [])
+
+  // Whether the dev container button can show, judged by the CLI and command
+  // only (not one project). Asked again whenever one of these settings changes.
+  const settingsLoaded = settings !== null
+  const devUp = settings?.devContainerUpCommand
+  const devRun = settings?.devContainerRunCommand
+  const devNeedsConfig = settings?.devContainerNeedsConfig
+  useEffect(() => {
+    if (!settingsLoaded) return
+    let live = true
+    getDevContainerCommandStatus()
+      .then((result) => {
+        if (!live) return
+        setDevStatus(
+          result.missing
+            ? `Not available: ${result.missing} isn't installed or isn't on your PATH.`
+            : `Ready. The dev container toggle shows in the composer${devNeedsConfig ? ' for projects with a devcontainer.json' : ''}.`
+        )
+      })
+      .catch(() => {
+        if (live) setDevStatus('Not available: the check failed.')
+      })
+    return () => {
+      live = false
+    }
+  }, [settingsLoaded, devUp, devRun, devNeedsConfig])
 
   // Writes through immediately — there is no Save on this screen, and a
   // setting that needs one would be the only thing here that does.
@@ -144,64 +173,69 @@ export default function SettingsScreen({ theme }: SettingsScreenProps): React.JS
         </div>
       )}
 
-      {/* Dev containers: the option next to Start only shows where it can
+      {/* Dev containers: the toggle in the composer only shows where it can
           work, so these settings are all there is to it. */}
       <h2>Dev containers</h2>
       {settings && (
-        <div className="settings-defaults" data-settings-dev-containers>
-          <label className="settings-defaults-row settings-gpu-row">
-            <span className="settings-defaults-label">
-              Start new sessions in a dev container by default
-              <span className="settings-note">
-                Start uses the project&rsquo;s dev container, and a second button starts without it.
-                Only in projects where a dev container can run.
+        <>
+          {devStatus && (
+            <p className="settings-hooks-detail" data-settings-dev-status>
+              {devStatus}
+            </p>
+          )}
+          <div className="settings-defaults" data-settings-dev-containers>
+            <label className="settings-defaults-row settings-gpu-row">
+              <span className="settings-defaults-label">
+                Start sessions in a dev container
+                <span className="settings-note">
+                  Turns the dev container toggle on for new sessions. You can still switch it off per session.
+                </span>
               </span>
-            </span>
-            <input
-              type="checkbox"
-              aria-label="Start new sessions in a dev container by default"
-              checked={settings.devContainerByDefault}
-              onChange={(e) => void patchSettings({ devContainerByDefault: e.target.checked })}
+              <input
+                type="checkbox"
+                aria-label="Start sessions in a dev container"
+                checked={settings.devContainerByDefault}
+                onChange={(e) => void patchSettings({ devContainerByDefault: e.target.checked })}
+              />
+            </label>
+            <CommandSetting
+              label="Command that starts the agent"
+              note="Runs in the session's terminal. {folder} is the session's folder. {agent} is the Claude command."
+              value={settings.devContainerRunCommand}
+              fallback={DEFAULT_DEV_CONTAINER_RUN}
+              onSave={(v) => void patchSettings({ devContainerRunCommand: v })}
             />
-          </label>
-          <label className="settings-defaults-row settings-gpu-row">
-            <span className="settings-defaults-label">
-              Only in projects with a devcontainer.json
-              <span className="settings-note">
-                Turn this off if your container setup lives outside the project, like a launcher
-                script you point at any folder.
+            <CommandSetting
+              label="Command to run first (optional)"
+              note="Runs before the command above. Leave it empty if that command starts the container itself."
+              value={settings.devContainerUpCommand}
+              fallback={DEFAULT_DEV_CONTAINER_UP}
+              allowEmpty
+              onSave={(v) => void patchSettings({ devContainerUpCommand: v })}
+            />
+            <label className="settings-defaults-row settings-gpu-row">
+              <span className="settings-defaults-label">
+                Only for projects with a devcontainer.json
+                <span className="settings-note">
+                  Turn this off if you start containers with your own script.
+                </span>
               </span>
-            </span>
-            <input
-              type="checkbox"
-              aria-label="Only in projects with a devcontainer.json"
-              checked={settings.devContainerNeedsConfig}
-              onChange={(e) => void patchSettings({ devContainerNeedsConfig: e.target.checked })}
+              <input
+                type="checkbox"
+                aria-label="Only for projects with a devcontainer.json"
+                checked={settings.devContainerNeedsConfig}
+                onChange={(e) => void patchSettings({ devContainerNeedsConfig: e.target.checked })}
+              />
+            </label>
+            <CommandSetting
+              label="This Mac's address from inside a container"
+              note="Lets the agent in the container tell Control Room what it's doing. host.docker.internal works with Docker Desktop and OrbStack."
+              value={settings.devContainerHookHost}
+              fallback="host.docker.internal"
+              onSave={(v) => void patchSettings({ devContainerHookHost: v })}
             />
-          </label>
-          <CommandSetting
-            label="Start the container"
-            note="Runs first, in the session's terminal. Leave it empty to skip this step. {folder} is the session's folder."
-            value={settings.devContainerUpCommand}
-            fallback={DEFAULT_DEV_CONTAINER_UP}
-            allowEmpty
-            onSave={(v) => void patchSettings({ devContainerUpCommand: v })}
-          />
-          <CommandSetting
-            label="Address of this Mac from a container"
-            note="Where the agent's hooks reach Control Room from inside the container. host.docker.internal works with Docker Desktop and OrbStack."
-            value={settings.devContainerHookHost}
-            fallback="host.docker.internal"
-            onSave={(v) => void patchSettings({ devContainerHookHost: v })}
-          />
-          <CommandSetting
-            label="Run the agent in it"
-            note="{agent} is the agent command, like claude --model opus."
-            value={settings.devContainerRunCommand}
-            fallback={DEFAULT_DEV_CONTAINER_RUN}
-            onSave={(v) => void patchSettings({ devContainerRunCommand: v })}
-          />
-        </div>
+          </div>
+        </>
       )}
 
       <h2>Appearance</h2>
@@ -404,6 +438,15 @@ function CommandSetting({
     setDraft(next)
     if (next !== value) onSave(next)
   }
+  // The box grows to show the whole command, wrapped, instead of hiding its end.
+  const fieldRef = useRef<HTMLTextAreaElement>(null)
+  useLayoutEffect(() => {
+    const el = fieldRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    // scrollHeight leaves out the border, so add back the border's height.
+    el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`
+  }, [draft])
   return (
     <div className="settings-defaults-row settings-gpu-row settings-command-row">
       <span className="settings-defaults-label">
@@ -411,15 +454,21 @@ function CommandSetting({
         <span className="settings-note">{note}</span>
       </span>
       <span className="settings-command-field">
-        <Input
+        <textarea
+          ref={fieldRef}
           aria-label={label}
-          className="settings-command-input"
+          className="cr-textarea settings-command-input"
+          rows={1}
           spellCheck={false}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={save}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur()
+            // A command is one line: Enter saves, and never adds a newline.
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.currentTarget.blur()
+            }
           }}
         />
         {value !== fallback && (

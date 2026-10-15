@@ -37,13 +37,13 @@ A Mac with Apple silicon (arm64). Then:
 
 Optional. Everything else works without them:
 
-| Tool                                                                        | What it adds                                                     |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| [Cursor](https://cursor.com) (`cursor` on your `PATH`)                      | "Open in IDE" for a session's worktree                           |
-| [GitHub CLI](https://cli.github.com) (`gh`), signed in with `gh auth login` | Pull request status, and opening pull requests from Ship         |
-| A Jira Cloud site and an API token                                          | The Tickets screen                                               |
-| The [Dev Containers CLI](https://github.com/devcontainers/cli) and Docker   | "Start in dev container" (see [Dev containers](#dev-containers)) |
-| `mise` / `direnv`                                                           | New worktrees get `mise trust` / `direnv allow` run for you      |
+| Tool                                                                        | What it adds                                                                                      |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| [Cursor](https://cursor.com) (`cursor` on your `PATH`)                      | "Open in IDE" for a session's worktree                                                            |
+| [GitHub CLI](https://cli.github.com) (`gh`), signed in with `gh auth login` | Pull request status, and opening pull requests from Ship                                          |
+| A Jira Cloud site and an API token                                          | The Tickets screen                                                                                |
+| The [Dev Containers CLI](https://github.com/devcontainers/cli) and Docker   | The dev container toggle (container icon) in the composer (see [Dev containers](#dev-containers)) |
+| `mise` / `direnv`                                                           | New worktrees get `mise trust` / `direnv allow` run for you                                       |
 
 When the app starts, it tells you if `tmux`, `git`, `claude` or `cursor` is missing.
 
@@ -110,7 +110,7 @@ on `127.0.0.1:47821`.
 Control Room can start an agent inside a [dev container](https://containers.dev), so it works in
 the project's own tools and can't touch the rest of your Mac.
 
-**You don't use dev containers.** Nothing to do. Everything works, and the button never shows.
+**You don't use dev containers.** Nothing to do. Everything works, and the toggle never shows.
 
 **You use them the standard way.** Your project has `.devcontainer/devcontainer.json` (or
 `.devcontainer.json`), Docker is running, and the Dev Containers CLI is installed:
@@ -119,8 +119,9 @@ the project's own tools and can't touch the rest of your Mac.
 npm install -g @devcontainers/cli
 ```
 
-Then a **Start in dev container** button shows next to Start, in that project only. It types this
-into the session's terminal:
+Then a container icon, the **dev container toggle**, shows in the composer with the other icon
+buttons, in that project only. Turn it on to start the session in the container. It types this into
+the session's terminal:
 
 ```bash
 devcontainer up --workspace-folder <worktree> && devcontainer exec --workspace-folder <worktree> claude …
@@ -129,22 +130,22 @@ devcontainer up --workspace-folder <worktree> && devcontainer exec --workspace-f
 The first start builds the container, which can take a few minutes. You see the build in the
 session's terminal.
 
-To use the container every time, turn on **Settings → Dev containers → Start new sessions in a dev
-container by default**. Start then uses the container, and the second button reads **Start without
-dev container**.
+To use the container every time, turn on **Settings → Dev containers → Start sessions in a dev
+container**. The toggle then starts on. Turn it off for a session that runs on your Mac.
 
 **You use them some other way.** For example, a launcher script that keeps one container setup
 outside your projects and points it at any folder. In **Settings → Dev containers**:
 
-- **Start the container**: the command that runs first. Leave it empty to skip it.
-- **Run the agent in it**: the command that runs the agent. `{folder}` is the session's folder
-  (quoted for you), and `{agent}` is the agent command, like `claude --model opus`.
-- **Only in projects with a devcontainer.json**: turn this off if your setup lives outside the
-  project.
+- **Command that starts the agent**: runs in the session's terminal. `{folder}` is the session's
+  folder (quoted for you), and `{agent}` is the agent command, like `claude --model opus`.
+- **Command to run first (optional)**: runs before the command above. Leave it empty if that
+  command starts the container itself.
+- **Only for projects with a devcontainer.json**: turn this off if you start containers with your
+  own script.
 
 For a launcher script at `~/tools/dev-launcher/bin/exec.sh` that takes a folder and a command, you
 would empty the first box, set the second to `~/tools/dev-launcher/bin/exec.sh {folder} -- {agent}`,
-and turn off the devcontainer.json check. The button shows whenever the first word of each command
+and turn off the devcontainer.json check. The toggle shows whenever the first word of each command
 is a program the app can find.
 
 Things to know:
@@ -209,7 +210,7 @@ For this to work, the container needs:
    result into the container's `~/.claude/settings.json`.
 2. **`curl`**, which the hook uses.
 3. **A way to reach your Mac.** Docker Desktop and OrbStack give you `host.docker.internal`. If
-   your setup uses another name, set **Settings → Dev containers → Address of this Mac from a
+   your setup uses another name, set **Settings → Dev containers → This Mac's address from inside a
    container**. If the container blocks outgoing traffic, allow TCP ports 47821 to 47830 to that
    address.
 

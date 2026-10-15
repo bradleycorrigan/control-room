@@ -206,6 +206,17 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   await check('Unassigned shows only unassigned', rows().length === 1, `${rows().length}`)
   await click(byText('.backlog-filter', 'Everyone'))
   await check('Everyone shows them all again', rows().length === 5, `${rows().length}`)
+  // A pill wider than its row used to spill off the left edge and get cut there.
+  const clippedPills = $$<HTMLElement>('.backlog-row .backlog-pill').filter((pill) => {
+    if (pill.getClientRects().length === 0) return false
+    const box = pill.parentElement?.getBoundingClientRect()
+    return box !== undefined && pill.getBoundingClientRect().left < box.left - 0.5
+  })
+  await check(
+    'no pill on a ticket row is cut off on its left edge',
+    clippedPills.length === 0,
+    `${clippedPills.length} clipped: ${clippedPills.map((p) => p.textContent?.trim()).join(', ')}`
+  )
 
   await cycleFilter('Current cycle (honey-buzzard)')
   await check('the cycle filter shows the current cycle', rows().length === 3, `${rows().length}`)
@@ -1948,35 +1959,42 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
 
   // ---- Dev containers -----------------------------------------------------
   // The fixture project has a devcontainer.json and the fixture's settings
-  // point at a stand-in CLI (scripts/fixtures/build-fixture.ts), so the option
+  // point at a stand-in CLI (scripts/fixtures/build-fixture.ts), so the toggle
   // can work there. General (the home folder) has no devcontainer.json.
   {
     const byDefault = (): HTMLInputElement | null =>
-      $<HTMLInputElement>('[aria-label="Start new sessions in a dev container by default"]')
-    const devButton = (): HTMLElement | null => $('[data-dev-container-start]')
+      $<HTMLInputElement>('[aria-label="Start sessions in a dev container"]')
+    const toggle = (): HTMLElement | null => $('[data-dev-container-toggle]')
+    const toggleOn = (): boolean => toggle()?.getAttribute('aria-pressed') === 'true'
     const original = await api.invoke<{
       devContainerByDefault: boolean
       devContainerRunCommand: string
     }>('settings:get')
     await check(
-      'Settings has "Start new sessions in a dev container by default", off to begin with',
+      'Settings has "Start sessions in a dev container", off to begin with',
       Boolean(byDefault()) && byDefault()!.checked === false,
       byDefault() ? `checked ${byDefault()!.checked}` : 'no setting'
     )
     await check(
       'Settings shows the dev container commands, which you can change',
-      Boolean($('[data-settings-dev-containers] input[aria-label="Run the agent in it"]')) &&
+      Boolean(
+        $('[data-settings-dev-containers] textarea[aria-label="Command that starts the agent"]')
+      ) &&
         /\{agent\}/.test(
-          $<HTMLInputElement>(
-            '[data-settings-dev-containers] input[aria-label="Run the agent in it"]'
+          $<HTMLTextAreaElement>(
+            '[data-settings-dev-containers] textarea[aria-label="Command that starts the agent"]'
           )?.value ?? ''
         )
+    )
+    await check(
+      'Settings says whether the dev container can show, with the CLI found on the fixture',
+      /^Ready\./.test($('[data-settings-dev-status]')?.textContent ?? '')
     )
 
     await check(
       'Settings has the address a container reaches this Mac on, host.docker.internal by default',
       $<HTMLInputElement>(
-        '[data-settings-dev-containers] input[aria-label="Address of this Mac from a container"]'
+        '[data-settings-dev-containers] textarea[aria-label="This Mac\'s address from inside a container"]'
       )?.value === 'host.docker.internal'
     )
     await check(
@@ -1994,21 +2012,57 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       await until(() => Boolean(byText('.home-composer-popover-item', 'fixture-project')))
       await click(byText('.home-composer-popover-item', 'fixture-project'))
     }
+    const hoverOver = async (el: HTMLElement | null): Promise<void> => {
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      await input({
+        type: 'mouseMove',
+        x: Math.round(r.left + r.width / 2),
+        y: Math.round(r.top + r.height / 2)
+      })
+    }
+    const tooltipText = (): string => $('[role="tooltip"]')?.textContent ?? ''
+
     await ctx.goTo('home')
     await wait(400)
     const hadProject = Boolean($('.home-project-chip'))
     await pickFixtureProject()
     await check(
-      'the composer offers "Start in dev container" in a project with a devcontainer.json',
-      await until(() => devButton()?.textContent?.trim() === 'Start in dev container', 3000),
-      devButton()?.textContent ?? 'no button'
+      'the composer shows a dev container toggle in a project with a devcontainer.json',
+      await until(() => Boolean(toggle()), 3000),
+      toggle()?.getAttribute('aria-label') ?? 'no toggle'
     )
     await check(
-      'the dev container button sits beside Start and fits its label',
-      Boolean(devButton()?.closest('.home-composer-start')) &&
-        spills($('.home-composer-start')).length === 0,
-      spills($('.home-composer-start')).join(', ')
+      'the toggle sits with the composer icon buttons, not beside Start, and is a container icon',
+      Boolean(toggle()?.closest('.home-composer-toggles')) &&
+        !toggle()?.closest('.home-composer-start') &&
+        Boolean(toggle()?.querySelector('svg')),
+      toggle()?.closest('.home-composer-toggles') ? 'in the row' : 'elsewhere'
     )
+    await check(
+      'the toggle starts off, as the Settings default is off',
+      toggle()?.getAttribute('aria-label') === 'Dev container: off' && !toggleOn(),
+      toggle()?.getAttribute('aria-label') ?? 'no toggle'
+    )
+    await hoverOver(toggle())
+    await check(
+      'hovering the toggle says what it does, and that it is off',
+      await until(() => tooltipText() === 'Dev container: off - the agent runs on this Mac', 2000),
+      tooltipText() || 'no tooltip'
+    )
+    await input({ type: 'mouseMove', x: 5, y: Math.round(window.innerHeight / 2) })
+
+    await click(toggle())
+    await check(
+      'clicking the toggle turns it on',
+      await until(
+        () => toggleOn() && toggle()?.getAttribute('aria-label') === 'Dev container: on',
+        2000
+      ),
+      toggle()?.getAttribute('aria-label') ?? 'no toggle'
+    )
+    await click(toggle())
+    await check('clicking it again turns it back off', await until(() => !toggleOn(), 2000))
 
     await ctx.goTo('settings')
     await wait(400)
@@ -2021,9 +2075,10 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     await wait(400)
     await pickFixtureProject()
     await check(
-      'with the default on, the second button starts without the dev container',
-      await until(() => devButton()?.textContent?.trim() === 'Start without dev container', 3000),
-      devButton()?.textContent ?? 'no button'
+      'with the Settings default on, the toggle starts on and reads as filled',
+      (await until(() => Boolean(toggle()) && toggleOn(), 3000)) &&
+        Boolean(toggle()?.classList.contains('cr-icon-button--filled')),
+      toggle()?.getAttribute('aria-label') ?? 'no toggle'
     )
     await api.invoke('settings:set', { devContainerByDefault: false })
 
@@ -2031,21 +2086,18 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       devContainerRunCommand: 'no-such-devcontainer-cli exec --workspace-folder {folder} {agent}'
     })
     await check(
-      'with no dev container CLI found, the button is gone',
-      await until(() => !devButton(), 3000),
-      devButton()?.textContent ?? ''
+      'with no dev container CLI found, the toggle is gone',
+      await until(() => !toggle(), 3000),
+      toggle()?.getAttribute('aria-label') ?? ''
     )
     await api.invoke('settings:set', { devContainerRunCommand: original.devContainerRunCommand })
-    await until(() => Boolean(devButton()), 3000)
+    await until(() => Boolean(toggle()), 3000)
 
     await click($('[aria-label="Clear project"]'))
     await check(
-      'with no devcontainer.json (General), the button is gone',
-      await until(
-        () => !devButton() && /General/.test($('.home-composer')?.textContent ?? ''),
-        3000
-      ),
-      devButton()?.textContent ?? ''
+      'with no devcontainer.json (General), the toggle is gone',
+      await until(() => !toggle() && /General/.test($('.home-composer')?.textContent ?? ''), 3000),
+      toggle()?.getAttribute('aria-label') ?? ''
     )
     if (hadProject) {
       await click($('.home-add-project-pill'))
@@ -3380,8 +3432,8 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
   {
     const toggles = $$<HTMLElement>('.home-composer-toggles button.cr-icon-button')
     await check(
-      'all four composer icon buttons carry a label (used as both tooltip and accessible name)',
-      toggles.length === 4 &&
+      'every composer icon button carries a label (used as both tooltip and accessible name)',
+      toggles.length >= 4 &&
         toggles.every((el) => (el.getAttribute('aria-label') ?? '').length > 0),
       `${toggles.length} buttons, labels: ${toggles.map((el) => el.getAttribute('aria-label')).join(' | ')}`
     )

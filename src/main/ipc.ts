@@ -27,7 +27,12 @@ import {
   killPane
 } from './exec/tmux'
 import { attachControlSession, wireLayoutEvents } from './exec/tmux-control'
-import { devContainerAvailability, devContainerCommand } from './exec/devcontainer'
+import {
+  commandProgram,
+  devContainerAvailability,
+  devContainerCommand,
+  programExists
+} from './exec/devcontainer'
 import { startPty, writePty, resizePty, stopPty, onPtyOutput, onPtyExit } from './exec/tmux-pty'
 import {
   listCliHistory,
@@ -725,7 +730,7 @@ export function registerIpcHandlers(): void {
     return result
   })
 
-  // Whether "Start in dev container" can work for a project right now, and
+  // Whether the dev container toggle can work for a project right now, and
   // whether it's the default. The renderer shows the option only when it can.
   ipcMain.handle('devcontainer:availability', async (_evt, projectId: string) => {
     const { settings, projects } = getState()
@@ -733,6 +738,20 @@ export function registerIpcHandlers(): void {
     if (!project) return { available: false, byDefault: settings.devContainerByDefault }
     const result = await devContainerAvailability(project.repoPath, settings)
     return { available: result.available, byDefault: settings.devContainerByDefault }
+  })
+
+  // Whether the dev container CLI and commands are installed, with no project:
+  // the settings screen's status line. Same checks as devContainerAvailability.
+  ipcMain.handle('devcontainer:check-command', async () => {
+    const { settings } = getState()
+    for (const command of [settings.devContainerUpCommand, settings.devContainerRunCommand]) {
+      if (!command.trim()) continue
+      const program = commandProgram(command)
+      if (!program || !(await programExists(program))) {
+        return { missing: program ?? command.trim() }
+      }
+    }
+    return { missing: null }
   })
 
   ipcMain.handle('settings:get', async () => {

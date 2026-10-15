@@ -6,7 +6,7 @@
 // Usage: npm run gate                 everything (before any commit)
 //        npm run gate -- --only=pages  static checks + one interaction run,
 //                                      for iterating on one area; ~1 min less
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
@@ -150,53 +150,82 @@ for (const [signal, code] of [
 // before a commit.
 const only = process.argv.find((a) => a.startsWith('--only='))?.slice('--only='.length)
 
+// Starts one command and returns a promise of its result. Never rejects, so
+// Promise.all can run many of these at once. `tail`: keep only the last N lines
+// of output, and only when the command fails.
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
-function run(label, cmd, args, opts = {}) {
+function runAsync(label, cmd, args, { tail } = {}) {
   const start = Date.now()
-  const res = spawnSync(cmd, args, { cwd: root, encoding: 'utf8', ...opts })
-  const ok = res.status === 0
-  const ms = Date.now() - start
-  results.push({ label, ok, ms, output: (res.stdout || '') + (res.stderr || '') })
-  return ok
+  return new Promise((resolve) => {
+    const out = { stdout: '', stderr: '' }
+    const child = spawn(cmd, args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] })
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+    child.stdout.on('data', (d) => (out.stdout += d))
+    child.stderr.on('data', (d) => (out.stderr += d))
+    let done = false
+    // eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+    const finish = (ok, extra = '') => {
+      if (done) return
+      done = true
+      const text = out.stdout + out.stderr + extra
+      const output = tail ? (ok ? '' : text.split('\n').slice(-tail).join('\n')) : text
+      resolve({ label, ok, ms: Date.now() - start, output })
+    }
+    child.on('error', (err) => finish(false, String(err)))
+    child.on('close', (code) => finish(code === 0))
+  })
 }
 
-console.log('gate: typecheck...')
-run('typecheck', 'npm', ['run', 'typecheck'])
+// Static checks. None of them depends on another, so they all start now and run
+// side by side. The results array keeps this order, whatever order they finish in.
+// `build` writes out/, which the interaction runs read, so those wait for every
+// static check to finish. The verify scripts are node-only logic checks (CLAUDE.md).
+const VERIFY_SCRIPTS = [
+  'verify-clean-description',
+  'verify-container-hooks',
+  'verify-files-write',
+  'verify-hook-state-cwd',
+  'verify-local-only-changes',
+  'verify-status-key-stability'
+]
+const STATIC_STEPS = [
+  'typecheck',
+  'lint',
+  'build',
+  'contrast-check',
+  'hex-literal grep',
+  'native-module grep',
+  'no-dead-controls',
+  'no-scope-language',
+  'no-raw-glyphs',
+  'every-action-has-handler',
+  'no-bare-z-index',
+  'drops-keep-copies',
+  'no-em-dash-copy',
+  ...VERIFY_SCRIPTS.map((name) => `verify: ${name}`)
+]
+for (const step of STATIC_STEPS) console.log(`gate: ${step}...`)
 
-console.log('gate: lint...')
-run('lint', 'npm', ['run', 'lint'])
-
-console.log('gate: build...')
-run('build', 'npm', ['run', 'build'])
-
-console.log('gate: contrast-check...')
-run('contrast-check', 'npm', ['run', 'contrast-check'])
-
-console.log('gate: hex-literal grep...')
-results.push(runHexLiteralGrep(root))
-
-console.log('gate: native-module grep...')
-results.push(runNativeModuleGrep(root))
-
-console.log('gate: no-dead-controls...')
-results.push(runNoDeadControls(root))
-
-console.log('gate: no-scope-language...')
-results.push(runNoScopeLanguage(root))
-console.log('gate: no-raw-glyphs...')
-results.push(runNoRawGlyphs(root))
-
-console.log('gate: every-action-has-handler...')
-results.push(runEveryActionHasHandler(root))
-
-console.log('gate: no-bare-z-index...')
-results.push(runNoBareZIndex(root))
-
-console.log('gate: drops-keep-copies...')
-results.push(runDropsKeepCopies(root))
-
-console.log('gate: no-em-dash-copy...')
-results.push(await runNoEmDashCopy(root))
+const staticRuns = [
+  runAsync('typecheck', 'npm', ['run', 'typecheck']),
+  runAsync('lint', 'npm', ['run', 'lint']),
+  runAsync('build', 'npm', ['run', 'build']),
+  runAsync('contrast-check', 'npm', ['run', 'contrast-check']),
+  runHexLiteralGrep(root),
+  runNativeModuleGrep(root),
+  runNoDeadControls(root),
+  runNoScopeLanguage(root),
+  runNoRawGlyphs(root),
+  runEveryActionHasHandler(root),
+  runNoBareZIndex(root),
+  runDropsKeepCopies(root),
+  runNoEmDashCopy(root),
+  ...VERIFY_SCRIPTS.map((name) =>
+    runAsync(`verify: ${name}`, 'npx', ['tsx', `scripts/${name}.ts`], { tail: 20 })
+  )
+]
+results.push(...(await Promise.all(staticRuns)))
 
 // Interaction checks: drive the real app with real input (tabs, J/K,
 // closing, the house tab…) against the seeded fixture. ~40s. They used to

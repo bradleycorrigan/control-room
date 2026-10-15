@@ -367,6 +367,11 @@ export function getDevContainerAvailability(projectId: string): Promise<DevConta
   return window.api.invoke<DevContainerAvailability>('devcontainer:availability', projectId)
 }
 
+/** The first program the dev container commands need that isn't installed, or null when all are found. */
+export function getDevContainerCommandStatus(): Promise<{ missing: string | null }> {
+  return window.api.invoke<{ missing: string | null }>('devcontainer:check-command')
+}
+
 // Returns '' on success, an error message on failure (mirrors shell.openPath).
 export function openDataFolder(): Promise<string> {
   return window.api.invoke<string>('app:openDataFolder')
