@@ -1,0 +1,19 @@
+/* The app's dropdown trigger (Select.tsx). A button now, not a <select>, so
+   it needs what a select gave for free: one line, cut off with an ellipsis,
+   left-aligned. Each place keeps its own look through its own class. */
+.cr-select {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cr-select:disabled {
+  cursor: default;
+  opacity: 0.6;
+}

@@ -1,0 +1,278 @@
+/* ============================================================================
+   Files tab (plan 2.2, milestone U7) — file tree + read/write editor + search.
+   Scoped to FilesTab.tsx only so it never collides with the other three tabs
+   built concurrently. Every colour comes from a theme token.
+   ========================================================================= */
+
+/* Height is normally set inline by FilesTab.tsx, which measures the actual
+   space below the panel in the viewport — the shared `.project-detail-body`
+   ancestor has no bounded height of its own, so a plain `height: 100%` here
+   would resolve to `auto` and let the panel grow to fit its tallest child
+   (the fully expanded tree) instead of staying a fixed two-pane layout.
+   `max-height` is a fallback ceiling for the moment before that inline style
+   is applied. */
+.files-tab {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  max-height: 640px;
+}
+
+.files-tab-muted {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  padding: var(--space-2) var(--space-3);
+}
+
+.files-tab-error {
+  color: var(--status-error);
+  font-size: var(--text-caption-size);
+  padding: var(--space-2) var(--space-3);
+}
+
+.files-tab-empty {
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+  padding: var(--space-2) var(--space-3);
+}
+
+.files-tab-tree-pane {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.files-tab-search {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  padding: var(--space-3);
+  gap: var(--space-2);
+}
+
+.files-tab-search-input {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--text-caption-size);
+  font-family: var(--font-ui);
+}
+
+.files-tab-search-input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+.files-tab-search-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.files-tab-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.files-tab-search-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+.files-tab-search-result:hover {
+  background: var(--surface-raised);
+}
+
+.files-tab-search-result-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  color: var(--text-faint);
+}
+
+.files-tab-search-result-text {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.files-tab-tree {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2) 0;
+}
+
+.files-tab-tree-node {
+  display: flex;
+  flex-direction: column;
+}
+
+.files-tab-tree-dir,
+.files-tab-tree-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.files-tab-tree-dir {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.files-tab-tree-dir:hover,
+.files-tab-tree-file:hover {
+  background: var(--surface-raised);
+}
+
+.files-tab-tree-caret {
+  display: inline-block;
+  width: 12px;
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.files-tab-tree-file {
+  font-family: var(--font-mono);
+}
+
+.files-tab-tree-file-selected {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.files-tab-editor-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.files-tab-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--text-faint);
+  font-size: var(--text-label-size);
+}
+
+.files-tab-editor-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-8);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.files-tab-editor-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text);
+}
+
+.files-tab-save-word {
+  font-size: var(--text-mono-size);
+  flex-shrink: 0;
+}
+
+.files-tab-save-word-clean,
+.files-tab-save-word-saved {
+  color: var(--text-faint);
+}
+
+.files-tab-save-word-dirty {
+  color: var(--status-attention);
+}
+
+.files-tab-save-word-saving {
+  color: var(--text-muted);
+}
+
+.files-tab-save-word-error {
+  color: var(--status-error);
+}
+
+.files-tab-save-button {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: var(--text-caption-size);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.files-tab-save-button:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.files-tab-save-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+
+.files-tab-textarea {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  border: none;
+  padding: var(--space-16);
+  background: var(--term-bg);
+  color: var(--term-fg);
+  font-family: var(--font-mono);
+  font-size: var(--text-label-size);
+  line-height: 1.5;
+  tab-size: 2;
+}
+
+.files-tab-textarea:focus {
+  outline: none;
+}
+
+.files-tab-textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

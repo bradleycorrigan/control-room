@@ -1,0 +1,72 @@
+/* Legacy electron-vite scaffold variable names, now aliased onto the real
+   theme tokens (theme/tokens.css) so every existing rule that still
+   references them repaints correctly on every theme. New CSS should use the
+   --bg/--surface/--text/etc. tokens directly instead of these aliases. */
+:root {
+  --color-background: var(--bg);
+  --color-background-soft: var(--surface);
+  --color-background-mute: var(--border);
+
+  --color-text: var(--text);
+
+  --ev-c-gray-2: var(--surface-raised);
+  --ev-c-gray-3: var(--border);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  font-weight: normal;
+}
+
+ul {
+  list-style: none;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--color-text);
+  background: var(--color-background);
+  line-height: 1.6;
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  font-variant-numeric: tabular-nums;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Global keyboard-focus baseline (U8). Every interactive element gets a
+   visible ring built from theme tokens on keyboard focus, and none on a
+   mouse click. Component CSS may override `outline`/`outline-offset` on a
+   more specific selector for a tighter fit (see SkillsTab/RulesTab), but
+   nothing interactive should ever fall through to the browser default or to
+   no ring at all. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+[role='button']:focus-visible,
+[role='tab']:focus-visible,
+[role='treeitem']:focus-visible,
+[role='option']:focus-visible,
+[role='menuitem']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+a:focus:not(:focus-visible),
+button:focus:not(:focus-visible),
+input:focus:not(:focus-visible),
+textarea:focus:not(:focus-visible),
+select:focus:not(:focus-visible),
+[tabindex]:focus:not(:focus-visible),
+[role='button']:focus:not(:focus-visible) {
+  outline: none;
+}

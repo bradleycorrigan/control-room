@@ -1,0 +1,82 @@
+/* ============================================================================
+   Skills tab (plan 2.2, milestone U7) — read-only list of skills from
+   skills:list. Scoped to SkillsTab.tsx only so it never collides with the
+   other tabs. Every colour comes from a theme token.
+   ========================================================================= */
+
+.skills-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-6);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.skills-tab-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.skills-tab-filters {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.skills-tab-new-button {
+  flex: none;
+  font: inherit;
+  font-size: var(--text-caption-size);
+  font-weight: 600;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-8);
+  cursor: pointer;
+}
+
+.skills-tab-pill {
+  font: inherit;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.skills-tab-pill:hover {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.skills-tab-pill:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
+}
+
+.skills-tab-pill-active {
+  color: var(--text);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.skills-tab-muted {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+.skills-tab-error {
+  color: var(--status-error);
+  font-size: var(--text-caption-size);
+}
+
+.skills-tab-empty {
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+  padding: var(--space-2) 0;
+}

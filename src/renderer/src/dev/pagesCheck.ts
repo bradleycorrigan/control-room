@@ -1,0 +1,4253 @@
+// Dev-only page checks, run by `npm run gate` alongside the tab checks: each
+// screen that has grown behaviour gets driven with real input and asserted
+// on, one PASS/FAIL line per behaviour. Uses the fixture sessions and the
+// CR_JIRA_FIXTURE sample issues. Only ever registered as a shot screen.
+
+import { parseEstimateHours, workingDays } from '../screens/backlog/cyclePlan'
+import { failureSnapshot, trackPointer } from './failureSnapshot'
+
+type Api = { invoke: <T>(channel: string, ...args: unknown[]) => Promise<T> }
+const api = (window as unknown as { api: Api }).api
+
+const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+const log = (message: string): Promise<void> => api.invoke('dev:log', message)
+const input = (event: Record<string, unknown>): Promise<void> => api.invoke('dev:input', event)
+type Modifier = 'meta' | 'shift' | 'alt' | 'control'
+
+async function click(el: Element | null | undefined, modifiers: Modifier[] = []): Promise<boolean> {
+  if (!el) return false
+  // Real input lands where the pointer is: bring the target on screen first
+  // (a tall panel puts its lower controls below the fold).
+  // Only wait for a scroll that actually happened.
+  const before = el.getBoundingClientRect()
+  const inView =
+    before.top >= 0 &&
+    before.bottom <= window.innerHeight &&
+    before.left >= 0 &&
+    before.right <= window.innerWidth
+  if (!inView) {
+    el.scrollIntoView({ block: 'center', inline: 'center' })
+    await wait(100)
+  }
+  const r = el.getBoundingClientRect()
+  // Past the leading controls a wide row starts with (the pick check, then
+  // priority), onto its key and title; the middle of anything narrower.
+  const x = Math.round(r.left + Math.min(r.width / 2, 120))
+  const y = Math.round(r.top + r.height / 2)
+  await input({ type: 'mouseMove', x, y, modifiers })
+  await input({ type: 'mouseDown', x, y, button: 'left', clickCount: 1, modifiers })
+  await input({ type: 'mouseUp', x, y, button: 'left', clickCount: 1, modifiers })
+  // Long enough for React to render the click; anything slower (a Jira
+  // write, a dialog opening) is awaited with until() where it's checked.
+  await wait(150)
+  return true
+}
+
+/**
+ * Buttons inside `root` whose label doesn't fit them: wider or taller than
+ * their own box. Returns their labels, so a failure names them.
+ */
+function spills(root: Element | null): string[] {
+  if (!root) return []
+  return [...root.querySelectorAll<HTMLElement>('button, .cr-button')]
+    .filter((b) => b.offsetParent !== null)
+    .filter((b) => b.scrollWidth > b.clientWidth + 1 || b.scrollHeight > b.clientHeight + 1)
+    .map((b) => (b.textContent ?? b.getAttribute('aria-label') ?? '').trim())
+}
+
+async function key(keyCode: string, modifiers: Modifier[] = []): Promise<void> {
+  await input({ type: 'keyDown', keyCode, modifiers })
+  await input({ type: 'keyUp', keyCode, modifiers })
+  await wait(150)
+}
+
+async function typeText(text: string): Promise<void> {
+  for (const ch of text) {
+    await input({ type: 'keyDown', keyCode: ch })
+    await input({ type: 'char', keyCode: ch })
+    await input({ type: 'keyUp', keyCode: ch })
+  }
+  await wait(400)
+}
+
+/** Polls until `cond` holds (or the time runs out) — for UI that settles on its own clock. */
+async function until(cond: () => boolean, ms = 2000): Promise<boolean> {
+  const end = Date.now() + ms
+  while (Date.now() < end) {
+    if (cond()) return true
+    await wait(100)
+  }
+  return cond()
+}
+
+const $ = <T extends Element = HTMLElement>(sel: string): T | null => document.querySelector<T>(sel)
+const $$ = <T extends Element = HTMLElement>(sel: string): T[] => [
+  ...document.querySelectorAll<T>(sel)
+]
+const byText = (sel: string, text: string): HTMLElement | undefined =>
+  $$<HTMLElement>(sel).find((el) => el.textContent?.trim().startsWith(text))
+
+export interface PagesCheckContext {
+  goTo: (view: 'home' | 'sessions' | 'backlog' | 'settings') => Promise<void>
+  openFirstSession: () => Promise<void>
+  /** Makes the current screen throw, to check the error catcher. */
+  crashScreen: () => Promise<void>
+  /** Reload the session list, as the app does after its own rename. */
+  refreshSessions: () => Promise<void>
+}
+
+export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
+  trackPointer()
+  let passed = 0
+  let failed = 0
+  const check = async (name: string, ok: boolean, detail = ''): Promise<void> => {
+    if (ok) passed++
+    else failed++
+    const where = ok ? '' : ` [${failureSnapshot()}]`
+    await log(`${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}${where}`)
+  }
+
+  // Focus and blur events only fire in the frontmost window; a run behind
+  // another app used to "fail" whatever relied on them.
+  await api.invoke('dev:window', 'restore')
+
+  // Session ↔ ticket links persist on disk; a run cut short leaves its own
+  // behind. Start clean.
+  {
+    const links = await api.invoke<Record<string, string>>('jira:links')
+    for (const id of Object.keys(links)) await api.invoke('jira:link', id, null)
+  }
+
+  // ---- Backlog ------------------------------------------------------------
+  // A session whose title carries a ticket key: PROJ-102 should show it.
+  await api.invoke(
+    'sessions:rename',
+    'fixture-rec-waiting',
+    'PROJ-102 Review the orders model tests'
+  )
+  await ctx.refreshSessions()
+  await wait(600)
+  await ctx.goTo('home')
+  await wait(400)
+  await click(byText('.app-titlebar-no-drag .cr-segmented__option', 'Tickets'))
+  await wait(900)
+  // Views and filters are remembered between runs: start from the list, unfiltered.
+  await click($('[aria-label="List view"]'))
+  await click(byText('.backlog-filter', 'Everyone'))
+  // Hide done is the one filter that's remembered.
+  if ($('[data-filter-chip="done"] button')) await click($('[data-filter-chip="done"] button'))
+  const rows = (): HTMLElement[] => $$('.backlog-row')
+  const row = (key: string): HTMLElement | undefined => rows().find((r) => r.dataset.issue === key)
+  // Dropdowns are the app's own (components/Select): open one and click the
+  // option, as you would.
+  const setSelect = async (el: HTMLElement | null, value: string): Promise<void> => {
+    if (!el) return
+    el.click()
+    await until(() => Boolean($('.backlog-picker [role="option"]')), 1500)
+    $$<HTMLElement>('.backlog-picker [role="option"]')
+      .find((o) => o.dataset.value === value)
+      ?.click()
+    await wait(50)
+  }
+
+  // What a dropdown offers: open it, read its options, close it again.
+  const selectValues = async (el: HTMLElement | null): Promise<string[]> => {
+    if (!el) return []
+    el.click()
+    await until(() => Boolean($('.backlog-picker [role="option"]')), 1500)
+    const values = $$<HTMLElement>('.backlog-picker [role="option"]').map(
+      (o) => o.dataset.value ?? ''
+    )
+    await key('Escape')
+    return values
+  }
+  const setText = (el: HTMLTextAreaElement | HTMLInputElement | null, value: string): void => {
+    if (!el) return
+    const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement
+    Object.getOwnPropertyDescriptor(proto.prototype, 'value')!.set!.call(el, value)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  // Group: one menu, up to two picks in order.
+  const groupBy = async (...want: string[]): Promise<void> => {
+    await click($('.backlog-menu-button[aria-label^="Display"]'))
+    const items = (): HTMLElement[] => $$('.backlog-display-menu [role="menuitemcheckbox"]')
+    const name = (el: HTMLElement): string => (el.textContent ?? '').replace(/\d/g, '').trim()
+    const item = (n: string): HTMLElement | undefined => items().find((el) => name(el) === n)
+    const isOn = (n: string): boolean => item(n)?.getAttribute('aria-checked') === 'true'
+    if (!isOn(want[0])) await click(item(want[0]))
+    for (const el of items()) {
+      if (name(el) !== want[0] && el.getAttribute('aria-checked') === 'true') await click(el)
+    }
+    if (want[1]) await click(item(want[1]))
+    await key('Escape')
+  }
+  // Cycle lives in the Filter menu now.
+  // Just this cycle: cycles are checkboxes that combine, so clear first
+  // ("All open"), then tick the one.
+  const cycleFilter = async (option: string): Promise<void> => {
+    await click($('.backlog-menu-button[aria-label^="Filter"]'))
+    await click(byText('.backlog-filter-menu [role="menuitemradio"]', 'All open'))
+    if (option !== 'All open') {
+      await click(
+        $$<HTMLElement>('.backlog-filter-menu [role="menuitemcheckbox"]').find(
+          (b) => b.textContent?.trim() === option
+        )
+      )
+    }
+    await key('Escape')
+  }
+
+  await cycleFilter('All open')
+  await groupBy('Status')
+  await check('Backlog lists every ticket, not epics', rows().length === 5, `${rows().length} rows`)
+  await click(byText('.backlog-filter', 'Mine'))
+  await check('Mine shows only yours', rows().length === 3, `${rows().length}`)
+  await click(byText('.backlog-filter', 'Unassigned'))
+  await check('Unassigned shows only unassigned', rows().length === 1, `${rows().length}`)
+  await click(byText('.backlog-filter', 'Everyone'))
+  await check('Everyone shows them all again', rows().length === 5, `${rows().length}`)
+
+  await cycleFilter('Current cycle (honey-buzzard)')
+  await check('the cycle filter shows the current cycle', rows().length === 3, `${rows().length}`)
+  await cycleFilter('Backlog')
+  // One of the other two is in the upcoming cycle, so it isn't backlog.
+  await check('Backlog shows tickets in no cycle', rows().length === 1, `${rows().length}`)
+  await cycleFilter('All open')
+  // Status filter: leave a column out, and put it back
+  await click($('.backlog-menu-button[aria-label^="Filter"]'))
+  await click(byText('.backlog-filter-menu [role="menuitemcheckbox"]', 'Blocked'))
+  await key('Escape')
+  await check(
+    'the status filter leaves a column out',
+    rows().length === 4 &&
+      !row('TEAM-201') &&
+      /1 active/.test(
+        $('.backlog-menu-button[aria-label^="Filter"]')?.getAttribute('aria-label') ?? ''
+      ),
+    `${rows().length} rows`
+  )
+  await check(
+    'and says so in a chip under the tabs',
+    /not Blocked/.test($('[data-filter-chip="status"]')?.textContent ?? ''),
+    $('.backlog-filter-bar')?.textContent ?? 'no filter bar'
+  )
+  await click($('.backlog-menu-button[aria-label^="Filter"]'))
+  await click(byText('.backlog-filter-menu button', 'Hide done'))
+  await check(
+    'Hide done leaves out the done column too',
+    $$('.backlog-filter-menu [data-status-option][aria-checked="false"]').length === 2
+  )
+  await click(byText('.backlog-filter-menu button', 'Clear filters'))
+  await key('Escape')
+  await check('Clear filters brings everything back', rows().length === 5, `${rows().length}`)
+  await check('and the filter bar goes', !$('.backlog-filter-bar'))
+
+  // A search that the tab hides says where the rest are.
+  await click(byText('.backlog-filter', 'Mine'))
+  await click($('input[aria-label="Search tickets"]'))
+  await typeText('runbook')
+  await check(
+    'a search the tab hides offers to show what it hides',
+    rows().length === 0 && Boolean(byText('button', 'Show 1 outside this tab'))
+  )
+  await click(byText('button', 'Show 1 outside this tab'))
+  await check(
+    'and showing it lands on Everyone with the ticket',
+    Boolean(row('TEAM-202')) &&
+      $('.backlog-filter-tabs [aria-checked="true"]')?.textContent?.startsWith('Everyone') === true
+  )
+  await click($('input[aria-label="Search tickets"]'))
+  await key('Escape')
+
+  // Filters last while you're here; leave the Backlog and they're gone.
+  await cycleFilter('Backlog')
+  await ctx.goTo('home')
+  await wait(300)
+  await click(byText('.app-titlebar-no-drag .cr-segmented__option', 'Tickets'))
+  await wait(900)
+  await check(
+    'leaving the Backlog clears its filters',
+    !$('.backlog-filter-bar') && rows().length === 5,
+    `${rows().length} rows; ${$('.backlog-filter-bar')?.textContent ?? 'no bar'}`
+  )
+  await click($('.backlog-menu-button[aria-label^="Filter"]'))
+  await check(
+    'with no one picked, everyone shows ticked',
+    $$('.backlog-filter-people [role="menuitemcheckbox"]').every(
+      (el) => el.getAttribute('aria-checked') === 'true'
+    )
+  )
+  {
+    const them = $$<HTMLElement>('.backlog-filter-people [role="menuitemcheckbox"]').find((el) =>
+      (el.textContent ?? '').includes('Someone Else')
+    )
+    const r = them?.getBoundingClientRect()
+    if (r)
+      await input({
+        type: 'mouseMove',
+        x: Math.round(r.left + 20),
+        y: Math.round(r.top + r.height / 2)
+      })
+    await wait(150)
+    await click(them?.querySelector('.backlog-filter-only'))
+  }
+  await key('Escape')
+  await check(
+    'Filter → Assignee narrows to the people picked',
+    rows().length === 1 && Boolean(row('PROJ-103')),
+    `${rows().length} rows`
+  )
+  await click($('.backlog-menu-button[aria-label^="Filter"]'))
+  await click(byText('.backlog-filter-menu button', 'Clear filters'))
+  {
+    const chip = row('PROJ-101')?.querySelector<HTMLElement>('.backlog-pill--accent')
+    await click(chip, ['alt'])
+    await check(
+      '⌥-clicking an epic chip filters to that epic',
+      await until(() => rows().every((r) => /Partner dashboards/.test(r.textContent ?? ''))),
+      `${rows().length} rows`
+    )
+    await click($('.backlog-menu-button[aria-label^="Filter"]'))
+    await click(byText('.backlog-filter-menu button', 'Clear filters'))
+    await key('Escape')
+  }
+  await key('Escape')
+
+  await check(
+    'values sit in pills: the epic, priority, estimate',
+    Boolean(row('PROJ-101')?.querySelector('.backlog-pill--accent')) &&
+      Boolean(row('PROJ-101')?.querySelector('[aria-label="High priority"]')) &&
+      [...(row('PROJ-101')?.querySelectorAll<HTMLElement>('.backlog-pill') ?? [])].some(
+        (p) => p.textContent === '4h'
+      ),
+    [...(row('PROJ-101')?.querySelectorAll<HTMLElement>('.backlog-pill') ?? [])]
+      .map((p) => p.textContent)
+      .join(' | ')
+  )
+
+  // Every value on a row edits in place.
+  await click(row('PROJ-101')?.querySelector('[aria-label^="Epic:"]'))
+  await click(byText('.backlog-picker .cr-popover-item', 'Internal reporting'))
+  await wait(300)
+  await check(
+    "clicking a row's epic changes it",
+    /Internal reporting/.test(
+      row('PROJ-101')?.querySelector('[aria-label^="Epic:"]')?.textContent ?? ''
+    )
+  )
+  await click(row('PROJ-101')?.querySelector('[aria-label^="Epic:"]'))
+  await click(byText('.backlog-picker .cr-popover-item', 'Partner dashboards'))
+  await wait(300)
+  await click(row('PROJ-101')?.querySelector('[aria-label^="Estimate:"]'))
+  await typeText('3h')
+  await key('Enter')
+  await wait(300)
+  await check(
+    'and its estimate takes a typed value',
+    row('PROJ-101')?.querySelector('[aria-label^="Estimate:"]')?.textContent === '3h',
+    row('PROJ-101')?.querySelector('[aria-label^="Estimate:"]')?.textContent ?? 'none'
+  )
+  await click(row('TEAM-202')?.querySelector('[aria-label^="Assignee:"]'))
+  await click(byText('.backlog-picker .cr-popover-item', 'Assign to me'))
+  await wait(300)
+  await check('and its assignee', !row('TEAM-202')?.querySelector('[aria-label="Unassigned"]'))
+  await click(row('TEAM-202')?.querySelector('[aria-label^="Assignee:"]'))
+  await click(byText('.backlog-picker .cr-popover-item', 'Unassign'))
+  await wait(300)
+
+  await groupBy('Epic')
+  const epicTitles = $$('.backlog-group-title').map((g) => g.textContent ?? '')
+  await check(
+    'grouping by epic shows each epic, then No epic',
+    epicTitles.some((t) => t.includes('Internal reporting')) &&
+      /No epic/.test(epicTitles[epicTitles.length - 1] ?? ''),
+    epicTitles.join(' / ')
+  )
+  await groupBy('Epic', 'Status')
+  const sub = (epic: string, status: string): HTMLElement | null =>
+    $(`.backlog-group[data-lane="${epic}"] .backlog-subgroup[data-lane="${status}"]`)
+  await check(
+    'epics can be sub-grouped by status',
+    Boolean(sub('TEAM-50', 'In Review')?.querySelector('[data-issue="PROJ-102"]')) &&
+      Boolean(sub('TEAM-50', 'Backlog/Not started')?.querySelector('[data-issue="TEAM-202"]'))
+  )
+  {
+    const data = new DataTransfer()
+    const listHeight = (): number => $('.backlog-list')?.getBoundingClientRect().height ?? 0
+    const before = listHeight()
+    row('TEAM-202')?.dispatchEvent(
+      new DragEvent('dragstart', { bubbles: true, dataTransfer: data })
+    )
+    await wait(200)
+    await check(
+      'starting a drag leaves the list where it is, and offers empty groups in the drag bar',
+      listHeight() === before && Boolean($('.backlog-drag-bar [data-drop-chip]')),
+      `list ${before}px -> ${listHeight()}px, ${$$('.backlog-drag-bar [data-drop-chip]').length} chips`
+    )
+    const target = sub('TEAM-60', 'In Progress')
+    target?.dispatchEvent(
+      new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data })
+    )
+    target?.dispatchEvent(
+      new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data })
+    )
+    row('TEAM-202')?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: data }))
+    await wait(500)
+  }
+
+  await check(
+    'dropping into a sub-group sets both its epic and its status',
+    Boolean(sub('TEAM-60', 'In Progress')?.querySelector('[data-issue="TEAM-202"]'))
+  )
+  // A drag with the real pointer isn't checked here: sendInputEvent starts a
+  // native macOS drag but can't end it, and the open drag session swallows
+  // every input after it. Checked by hand on 2026-10-07: the drag used to
+  // cancel itself at once (dragstart, then dragend) because the drop targets
+  // appeared in the same tick; BacklogScreen now shows them a tick later.
+  await check('after a drop, the drag bar goes away again', !$('.backlog-drag-bar'))
+  {
+    // The drop leaves emptied groups holding their place. Collapsing one
+    // removes it, as an empty group would anywhere else.
+    const emptiedGroups = (): HTMLElement[] =>
+      $$('.backlog-subgroup').filter((g) => /Nothing left here/.test(g.textContent ?? ''))
+    const where = (g: HTMLElement): string =>
+      `${g.closest('.backlog-group')?.getAttribute('data-lane')}/${g.getAttribute('data-lane')}`
+    const before = emptiedGroups().map(where)
+    const first = emptiedGroups()[0]
+    const firstAt = first ? where(first) : ''
+    await click(first?.querySelector('[aria-label^="Collapse"]'))
+    const after = emptiedGroups().map(where)
+    const gone = !$$('.backlog-subgroup').some((g) => where(g) === firstAt)
+    await check(
+      'collapsing a group you just emptied removes it',
+      Boolean(first) && gone,
+      `emptied before: ${before.join(', ') || 'none'}; after: ${after.join(', ') || 'none'}`
+    )
+  }
+  await groupBy('Status', 'Epic')
+  await click($('.backlog-menu-button[aria-label^="Display"]'))
+  await click($('.backlog-display-menu [aria-label^="Swap order"]'))
+  await key('Escape')
+  await check(
+    'Swap order flips status-then-epic to epic-then-status',
+    Boolean(sub('TEAM-50', 'In Review')),
+    $('.backlog-menu-button[aria-label^="Display"]')?.getAttribute('aria-label') ?? ''
+  )
+  await click($('[aria-label="Collapse Partner dashboards"]'))
+  await check(
+    'a group can be collapsed',
+    !$('.backlog-group[data-lane="TEAM-60"] [data-issue="PROJ-101"]')
+  )
+  await click($('[aria-label="Expand Partner dashboards"]'))
+  await click(
+    sub('TEAM-50', 'In Review')?.querySelector('[aria-label="Collapse In Review"]') ?? null
+  )
+  await check(
+    'a status inside an epic can be collapsed on its own',
+    !sub('TEAM-50', 'In Review')?.querySelector('[data-issue="PROJ-102"]') &&
+      Boolean(sub('TEAM-50', 'In Review')?.querySelector('.backlog-subgroup-title'))
+  )
+  await click(sub('TEAM-50', 'In Review')?.querySelector('[aria-label="Expand In Review"]') ?? null)
+  await groupBy('Status')
+
+  await check(
+    'a ticket with a Slack thread has Open in Slack',
+    Boolean(row('PROJ-101')?.querySelector('[aria-label="Open in Slack"]')) &&
+      !row('PROJ-103')?.querySelector('[aria-label="Open in Slack"]')
+  )
+  await check(
+    "a ticket in a session says so, with that session's status",
+    Boolean(row('PROJ-102')?.classList.contains('backlog-row--in-session')) &&
+      /needs an answer/.test(
+        row('PROJ-102')?.querySelector('.backlog-session-chip')?.textContent ?? ''
+      ),
+    row('PROJ-102')?.querySelector('.backlog-session-chip')?.textContent ?? 'no chip'
+  )
+  await check(
+    "a ticket's session shows its branch or pull request",
+    await until(() =>
+      Boolean(
+        row('PROJ-102')?.querySelector('[aria-label^="Branch"], [aria-label^="Pull request"]')
+      )
+    )
+  )
+  await check(
+    'a pull request Jira knows about shows on the row',
+    await until(() => Boolean(row('PROJ-102')?.querySelector('[aria-label="Pull request (open)"]')))
+  )
+  await check(
+    'tickets without a session offer Start session',
+    Boolean(row('PROJ-101')?.querySelector('[aria-label="Start session"]'))
+  )
+  {
+    // Hover help: every control says what it does. Start session has no
+    // <Tooltip> of its own, so the app-wide fallback has to cover it.
+    const start = row('PROJ-101')?.querySelector<HTMLElement>('[aria-label="Start session"]')
+    start?.scrollIntoView({ block: 'center' })
+    const rowRect = row('PROJ-101')?.getBoundingClientRect()
+    if (rowRect) {
+      await input({
+        type: 'mouseMove',
+        x: Math.round(rowRect.left + 60),
+        y: Math.round(rowRect.top + rowRect.height / 2)
+      })
+    }
+    await wait(150)
+    const r = start?.getBoundingClientRect()
+    if (r) {
+      await input({
+        type: 'mouseMove',
+        x: Math.round(r.left + r.width / 2),
+        y: Math.round(r.top + r.height / 2)
+      })
+    }
+    await check(
+      'hovering a button with no tooltip of its own still says what it does',
+      await until(
+        () => ($('[data-hover-help]')?.textContent ?? '') === 'Start a session on this ticket',
+        2000
+      ),
+      $('[data-hover-help]')?.textContent ?? 'no hover text'
+    )
+    await input({ type: 'mouseMove', x: 5, y: Math.round(window.innerHeight / 2) })
+    // And none is left with nothing to say: a button with no words must
+    // carry a label, a title, or a <Tooltip>.
+    const silent = $$<HTMLElement>('button, [role="button"]').filter(
+      (b) =>
+        !(b.textContent ?? '').trim() &&
+        !b.getAttribute('aria-label') &&
+        !b.getAttribute('title') &&
+        !b.closest('.cr-tooltip-trigger')
+    )
+    await check(
+      'every button on Tickets has words, a label, or a tooltip',
+      silent.length === 0,
+      silent
+        .slice(0, 5)
+        .map((b) => b.outerHTML.slice(0, 120))
+        .join(' | ')
+    )
+  }
+
+  await check(
+    'rows show status as a glyph, and Slack as its own mono mark',
+    Boolean(row('PROJ-101')?.querySelector('svg[aria-label="In Progress"]')) &&
+      Boolean(row('PROJ-101')?.querySelector('[aria-label="Open in Slack"] svg path'))
+  )
+
+  // Search, and "/" to get there
+  await click($('.backlog-title'))
+  await key('/')
+  await check(
+    '"/" jumps to search',
+    document.activeElement === $('input[aria-label="Search tickets"]')
+  )
+  await typeText('freshness')
+  await check(
+    'search narrows the list',
+    rows().length === 1 && Boolean(row('PROJ-103')),
+    rows()
+      .map((r) => r.dataset.issue)
+      .join(', ')
+  )
+  await key('Escape')
+  await check('Escape clears search', rows().length === 5, `${rows().length}`)
+
+  // J / K walk the list; Enter opens; the panel follows J
+  await click($('.backlog-title'))
+  await key('j')
+  const firstKey = (document.activeElement as HTMLElement | null)?.dataset?.issue
+  await check(
+    'J focuses the first ticket',
+    firstKey === rows()[0]?.dataset.issue,
+    firstKey ?? 'none'
+  )
+  await key('Enter')
+  await until(() => Boolean($('.backlog-drawer')))
+  await check(
+    'Enter opens it',
+    ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith(firstKey ?? '?')
+  )
+  const secondKey = rows()[1]?.dataset.issue ?? '?'
+  row(firstKey ?? '')?.focus()
+  await wait(300)
+  await key('j')
+  await wait(500)
+  row('PROJ-102')?.focus()
+  await wait(500)
+  row(secondKey)?.focus()
+  await check(
+    'with the panel open, J moves it to the next ticket',
+    await until(
+      () => ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith(secondKey),
+      4000
+    ),
+    `panel ${$('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 12) ?? 'closed'}, focus ${(document.activeElement as HTMLElement | null)?.dataset?.issue ?? document.activeElement?.tagName}, wanted ${secondKey}`
+  )
+  // Expand: the same panel as a wide reading view; Escape goes back to the
+  // panel first, then closes it.
+  await click($('[data-drawer-expand]'))
+  const expanded = await until(() => Boolean($('.backlog-drawer--wide')))
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  await key('Escape')
+  await check(
+    'Expand widens the ticket panel into a reading view, and Escape goes back to the panel',
+    expanded && (await until(() => !$('.backlog-drawer--wide'))) && Boolean($('.backlog-drawer')),
+    `expanded=${expanded}, wide now ${Boolean($('.backlog-drawer--wide'))}, panel ${Boolean($('.backlog-drawer'))}`
+  )
+  await key('Escape')
+
+  // Right-click menu
+  const menuOn = async (keyName: string): Promise<void> => {
+    const r = row(keyName)!.getBoundingClientRect()
+    row(keyName)!.dispatchEvent(
+      new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        clientX: r.left + 200,
+        clientY: r.top + 10
+      })
+    )
+    await wait(300)
+  }
+  await menuOn('TEAM-201')
+  await check(
+    'right-click opens the ticket menu',
+    Boolean(byText('.backlog-context-menu .cr-popover-item', 'Copy branch name'))
+  )
+  await click(byText('.backlog-context-menu .cr-popover-item', 'In Review'))
+  await wait(400)
+  await check(
+    'its Status items move the ticket',
+    Boolean($('.backlog-group[data-lane="In Review"] [data-issue="TEAM-201"]'))
+  )
+  await menuOn('TEAM-201')
+  await click(byText('.backlog-context-menu .cr-popover-item', 'Move to backlog'))
+  await wait(400)
+  await check(
+    'and Move to backlog takes it out of the cycle',
+    !row('TEAM-201')?.textContent?.includes('honey-buzzard')
+  )
+  await check(
+    'Disconnect lives in the ⋯ menu, not the header',
+    !byText('.backlog-header-actions button', 'Disconnect')
+  )
+
+  // Start session → pre-filled composer
+  await click(row('PROJ-101')?.querySelector('[aria-label="Start session"]'))
+  await wait(500)
+  const composer = $('[role="dialog"]')
+  const promptBox = composer?.querySelector<HTMLTextAreaElement>('textarea') ?? null
+  await check(
+    'Start session opens the composer, titled and pre-filled from the ticket',
+    (composer?.getAttribute('aria-label') ?? '').startsWith('PROJ-101') &&
+      Boolean(
+        promptBox?.value.includes('Re-run the model') && promptBox.value.includes('Jira: https://')
+      )
+  )
+  await check(
+    'the pre-filled prompt is sized to its text when the composer opens, and can be dragged taller',
+    Boolean(promptBox) &&
+      // Showing all of it, or as much as half the window allows.
+      promptBox!.clientHeight >=
+        Math.min(promptBox!.scrollHeight, Math.round(window.innerHeight * 0.5)) - 4 &&
+      getComputedStyle(promptBox!).resize === 'vertical',
+    `box ${promptBox?.clientHeight}px, text ${promptBox?.scrollHeight}px`
+  )
+  await key('Escape')
+  await check('Escape closes the composer', !$('[role="dialog"]'))
+
+  // The ticket panel: every edit
+  await click(row('PROJ-103'))
+  await wait(500)
+  const drawer = (): HTMLElement | null => $('.backlog-drawer')
+  await check(
+    'clicking a ticket opens its panel',
+    (drawer()?.getAttribute('aria-label') ?? '').startsWith('PROJ-103')
+  )
+  await click($('.backlog-drawer-summary'))
+  setText(
+    $<HTMLInputElement>('.backlog-drawer-summary-form input'),
+    'Add freshness checks to every run'
+  )
+  $('.backlog-drawer-summary-form')?.dispatchEvent(
+    new Event('submit', { bubbles: true, cancelable: true })
+  )
+  await wait(400)
+  await check(
+    'the summary can be edited',
+    /every run/.test(row('PROJ-103')?.textContent ?? ''),
+    row('PROJ-103')?.querySelector('.backlog-row-summary')?.textContent ?? ''
+  )
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]'), 'In Review')
+  await wait(400)
+  await check(
+    'the status can be changed',
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value === 'In Review'
+  )
+  await click(byText('.backlog-drawer button', 'Assign to me'))
+  await wait(300)
+  await check('Assign to me assigns it', /Unassign/.test(drawer()?.textContent ?? ''))
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]'), 'Highest')
+  await wait(400)
+  await check(
+    'the priority can be changed',
+    Boolean(row('PROJ-103')?.querySelector('[aria-label="Highest priority"]'))
+  )
+  setText($<HTMLTextAreaElement>('.backlog-drawer textarea[aria-label="Add a comment"]'), 'half')
+  $<HTMLTextAreaElement>('.backlog-drawer textarea[aria-label="Add a comment"]')?.focus()
+  await key('Escape')
+  await check(
+    'Escape in a field leaves the field, not the panel',
+    Boolean(drawer()) &&
+      $<HTMLTextAreaElement>('.backlog-drawer textarea[aria-label="Add a comment"]')?.value ===
+        'half'
+  )
+  setText($<HTMLTextAreaElement>('.backlog-drawer textarea[aria-label="Add a comment"]'), '')
+
+  {
+    type Result = { ok: boolean; error?: string }
+    const bare = await api.invoke<Result>(
+      'jira:slackLink',
+      'TEAM-201',
+      'example.slack.com/archives/C01ABC123/p1789660839431909?thread_ts=1789483818.132249'
+    )
+    await check('a Slack link without https:// is accepted', bare.ok, bare.error ?? '')
+  }
+  // A Slack thread added by hand, for a ticket Zapier didn't link
+  await click($('.backlog-drawer [aria-label="Add Slack link"]'))
+  await until(() => Boolean($('input[aria-label="Slack message link"]')))
+  setText(
+    $<HTMLInputElement>('input[aria-label="Slack message link"]'),
+    'https://example.slack.com/archives/C01ABC123/p1789660839431909'
+  )
+  await click(byText('.backlog-save-view button', 'Add link'))
+  await check(
+    'a Slack link can be added to a ticket without one',
+    await until(
+      () =>
+        Boolean($('.backlog-drawer [aria-label="Open in Slack"]')) &&
+        Boolean(row('PROJ-103')?.querySelector('[aria-label="Open in Slack"]'))
+    )
+  )
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Cycle"]'), '1')
+  await wait(400)
+  await check(
+    'it can be added to the current cycle',
+    /honey-buzzard/.test(row('PROJ-103')?.textContent ?? '')
+  )
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Cycle"]'), '')
+  await wait(400)
+  await check(
+    'and put back in the backlog',
+    !/honey-buzzard/.test(row('PROJ-103')?.textContent ?? '') &&
+      $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Cycle"]')?.dataset.value === ''
+  )
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Parent"]'), 'TEAM-50')
+  await wait(400)
+  await check(
+    'a parent epic can be set',
+    /Internal reporting/.test(row('PROJ-103')?.textContent ?? '')
+  )
+  await click(byText('.backlog-drawer button', 'Edit'))
+  setText(
+    $<HTMLTextAreaElement>('.backlog-drawer textarea[aria-label="Description"]'),
+    'Nightly freshness, h2. checks'
+  )
+  await click(
+    [...$$<HTMLElement>('.backlog-drawer .backlog-drawer-buttons button')].find(
+      (b) => b.textContent === 'Save'
+    )
+  )
+  await wait(400)
+  await check(
+    'the description can be edited',
+    /Nightly freshness/.test($('.backlog-drawer .backlog-drawer-text')?.textContent ?? '')
+  )
+  // A long description folds, and opens in full without Edit. Whichever
+  // ticket the drawer has open: no keys, so a fixture rename can't break it.
+  {
+    const descText = (): HTMLElement | null => $('.backlog-drawer .backlog-drawer-text')
+    const foldToggle = (): HTMLElement | null => $('.backlog-drawer .backlog-fold-toggle')
+    const shownInFull = (): boolean => {
+      const el = descText()
+      const inner = el?.firstElementChild as HTMLElement | null | undefined
+      return Boolean(el && inner && el.clientHeight + 4 >= inner.offsetHeight)
+    }
+    await check(
+      'a short description shows in full, with no Show more',
+      !foldToggle() && !descText()?.hasAttribute('data-folded') && shownInFull(),
+      foldToggle()?.textContent ?? ''
+    )
+    const short = 'Nightly freshness, h2. checks'
+    const long = Array.from(
+      { length: 30 },
+      (_, i) => `Line ${i + 1} of the long description.`
+    ).join('\n\n')
+    const saveDescription = async (text: string): Promise<void> => {
+      await click(byText('.backlog-drawer button', 'Edit'))
+      setText($<HTMLTextAreaElement>('.backlog-drawer textarea[aria-label="Description"]'), text)
+      await click(
+        [...$$<HTMLElement>('.backlog-drawer .backlog-drawer-buttons button')].find(
+          (b) => b.textContent === 'Save'
+        )
+      )
+      await until(() => !$('.backlog-drawer textarea[aria-label="Description"]'))
+    }
+    await saveDescription(long)
+    await check(
+      'a long description folds, with Show more',
+      await until(
+        () =>
+          foldToggle()?.textContent === 'Show more' &&
+          Boolean(descText()?.hasAttribute('data-folded')) &&
+          !shownInFull()
+      ),
+      `toggle: ${foldToggle()?.textContent ?? 'none'}`
+    )
+    await click(descText())
+    await check(
+      'clicking the faded description opens it in full',
+      await until(() => foldToggle()?.textContent === 'Show less' && shownInFull()),
+      `toggle: ${foldToggle()?.textContent ?? 'none'}`
+    )
+    await click(foldToggle())
+    await check(
+      'Show less folds it again',
+      await until(() => foldToggle()?.textContent === 'Show more' && !shownInFull())
+    )
+    await click(foldToggle())
+    await check(
+      'Show more opens it in full',
+      await until(
+        () =>
+          foldToggle()?.textContent === 'Show less' &&
+          foldToggle()?.getAttribute('aria-expanded') === 'true' &&
+          shownInFull() &&
+          /Line 30 of the long description/.test(descText()?.textContent ?? '')
+      )
+    )
+    await saveDescription(short)
+    // Let the save land and the panel settle: a refresh still in flight
+    // replaced the comment box under the next check, and a scroll from the
+    // shrinking description closed the tooltip the one after.
+    await until(() => !foldToggle() && shownInFull(), 3000)
+    await wait(600)
+    // Reading the long description in full scrolled the panel down; put it
+    // back so the checks after this one find their controls on screen.
+    for (let el = $('.backlog-drawer') as HTMLElement | null; el; el = el.parentElement)
+      el.scrollTop = 0
+    await wait(200)
+  }
+  // Open in Jira: a plain click opens the browser (not driven here, it would
+  // open a real one); ⌘-click copies the ticket's link instead, with a toast.
+  {
+    const openBtn = $<HTMLElement>('.backlog-drawer [data-open-in-jira]')
+    await input({ type: 'mouseMove', x: 5, y: Math.round(window.innerHeight / 2) })
+    if (openBtn) {
+      const r = openBtn.getBoundingClientRect()
+      await input({
+        type: 'mouseMove',
+        x: Math.round(r.left + r.width / 2),
+        y: Math.round(r.top + r.height / 2)
+      })
+    }
+    await check(
+      'Open in Jira says ⌘-click copies the link',
+      await until(() => /⌘-click to copy the link/.test($('.cr-tooltip')?.textContent ?? ''), 1500),
+      $('.cr-tooltip')?.textContent ??
+        `no tooltip (button top ${Math.round(openBtn?.getBoundingClientRect().top ?? -1)}px)`
+    )
+    await click(openBtn, ['meta'])
+    // The clipboard refuses a window that isn't focused, which the test
+    // window sometimes isn't; either toast still proves ⌘-click took the
+    // copy path rather than opening the browser.
+    await check(
+      '⌘-click on Open in Jira copies the link',
+      await until(
+        () =>
+          $$('.toast-message').some((t) =>
+            /^(Copied|Couldn’t copy) the link$/.test(t.textContent?.trim() ?? '')
+          ),
+        3000
+      ),
+      $$('.toast-message')
+        .map((t) => t.textContent)
+        .join(' | ') || 'no toast'
+    )
+    await input({ type: 'mouseMove', x: 5, y: Math.round(window.innerHeight / 2) })
+    // The toast sits over the panel's lower buttons; wait for it to go
+    // (5s lifetime) before the comment check clicks Add note.
+    await until(() => $$('.toast-message').length === 0, 6000)
+  }
+  setText(
+    $<HTMLTextAreaElement>('.backlog-drawer textarea[aria-label="Add a comment"]'),
+    'Picked this up.'
+  )
+  await click(byText('.backlog-drawer button', 'Add note'))
+  await wait(400)
+  await check(
+    'a comment can be added',
+    $$('.backlog-comment').some((c) => /Picked this up/.test(c.textContent ?? '')),
+    `comments=${$$('.backlog-comment').length} box=${$<HTMLTextAreaElement>('.backlog-drawer textarea[aria-label="Add a comment"]')?.value ?? 'none'} btn=${Boolean(byText('.backlog-drawer button', 'Add note'))} toasts=${$$(
+      '.toast-message'
+    )
+      .map((t) => t.textContent)
+      .join('|')}`
+  )
+  // Blocked by / Blocking: shown from both ends, and editable.
+  const blockRow = (side: 'blockedBy' | 'blocking', key: string): HTMLElement | null =>
+    $(`.backlog-drawer [data-blocks="${side}"] [data-block="${key}"]`)
+  await check('a ticket shows what blocks it', Boolean(blockRow('blockedBy', 'TEAM-201')))
+  await click($('.backlog-drawer [aria-label="Add blocking"]'))
+  await until(() => Boolean($('.backlog-picker')))
+  setText($<HTMLInputElement>('.backlog-picker-input'), 'TEAM-202')
+  await wait(200)
+  await key('Enter')
+  await check(
+    'a ticket it blocks can be added',
+    await until(() => Boolean(blockRow('blocking', 'TEAM-202')))
+  )
+  await click(blockRow('blocking', 'TEAM-202')?.querySelector('.backlog-drawer-subtask'))
+  await check(
+    'the other ticket shows the same link, from its side',
+    await until(
+      () =>
+        (drawer()?.getAttribute('aria-label') ?? '').startsWith('TEAM-202') &&
+        Boolean(blockRow('blockedBy', 'PROJ-103'))
+    ),
+    drawer()?.getAttribute('aria-label')?.slice(0, 14) ?? 'closed'
+  )
+  await click(blockRow('blockedBy', 'PROJ-103')?.querySelector('[aria-label^="Remove PROJ-103"]'))
+  await check('a link can be removed', await until(() => !blockRow('blockedBy', 'PROJ-103')))
+  await click(row('TEAM-201'))
+  await check(
+    'a blocker on another board shows too, and opens in Jira',
+    await until(
+      () =>
+        blockRow('blockedBy', 'PLAT-9')
+          ?.querySelector('.backlog-drawer-subtask')
+          ?.getAttribute('title') === 'Not on this board: opens in Jira' &&
+        Boolean(blockRow('blocking', 'PROJ-103'))
+    )
+  )
+  await check(
+    'nothing in the Blocked by and Blocking rows spills out',
+    spills($('.backlog-drawer [data-blocks="blockedBy"]')).length === 0,
+    spills($('.backlog-drawer [data-blocks="blockedBy"]')).join(', ')
+  )
+
+  await key('Escape')
+  await check('Escape closes the panel', !drawer())
+
+  // The panel shows what matters, and links a session that started elsewhere.
+  await click(row('PROJ-101'))
+  await wait(500)
+  const panelText = drawer()?.textContent ?? ''
+  await check(
+    'tagged people show by name in comments',
+    await until(() => /@Jo Fixture/.test($('.backlog-drawer')?.textContent ?? ''))
+  )
+  {
+    // @-mentions: type @ and a name, pick from the list, and it's sent as a
+    // Jira mention that shows by name.
+    const box = $<HTMLTextAreaElement>('.backlog-drawer textarea[aria-label="Add a comment"]')
+    box?.focus()
+    setText(box, 'Over to you @Some')
+    await until(() => Boolean($('.backlog-mention-option')))
+    await click($('.backlog-mention-option'))
+    await check(
+      'typing @ offers people, and picking one puts their name in the comment',
+      /@Someone Else /.test(box?.value ?? ''),
+      box?.value ?? 'no box'
+    )
+    await click(byText('.backlog-drawer-buttons button', 'Add note'))
+    await check(
+      'and the comment posts it as a mention, shown by name',
+      await until(() =>
+        $$('.backlog-comment').some((c) => /Over to you @Someone Else/.test(c.textContent ?? ''))
+      ),
+      $$('.backlog-comment')
+        .map((c) => c.textContent?.slice(0, 60))
+        .join(' | ')
+    )
+
+    // People who can't be assigned tickets: the one who raised this ticket
+    // (from the ticket itself), and anyone else on the site (by search).
+    const offered = async (typed: string, name: string): Promise<boolean> => {
+      setText(box, typed)
+      const ok = await until(() =>
+        $$('.backlog-mention-option').some((o) => o.textContent?.includes(name))
+      )
+      setText(box, '')
+      return ok
+    }
+    await check(
+      '@ offers the person who raised the ticket, though they can’t be assigned it',
+      await offered('Thanks @Ra', 'Rae Reporter'),
+      $$('.backlog-mention-option')
+        .map((o) => o.textContent)
+        .join(' | ')
+    )
+    await check(
+      '@ finds anyone else on the Jira site by name',
+      await offered('cc @Sam', 'Sam Elsewhere'),
+      $$('.backlog-mention-option')
+        .map((o) => o.textContent)
+        .join(' | ')
+    )
+  }
+  await check(
+    'the panel shows reporter, labels, estimate and why it matters',
+    /reported this/.test(panelText) &&
+      /data-ask/.test(panelText) &&
+      /\d+[hdmw]\b/.test(panelText) &&
+      /Why it matters/.test(panelText),
+    panelText.slice(0, 160)
+  )
+  await setSelect(
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Link a session"]'),
+    'fixture-rec-working'
+  )
+  await wait(500)
+  await check(
+    'a session can be linked to a ticket',
+    Boolean($('.backlog-drawer [aria-label="Unlink this session"]')) &&
+      Boolean(row('PROJ-101')?.querySelector('.backlog-session-chip')),
+    row('PROJ-101')?.querySelector('.backlog-session-chip')?.textContent ?? 'no chip'
+  )
+  await click($('.backlog-drawer [aria-label="Unlink this session"]'))
+  await wait(500)
+  await check(
+    'and unlinked again',
+    !row('PROJ-101')?.querySelector('.backlog-session-chip') &&
+      !$('.backlog-drawer [aria-label="Unlink this session"]')
+  )
+  await key('Escape')
+
+  await click(row('PROJ-102'))
+  await wait(500)
+  const wiki = $('.backlog-drawer .backlog-wiki')
+  await check(
+    'and the ticket panel lists it',
+    await until(() =>
+      /fixture pull request/.test($('.backlog-drawer .backlog-work')?.textContent ?? '')
+    )
+  )
+  await check(
+    'a ticket with a pull request gets Open in GitHub beside Slack and Jira',
+    Boolean($('.backlog-drawer-header [aria-label="Open in GitHub"]'))
+  )
+  await check(
+    'Jira formatting renders: headings, bold, lists, code',
+    Boolean(wiki?.querySelector('.backlog-wiki-h')) &&
+      /model tests/.test(wiki?.querySelector('strong')?.textContent ?? '') &&
+      (wiki?.querySelectorAll('li').length ?? 0) === 2 &&
+      Boolean(wiki?.querySelector('code')) &&
+      !/h3\.|\*model/.test(wiki?.textContent ?? ''),
+    (wiki?.textContent ?? 'no description').slice(0, 80)
+  )
+  await key('Escape')
+
+  // Drops into groups: an epic becomes the parent, a cycle group sets the cycle.
+  const drag = async (
+    el: Element | null | undefined,
+    onto: () => Element | null
+  ): Promise<void> => {
+    const data = new DataTransfer()
+    el?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: data }))
+    await wait(200)
+    const target = onto()
+    target?.dispatchEvent(
+      new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data })
+    )
+    target?.dispatchEvent(
+      new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data })
+    )
+    el?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: data }))
+    await wait(500)
+  }
+  await groupBy('Epic')
+  await drag(row('TEAM-202'), () => $('.backlog-group[data-lane="TEAM-60"]'))
+  await check(
+    'dropping a ticket on an epic makes it the parent',
+    Boolean($('.backlog-group[data-lane="TEAM-60"] [data-issue="TEAM-202"]'))
+  )
+  await groupBy('Cycle')
+  // Folds are remembered between runs; an older build left the current
+  // cycle folded after planning. Start from it open.
+  await click($('[aria-label="Expand Current cycle"]'))
+  await drag(row('TEAM-202'), () => $('.backlog-group[data-lane="current"]'))
+  await check(
+    'dropping a ticket on the current cycle adds it',
+    Boolean($('.backlog-group[data-lane="current"] [data-issue="TEAM-202"]'))
+  )
+  await drag(row('TEAM-202'), () => $('.backlog-group[data-lane="backlog"]'))
+  await check(
+    'and on Backlog takes it out',
+    Boolean($('.backlog-group[data-lane="backlog"] [data-issue="TEAM-202"]'))
+  )
+  // Upcoming cycles are there to plan into, not just the active one.
+  await drag(row('TEAM-202'), () => $('.backlog-group[data-lane="sprint-2"]'))
+  await check(
+    'an upcoming cycle is its own group, and a drop adds the ticket to it',
+    Boolean($('.backlog-group[data-lane="sprint-2"] [data-issue="TEAM-202"]'))
+  )
+  await click($('[data-sidebar-cycle="sprint-2"]'))
+  await check(
+    'and the sidebar lists it, showing only its tickets',
+    rows().length === 1 && Boolean(row('TEAM-202')),
+    `${rows().length} rows`
+  )
+  await cycleFilter('All open')
+  await drag(row('TEAM-202'), () => $('.backlog-group[data-lane="backlog"]'))
+  await groupBy('Status')
+
+  // The current cycle's progress sits under the title.
+  await check(
+    'the sidebar shows the cycle and how much of it is done',
+    /honey-buzzard/.test($('[data-sidebar-cycle="current"]')?.textContent ?? '') &&
+      /\d+ of \d+ done/.test($('[data-sidebar-cycle="current"]')?.textContent ?? ''),
+    $('[data-sidebar-cycle="current"]')?.textContent ?? 'none'
+  )
+
+  // Sidebar: an epic filters, a drop onto one sets it, ⌘B hides it all.
+  await click($('[data-sidebar-epic="TEAM-60"]'))
+  await check(
+    'clicking an epic in the sidebar shows only its tickets',
+    rows().length > 0 &&
+      rows().every((r) => /Partner dashboards/.test(r.textContent ?? '')) &&
+      Boolean($('.backlog-active-chip')),
+    rows()
+      .map((r) => r.dataset.issue)
+      .join(', ')
+  )
+  await click($('[data-sidebar-epic="TEAM-60"]'))
+  {
+    const data = new DataTransfer()
+    row('TEAM-201')?.dispatchEvent(
+      new DragEvent('dragstart', { bubbles: true, dataTransfer: data })
+    )
+    const target = $('[data-sidebar-epic="TEAM-50"]')
+    target?.dispatchEvent(
+      new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data })
+    )
+    target?.dispatchEvent(
+      new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data })
+    )
+    row('TEAM-201')?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: data }))
+  }
+  await check(
+    'dropping a ticket on a sidebar epic sets its epic',
+    await until(() =>
+      /Internal reporting/.test(
+        row('TEAM-201')?.querySelector('[aria-label^="Epic:"]')?.textContent ?? ''
+      )
+    )
+  )
+  await key('b', ['meta'])
+  await check('⌘B hides the sidebar', await until(() => !$('.backlog-sidebar')))
+  await key('b', ['meta'])
+  await until(() => Boolean($('.backlog-sidebar')))
+
+  // Keyboard edits on the focused ticket: P priority, S status, A assign.
+  await click(row('PROJ-103'))
+  await key('Escape')
+  row('PROJ-103')?.focus()
+  await key('p')
+  await check('P opens the priority picker', Boolean($('.backlog-picker')))
+  await typeText('low')
+  await key('Enter')
+  await check(
+    'and picking one sets it',
+    Boolean(row('PROJ-103')?.querySelector('[aria-label="Low priority"]'))
+  )
+  row('PROJ-103')?.focus()
+  await key('s')
+  await typeText('review')
+  await key('Enter')
+  await check(
+    'S changes the status the same way',
+    Boolean($('.backlog-group[data-lane="In Review"] [data-issue="PROJ-103"]'))
+  )
+  const assignedBefore = row('PROJ-103')
+    ?.querySelector('.backlog-avatar')
+    ?.getAttribute('aria-label')
+  row('PROJ-103')?.focus()
+  await key('a')
+  await wait(300)
+  const assignedAfter = row('PROJ-103')
+    ?.querySelector('.backlog-avatar')
+    ?.getAttribute('aria-label')
+  await check(
+    'A assigns it to you, or takes you off it',
+    assignedBefore !== assignedAfter,
+    `${assignedBefore} → ${assignedAfter}`
+  )
+
+  // Several at once: the hover check picks (as on Sessions), the bar changes
+  // them all. ⌘-click opens a ticket instead, as it does on Sessions.
+  const pick = (k: string): Promise<boolean> => click(row(k)?.querySelector('.backlog-row-pick'))
+  await click(row('PROJ-103'), ['meta'])
+  await check(
+    '⌘-click opens a ticket rather than picking it',
+    ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('PROJ-103') &&
+      !$('.backlog-bulk')
+  )
+  await key('Escape')
+  await pick('TEAM-202')
+  await pick('PROJ-101')
+  await check(
+    'the check picks tickets, and a bar offers to change them together',
+    /2 selected/.test($('.backlog-bulk')?.textContent ?? '')
+  )
+  await check(
+    'nothing in the selection bar spills out of its button',
+    spills($('.backlog-bulk')).length === 0,
+    spills($('.backlog-bulk')).join(', ')
+  )
+  await click(row('PROJ-102'))
+  await check(
+    'once picking, a plain click adds to the pick',
+    /3 selected/.test($('.backlog-bulk')?.textContent ?? '') && !$('.backlog-drawer'),
+    $('.backlog-bulk')?.textContent ?? 'no bar'
+  )
+  await click(byText('.backlog-bulk button', 'Epic'))
+  await click(byText('.backlog-picker .cr-popover-item', 'Partner dashboards'))
+  await check(
+    'the bar sets an epic on all of them at once',
+    await until(() =>
+      ['TEAM-202', 'PROJ-102'].every((k) =>
+        /Partner dashboards/.test(row(k)?.querySelector('.backlog-pill--accent')?.textContent ?? '')
+      )
+    )
+  )
+  await click(byText('.backlog-bulk button', 'Priority'))
+  await click(byText('.backlog-picker .cr-popover-item', 'Lowest'))
+  await wait(400)
+  await check(
+    'a change from the bar lands on every picked ticket',
+    Boolean(row('TEAM-202')?.querySelector('[aria-label="Lowest priority"]')) &&
+      Boolean(row('PROJ-101')?.querySelector('[aria-label="Lowest priority"]'))
+  )
+  // The bar stays clear of an open panel.
+  await key('Escape')
+  await click(row('PROJ-103'))
+  await until(() => Boolean($('.backlog-drawer')))
+  await pick('TEAM-201')
+  {
+    const bar = $('.backlog-bulk')?.getBoundingClientRect()
+    const panel = $('.backlog-drawer')?.getBoundingClientRect()
+    await check(
+      'with the panel open, the bar sits over the list, not under the panel',
+      Boolean(bar && panel && bar.right <= panel.left),
+      `bar right ${Math.round(bar?.right ?? 0)}, panel left ${Math.round(panel?.left ?? 0)}`
+    )
+    await check(
+      'with the panel open, nothing in the bar spills out of its button',
+      spills($('.backlog-bulk')).length === 0,
+      spills($('.backlog-bulk')).join(', ')
+    )
+  }
+  // Escape closes the panel first, then clears the pick.
+  await key('Escape')
+  await key('Escape')
+  await check('Escape clears the selection', !$('.backlog-bulk'))
+
+  // Saved views
+  await click(byText('.backlog-filter', 'Mine'))
+  const mineCount = rows().length
+  await click(byText('.backlog-filter', 'Save view'))
+  await typeText('My tickets')
+  await key('Enter')
+  await check(
+    'the current filters can be saved as a view',
+    Boolean($('.backlog-view-tab--selected')) &&
+      /My tickets/.test($('.backlog-view-tab--selected')?.textContent ?? '')
+  )
+  await click(byText('.backlog-filter', 'Everyone'))
+  await click(byText('.backlog-view-tab .backlog-filter', 'My tickets'))
+  await check(
+    'and applied again in one click',
+    rows().length === mineCount && Boolean($('.backlog-view-tab--selected')),
+    `${rows().length} vs ${mineCount}`
+  )
+  // Filters change the view you're in, in place: adding someone on Mine
+  // gives you and them, not the empty overlap of two filters.
+  {
+    const openFilter = async (): Promise<void> => {
+      await click($('.backlog-menu-button[aria-label^="Filter"]'))
+      await until(() => Boolean($('.backlog-filter-menu')))
+    }
+    // By now an earlier check has assigned "Someone Else"'s ticket to you,
+    // so Unassigned is the other choice the list is sure to have.
+    const unassigned = (): number =>
+      rows().filter((r) => r.querySelector('.backlog-avatar--none')).length
+    await openFilter()
+    await click(
+      $$<HTMLElement>('.backlog-filter-menu .backlog-filter-people button').find((b) =>
+        (b.textContent ?? '').includes('Unassigned')
+      )
+    )
+    await key('Escape')
+    await check(
+      'adding to the Assignee filter on Mine shows yours and theirs',
+      // Mine plus Unassigned can be everyone on the fixture board, which is
+      // then the Everyone filter: what matters is that theirs show too.
+      rows().length > mineCount && unassigned() > 0,
+      `${rows().length} rows (mine ${mineCount}), ${unassigned()} unassigned`
+    )
+    await check(
+      'and the saved view stays selected, marked as changed, with Save and Reset',
+      Boolean($('.backlog-filter-tabs .backlog-view-tab--selected .backlog-view-tab-changed')) &&
+        Boolean(byText('.backlog-filter-tabs .backlog-view-tab-action', 'Save')) &&
+        Boolean(byText('.backlog-filter-tabs .backlog-view-tab-action', 'Reset')),
+      $('.backlog-view-tab--selected')?.textContent ?? 'no view selected'
+    )
+    await click(byText('.backlog-filter-tabs .backlog-view-tab-action', 'Reset'))
+    await check(
+      'Reset puts the view back as saved',
+      rows().length === mineCount && !$('.backlog-view-tab-changed'),
+      `${rows().length} vs ${mineCount}`
+    )
+    await click(byText('.backlog-filter', 'Everyone'))
+    await openFilter()
+    const cycleItem = (label: string): HTMLElement | undefined =>
+      $$<HTMLElement>('.backlog-filter-menu .backlog-menu-item').find((b) =>
+        (b.textContent ?? '').startsWith(label)
+      )
+    await click(cycleItem('Current cycle'))
+    await click(cycleItem('kestrel'))
+    await key('Escape')
+    const chip = $$('.backlog-active-chip').find((c) => /Cycle:/.test(c.textContent ?? ''))
+    await check(
+      'two cycles can be shown together',
+      /honey-buzzard \+ kestrel/.test(chip?.textContent ?? ''),
+      chip?.textContent ?? 'no cycle chip'
+    )
+    chip?.querySelector<HTMLButtonElement>('button')?.click()
+    await wait(300)
+  }
+  $<HTMLButtonElement>('[aria-label="Delete view My tickets"]')?.click()
+  await wait(300)
+  await check('a view can be deleted', !$('.backlog-view-tab'))
+  await click(byText('.backlog-filter', 'Everyone'))
+
+  // Panel: estimate, labels, and the pull request offer
+  await click(row('PROJ-101'))
+  await wait(500)
+  await until(() => Boolean($('.backlog-drawer [aria-label^="Estimate"]')))
+  await click($('.backlog-drawer [aria-label^="Estimate"]'))
+  await until(() => Boolean($('.backlog-drawer input[aria-label="Estimate"]')))
+  setText($<HTMLInputElement>('.backlog-drawer input[aria-label="Estimate"]'), '1d')
+  $<HTMLInputElement>('.backlog-drawer input[aria-label="Estimate"]')?.focus()
+  await key('Enter')
+  await check(
+    'the estimate can be edited',
+    await until(() =>
+      [...(row('PROJ-101')?.querySelectorAll('.backlog-pill') ?? [])].some(
+        (p) => p.textContent === '1d'
+      )
+    ),
+    `panel ${$('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 8) ?? 'closed'}, input ${Boolean($('.backlog-drawer input[aria-label="Estimate"]'))}, row pills ${[...(row('PROJ-101')?.querySelectorAll('.backlog-pill') ?? [])].map((p) => p.textContent).join('|')}`
+  )
+  await click($('.backlog-drawer input[aria-label="Add a label"]'))
+  await typeText('urgent')
+  await key('Enter')
+  await wait(300)
+  await check(
+    'a label can be added',
+    Boolean($('.backlog-drawer [aria-label="Remove label urgent"]'))
+  )
+  await click($('.backlog-drawer [aria-label="Remove label urgent"]'))
+  await wait(300)
+  await check('and removed', !$('.backlog-drawer [aria-label="Remove label urgent"]'))
+
+  await check(
+    'the panel offers the next statuses in the workflow, one click each',
+    $$('.backlog-drawer .backlog-next-status-option').length > 0,
+    $('.backlog-drawer .backlog-next-status')?.textContent ?? 'none'
+  )
+
+  // Assignee: anyone, not only you.
+  await setSelect(
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Assignee"]'),
+    'fixture-someone'
+  )
+  await check(
+    'a ticket can be assigned to someone else',
+    await until(
+      () =>
+        $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Assignee"]')?.dataset.value ===
+        'fixture-someone'
+    ),
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Assignee"]')?.dataset.value ??
+      'no select'
+  )
+  await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Assignee"]'), 'me')
+  await until(
+    () =>
+      $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Assignee"]')?.dataset.value === 'me'
+  )
+
+  // Moving an epic's last ticket out leaves the sidebar where it was.
+  {
+    const epicOrder = (): string =>
+      $$<HTMLElement>('[data-sidebar-epic]')
+        .map((e) => e.dataset.sidebarEpic)
+        .join(',')
+    const before = epicOrder()
+    const parentSelect = $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Parent"]')
+    const was = parentSelect?.dataset.value ?? ''
+    const other = (await selectValues(parentSelect)).find((v) => v && v !== was)
+    await setSelect(parentSelect, other ?? '')
+    await until(
+      () =>
+        $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Parent"]')?.dataset.value === other
+    )
+    await wait(300)
+    await check(
+      "moving an epic's last ticket out doesn't reshuffle the sidebar",
+      Boolean(before) && epicOrder() === before,
+      `${before} -> ${epicOrder()}`
+    )
+    await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Parent"]'), was)
+    await until(
+      () => $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Parent"]')?.dataset.value === was
+    )
+  }
+  await setSelect(
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Link a session"]'),
+    'fixture-rec-ready'
+  )
+  await wait(800)
+  await check(
+    'a linked session with an open PR offers to move the ticket on',
+    /#42/.test($('.backlog-drawer .backlog-ticket-pr')?.textContent ?? ''),
+    $('.backlog-drawer .backlog-work')?.textContent ?? 'no offer'
+  )
+  await check(
+    'and the row swaps the branch for the pull request',
+    await until(() => Boolean(row('PROJ-101')?.querySelector('[aria-label^="Pull request #42"]')))
+  )
+  // Visibility, not display: the hover tools keep their room, so a real click
+  // lands on them whether or not the pointer got there first.
+  await click($('.backlog-drawer .backlog-ticket-pr [aria-label="Add note with link"]'))
+  await wait(400)
+  await check(
+    'Add note with link puts the PR on the ticket',
+    $$('.backlog-comment').some((c) => /#42/.test(c.textContent ?? ''))
+  )
+  await click(byText('.backlog-drawer .backlog-next-status-option', 'In Review'))
+  await wait(400)
+  await check(
+    'Move to In Review moves it',
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value === 'In Review'
+  )
+  await click($('.backlog-drawer [aria-label="Unlink this session"]'))
+  await key('Escape')
+
+  // Columns: your own, from the ⋯ menu; Jira's board stays the default.
+  await click($('.backlog-menu-button[aria-label^="Display"]'))
+  await click(byText('.backlog-display-menu .cr-popover-item', 'Columns'))
+  await wait(300)
+  setText($<HTMLInputElement>('input[aria-label="Column 1 name"]'), 'Not started')
+  {
+    const data = new DataTransfer()
+    $('[data-status-chip="In Review"]')?.dispatchEvent(
+      new DragEvent('dragstart', { bubbles: true, dataTransfer: data })
+    )
+    const hiddenZone = $('[data-columns-target="hidden"]')
+    hiddenZone?.dispatchEvent(
+      new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data })
+    )
+    hiddenZone?.dispatchEvent(
+      new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data })
+    )
+    await wait(200)
+  }
+  await check(
+    'a status can be dragged into Hidden',
+    Boolean($('[data-columns-target="hidden"] [data-status-chip="In Review"]'))
+  )
+  await click(byText('.cr-modal button', 'Save columns'))
+  await wait(400)
+  await click($('[aria-label="Board view"]'))
+  const boardNames = $$('.backlog-column').map((c) => c.dataset.status ?? '')
+  await check(
+    'saved columns rename and hide columns, and that status’s tickets',
+    boardNames.includes('Not started') &&
+      !boardNames.includes('In Review') &&
+      Boolean($('.backlog-hidden-note')),
+    boardNames.join(' / ')
+  )
+  await click($('[aria-label="List view"]'))
+  await click($('.backlog-hidden-note button'))
+  await wait(300)
+  await click(byText('.cr-modal button', 'Reset to Jira board'))
+  await wait(400)
+  await check(
+    "and one click goes back to the Jira board's columns",
+    $$('.backlog-group').some((g) => g.dataset.lane === 'In Review') && !$('.backlog-hidden-note')
+  )
+
+  // New ticket (C)
+  await click($('.backlog-title'))
+  await key('c')
+  await check('C opens New ticket', Boolean($('.cr-modal .backlog-create')))
+  await wait(300)
+  await typeText('Write the refunds runbook')
+  await click(byText('.cr-modal button', 'Create ticket'))
+  await wait(600)
+  const created = rows().find((r) => /Write the refunds runbook/.test(r.textContent ?? ''))
+  await check(
+    'creating a ticket adds it and opens it',
+    Boolean(created) &&
+      /Write the refunds runbook/.test($('.backlog-drawer')?.getAttribute('aria-label') ?? ''),
+    created?.dataset.issue ?? 'not listed'
+  )
+  await key('Escape')
+
+  // Board: columns, and a drag across them
+  await click($('[aria-label="Board view"]'))
+  await wait(500)
+  const columns = $$('.backlog-column')
+  const columnNames = columns.map((c) => c.dataset.status ?? '')
+  await check(
+    "the board uses the Jira board's own columns",
+    columns.length === 5 && columnNames.includes('Backlog/Not started'),
+    columnNames.join(' / ')
+  )
+  const card = $('.backlog-card[data-issue="TEAM-202"]')
+  const target = $('.backlog-column[data-status="In Progress"]')
+  const dt = new DataTransfer()
+  card?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }))
+  target?.dispatchEvent(
+    new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })
+  )
+  target?.dispatchEvent(
+    new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })
+  )
+  await wait(500)
+  await check(
+    'dragging a card to another column moves the ticket there',
+    Boolean($('.backlog-column[data-status="In Progress"] .backlog-card[data-issue="TEAM-202"]'))
+  )
+  await check(
+    'board cards show the session a ticket is in',
+    Boolean($('.backlog-card[data-issue="PROJ-102"] .backlog-session-chip'))
+  )
+  await groupBy('Epic')
+  await click($('[aria-label="Collapse Internal reporting"]'))
+  await check(
+    'board swimlanes collapse too',
+    Boolean($('.backlog-lane[data-lane="TEAM-50"]')) &&
+      !$('.backlog-lane[data-lane="TEAM-50"] .backlog-card')
+  )
+  await click($('[aria-label="Expand Internal reporting"]'))
+  await groupBy('Status')
+  await click($('.backlog-menu-button[aria-label^="Filter"]'))
+  await click(byText('.backlog-filter-menu button', 'Hide done'))
+  await key('Escape')
+  await check(
+    'on the board, a filtered-out column stays as a drop target',
+    Boolean($('.backlog-column--filtered[data-status="Done/Not doing"]'))
+  )
+  {
+    // A title with a long unbroken URL breaks inside its card; the column
+    // keeps its width, in line with its header and every other lane.
+    const card = $<HTMLElement>('.backlog-card')
+    const key0 = card?.dataset.issue ?? ''
+    const before = card?.querySelector('.backlog-card-summary')?.textContent ?? ''
+    await click(card)
+    await until(() => Boolean($('.backlog-drawer')))
+    await click($('.backlog-drawer-summary'))
+    setText(
+      $<HTMLInputElement>('.backlog-drawer-summary-form input'),
+      'https://metabase.example.com/dashboard/1021-weekly-metrics-with-a-very-long-unbroken-path-segment'
+    )
+    $('.backlog-drawer-summary-form')?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    )
+    await wait(500)
+    await key('Escape')
+    await until(() => !$('.backlog-drawer'))
+    // Every column in a lane is the same width; the bug made the one
+    // holding the long title wider than its neighbours.
+    const widths = $$<HTMLElement>('.backlog-lane .backlog-board').map((lane) =>
+      [...lane.children].map((col) => Math.round(col.getBoundingClientRect().width))
+    )
+    const uneven = widths.filter((w) => w.length > 1 && Math.max(...w) - Math.min(...w) > 2)
+    await check(
+      'a long unbroken title wraps in its card; every column in a lane stays the same width',
+      widths.length > 0 && uneven.length === 0,
+      widths.map((w) => w.join('/')).join(' | ')
+    )
+    // Put the title back.
+    await click($(`.backlog-card[data-issue="${key0}"]`))
+    await until(() => Boolean($('.backlog-drawer')))
+    await click($('.backlog-drawer-summary'))
+    setText($<HTMLInputElement>('.backlog-drawer-summary-form input'), before)
+    $('.backlog-drawer-summary-form')?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true })
+    )
+    await wait(400)
+    await key('Escape')
+    await until(() => !$('.backlog-drawer'))
+
+    // A card's pick check sits in its bottom-right corner: it takes no room
+    // in the top row (so priority starts at the edge) and covers nothing.
+    const hit = (x: DOMRect, y: DOMRect): boolean =>
+      x.left < y.right && y.left < x.right && x.top < y.bottom && y.top < x.bottom
+    const clashes = $$<HTMLElement>('.backlog-card').filter((card) => {
+      const pick = card.querySelector('.backlog-card-pick')
+      if (!pick || pick.closest('.backlog-card-top')) return true
+      const box = pick.getBoundingClientRect()
+      // The summary's box spans the card; what must stay clear is its text,
+      // line by line.
+      const summary = card.querySelector('.backlog-card-summary')
+      const lines = summary
+        ? (() => {
+            const range = document.createRange()
+            range.selectNodeContents(summary)
+            return [...range.getClientRects()]
+          })()
+        : []
+      return (
+        [...card.querySelectorAll('.backlog-card-top > *, .backlog-pill')].some(
+          (el) => el !== pick && hit(box, el.getBoundingClientRect())
+        ) || lines.some((line) => hit(box, line))
+      )
+    })
+    await check(
+      "a board card's pick check takes no room in its top row and covers nothing",
+      $$('.backlog-card .backlog-card-pick').length > 0 && clashes.length === 0,
+      clashes.map((c) => c.dataset.issue).join(', ') ||
+        `${$$('.backlog-card .backlog-card-pick').length} checks`
+    )
+  }
+  await click($('.backlog-menu-button[aria-label^="Filter"]'))
+  await click(byText('.backlog-filter-menu button', 'Clear filters'))
+  await key('Escape')
+  await click($('[aria-label="List view"]'))
+  await api.invoke('sessions:rename', 'fixture-rec-waiting', 'Waiting session')
+  await ctx.refreshSessions()
+
+  // ---- Dropping a fresh screenshot ----------------------------------------
+  // macOS hands over a real file in a temp folder, then deletes it moments
+  // later. The drop must keep a copy; referencing the original is the bug
+  // that kept coming back.
+  {
+    type Kept = { ok: boolean; path?: string; error?: string }
+    const fresh = await api.invoke<string>('dev:fresh-screenshot')
+    const [kept] = await api.invoke<Kept[]>('attachments:addDropped', [fresh])
+    await api.invoke('dev:delete-fresh-screenshot', fresh)
+    const [still] = kept?.path
+      ? await api.invoke<Kept[]>('attachments:addPaths', [kept.path])
+      : [{ ok: false, error: 'no copy' }]
+    await check(
+      'a dropped fresh screenshot is copied before macOS deletes it',
+      Boolean(kept?.ok && kept.path && kept.path !== fresh && still?.ok),
+      `${kept?.path ?? kept?.error ?? 'nothing'} → ${still?.ok ? 'still there' : (still?.error ?? '?')}`
+    )
+    const [saved] = await api.invoke<Kept[]>('attachments:addDropped', ['/etc/hosts'])
+    await check(
+      'a file saved elsewhere is still referenced where it lives',
+      saved?.path === '/private/etc/hosts' || saved?.path === '/etc/hosts',
+      saved?.path ?? saved?.error ?? ''
+    )
+  }
+
+  // ---- Home ---------------------------------------------------------------
+  await ctx.goTo('home')
+  await wait(600)
+  const cards = $$('.cr-session-card:not(.cr-session-card--new)')
+  await check('Home shows recent session cards', cards.length > 0, `${cards.length}`)
+  const titleStyle = cards[0]?.querySelector('.cr-session-card-title')
+  await check(
+    'card titles wrap to two lines rather than cutting off at one',
+    Boolean(titleStyle) && getComputedStyle(titleStyle!).webkitLineClamp === '2'
+  )
+  const recent = $('.home-recent')
+  const homeComposer = $('.home-composer-card')
+  await check(
+    'recent sessions are wider than the composer',
+    Boolean(recent && homeComposer) &&
+      recent!.getBoundingClientRect().width > homeComposer!.getBoundingClientRect().width,
+    `${Math.round(recent?.getBoundingClientRect().width ?? 0)} vs ${Math.round(homeComposer?.getBoundingClientRect().width ?? 0)}`
+  )
+  await check(
+    'Home filters are there (Unread, Your turn)',
+    Boolean(
+      byText('.home-recent-filters .cr-pill', 'Unread') &&
+      byText('.home-recent-filters .cr-pill', 'Your turn')
+    )
+  )
+
+  // Starting a session on an existing branch
+  {
+    type Project = { id: string; name: string }
+    type Branch = { name: string; where: string }
+    const projects = await api.invoke<Project[]>('projects:list')
+    const fixtureProject = projects.find((p) => p.id !== 'general')
+    const listed = fixtureProject
+      ? await api.invoke<Branch[]>('git:checkoutBranches', fixtureProject.id)
+      : []
+    await check(
+      "a project's branches on GitHub are listed for a new session",
+      listed.some((b) => b.name === 'feature/remote-only' && b.where === 'remote'),
+      `${listed.length} branches: ${listed
+        .slice(0, 4)
+        .map((b) => b.name)
+        .join(', ')}`
+    )
+    type Resolved = { ok: boolean; branch?: string; error?: string }
+    if (fixtureProject) {
+      const good = await api.invoke<Resolved>(
+        'git:resolveBranch',
+        fixtureProject.id,
+        'feature/remote-only'
+      )
+      const bad = await api.invoke<Resolved>(
+        'git:resolveBranch',
+        fixtureProject.id,
+        'no-such-branch'
+      )
+      await check(
+        'a branch name is checked against GitHub: found, or said to be missing',
+        good.ok && !bad.ok && /no branch/.test(bad.error ?? ''),
+        `${good.ok ? good.branch : good.error} / ${bad.error ?? 'accepted'}`
+      )
+    }
+    if (fixtureProject && !/fixture/.test($('.home-project-chip')?.textContent ?? '')) {
+      await click($('.home-add-project-pill'))
+      await until(() => Boolean(byText('.home-composer-popover-item', fixtureProject.name)))
+      await click(byText('.home-composer-popover-item', fixtureProject.name))
+    }
+    await until(() => Boolean(byText('.home-composer .cr-segmented button', 'On a branch')))
+    const branchOption = byText('.home-composer .cr-segmented button', 'On a branch')
+    const wasWorktree = branchOption?.getAttribute('aria-selected') !== 'true'
+    if (wasWorktree) await click(branchOption)
+    const branchButton = (): HTMLElement | null => $('.home-branch-button')
+    await check(
+      'On a branch defaults to the repo’s main branch',
+      await until(() => /main/.test(branchButton()?.textContent ?? '')),
+      branchButton()?.textContent ?? 'no branch button'
+    )
+    await click(branchButton())
+    await until(() => $$('.backlog-picker [role="option"]').length > 0, 8000)
+    {
+      const names = $$('.backlog-picker [role="option"]').map((o) => o.textContent ?? '')
+      const list = $('.backlog-picker-list')
+      await check(
+        'the branch list shows open branches, not merged ones, and scrolls',
+        names.some((n) => n.includes('feature/remote-only')) &&
+          !names.some((n) => n.includes('feature/merged-old')) &&
+          /more/.test($('.backlog-picker')?.textContent ?? '') &&
+          Boolean(list && getComputedStyle(list).overflowY === 'auto'),
+        names.join(', ')
+      )
+    }
+    await typeText('merged')
+    await check(
+      'a merged branch still turns up in a search',
+      await until(() => Boolean(byText('.backlog-picker [role="option"]', 'feature/merged-old')))
+    )
+    setText($<HTMLInputElement>('.backlog-picker input'), '')
+    await typeText('no-such-branch')
+    await key('Enter')
+    await check(
+      'a pasted branch that isn’t on GitHub is flagged, and says so',
+      (await until(() => Boolean($('.home-branch-button--invalid')))) &&
+        /no branch/.test($('.home-composer-error')?.textContent ?? ''),
+      $('.home-composer-error')?.textContent ?? 'no message'
+    )
+    await click(branchButton())
+    await until(
+      () => Boolean(byText('.backlog-picker [role="option"]', 'feature/remote-only')),
+      8000
+    )
+    await click(byText('.backlog-picker [role="option"]', 'feature/remote-only'))
+    await check(
+      'a branch that is on GitHub is accepted, and the button says where it’ll start',
+      (await until(() => Boolean($('.home-branch-button--ok')))) &&
+        /Start on feature\/remote-only/.test($('.home-composer')?.textContent ?? ''),
+      branchButton()?.className ?? ''
+    )
+    if (wasWorktree) await click(byText('.home-composer .cr-segmented button', 'New worktree'))
+  }
+
+  // ---- Sessions list ------------------------------------------------------
+  await ctx.goTo('sessions')
+  await wait(600)
+  const sessionRow = $('.sessions-row')
+  await check(
+    'session rows lead with the title; the status chip is on line two',
+    Boolean(sessionRow?.querySelector('.sessions-row-line1 .sessions-row-title')) &&
+      Boolean(sessionRow?.querySelector('.sessions-row-line2 .sessions-row-badge')) &&
+      !sessionRow?.querySelector('.sessions-row-line1 .sessions-row-badge')
+  )
+  // Ticket pills on session rows open the ticket panel, and J steps it to
+  // the next session's ticket.
+  {
+    await api.invoke('jira:link', 'fixture-rec-working', 'PROJ-101')
+    await api.invoke('jira:link', 'fixture-rec-ready', 'PROJ-102')
+    await ctx.goTo('home')
+    await wait(300)
+    await ctx.goTo('sessions')
+    await until(() => $$('.sessions-ticket-pill').length >= 2, 4000)
+    const pills = $$('.sessions-ticket-pill')
+    const firstPill = pills[0]?.textContent ?? ''
+    const otherPill = pills.find((p) => p.textContent !== firstPill)?.textContent ?? ''
+    await click(pills[0] ?? null)
+    const opened = await until(() =>
+      ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith(firstPill)
+    )
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    const firstIndex = pills.findIndex((p) => p.textContent === firstPill)
+    const otherIndex = pills.findIndex((p) => p.textContent === otherPill)
+    await key(otherIndex > firstIndex ? 'j' : 'k')
+    const stepped = await until(() =>
+      ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith(otherPill)
+    )
+    await check(
+      "a session row's ticket pill opens the ticket, and J/K steps to the next session's ticket",
+      pills.length >= 2 && opened && stepped,
+      `${pills.length} pills (${firstPill}, ${otherPill}); opened=${opened}; panel ${$('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 10)}`
+    )
+    await key('Escape')
+    await api.invoke('jira:link', 'fixture-rec-working', null)
+    await api.invoke('jira:link', 'fixture-rec-ready', null)
+    await ctx.goTo('sessions')
+    await wait(300)
+  }
+
+  await check(
+    'the list has its status tabs and sort menu',
+    Boolean($('.sessions-filter-tab') && $('.sessions-sort-button'))
+  )
+
+  // Filters: several statuses at once, search, and the switches.
+  {
+    const rowStatuses = (): string[] =>
+      $$('.sessions-row').map(
+        (r) =>
+          r.querySelector<HTMLElement>('.sessions-row-badge [data-status]')?.dataset.status ?? '?'
+      )
+    const tab = (id: string): HTMLElement | null => $(`[data-status-filter="${id}"]`)
+    // The switches live in the Filter menu: open it, flip one, close it.
+    const toggleFilter = async (id: string): Promise<void> => {
+      await click($('[data-sessions-filter-button]'))
+      await until(() => Boolean($(`[data-filter-option="${id}"]`)), 1500)
+      await click($(`[data-filter-option="${id}"]`))
+      await key('Escape')
+      await wait(150)
+    }
+    const clear = async (): Promise<void> => {
+      const b = byText('.sessions-filter-clear', 'Clear filters')
+      if (b) await click(b)
+      await wait(200)
+    }
+    await clear()
+    const before = rowStatuses().length
+
+    await click(tab('working'))
+    await click(tab('errored'))
+    await wait(200)
+    const picked = rowStatuses()
+    await check(
+      'two status tabs on at once show both statuses and nothing else',
+      picked.length > 1 &&
+        picked.length < before &&
+        picked.every((st) => st === 'working' || st === 'errored') &&
+        picked.includes('working') &&
+        picked.includes('errored'),
+      picked.join(',')
+    )
+    await clear()
+
+    await key('/')
+    const search = $<HTMLInputElement>('.sessions-search input')
+    const focused = document.activeElement === search
+    await typeText('waiting')
+    const titles = $$('.sessions-row .sessions-row-title').map((t) => t.textContent ?? '')
+    await check(
+      '/ focuses Sessions search, and typing narrows the list to matching titles',
+      focused &&
+        titles.length >= 1 &&
+        titles.length < before &&
+        titles.every((t) => /waiting/i.test(t)),
+      `focused=${focused}; ${titles.join(' | ')}`
+    )
+    await key('Escape')
+    await wait(200)
+    await check(
+      'Esc in Sessions search clears it',
+      search?.value === '' && rowStatuses().length === before,
+      `value "${search?.value}", ${rowStatuses().length} of ${before} rows`
+    )
+
+    const hadStopped = rowStatuses().includes('stopped')
+    await toggleFilter('finished')
+    await wait(200)
+    const unfinished = rowStatuses()
+    await check(
+      'Hide finished hides done, stopped, missing and errored sessions',
+      hadStopped &&
+        unfinished.length > 0 &&
+        !unfinished.some(
+          (st) => st === 'done' || st === 'stopped' || st === 'missing' || st === 'errored'
+        ),
+      unfinished.join(',')
+    )
+    {
+      // With a filter on, projects open so matches show, but the arrow still folds one.
+      const arrow = $('.sessions-project .sessions-project-collapse')
+      const project = arrow?.closest('.sessions-project') ?? null
+      const bodyShown = (): boolean =>
+        Boolean(project?.querySelector('.sessions-project-rows, .sessions-card-grid'))
+      const openBefore = bodyShown()
+      await click(arrow)
+      await wait(200)
+      const folded = !bodyShown()
+      await click(arrow)
+      await wait(200)
+      await check(
+        'with a filter on, the project arrow still folds and unfolds it',
+        openBefore && folded && bodyShown(),
+        `open before ${openBefore}, folded ${folded}, open after ${bodyShown()}`
+      )
+    }
+    await check(
+      'the filter switches sit in one Filter menu, which counts what is on',
+      !$('.sessions-unread-toggle') &&
+        $('[data-sessions-filter-button] .backlog-menu-badge')?.textContent === '1'
+    )
+    await clear()
+    await check(
+      'Clear filters turns every filter off',
+      rowStatuses().length === before &&
+        !$('.sessions-filter-clear') &&
+        !$('[data-sessions-filter-button] .backlog-menu-badge'),
+      `${rowStatuses().length} of ${before}`
+    )
+  }
+
+  // ---- Settings -----------------------------------------------------------
+  await ctx.goTo('settings')
+  await wait(600)
+  await check(
+    'Settings → Hooks explains itself in plain words',
+    Boolean($('.settings-hooks-state')?.textContent?.trim())
+  )
+  await check(
+    'the raw hook config is behind a toggle, closed by default',
+    Boolean($('.settings-hooks-details')) &&
+      !($('.settings-hooks-details') as HTMLDetailsElement | null)?.open
+  )
+
+  // ---- Dev containers -----------------------------------------------------
+  // The fixture project has a devcontainer.json and the fixture's settings
+  // point at a stand-in CLI (scripts/fixtures/build-fixture.ts), so the option
+  // can work there. General (the home folder) has no devcontainer.json.
+  {
+    const byDefault = (): HTMLInputElement | null =>
+      $<HTMLInputElement>('[aria-label="Start new sessions in a dev container by default"]')
+    const devButton = (): HTMLElement | null => $('[data-dev-container-start]')
+    const original = await api.invoke<{
+      devContainerByDefault: boolean
+      devContainerRunCommand: string
+    }>('settings:get')
+    await check(
+      'Settings has "Start new sessions in a dev container by default", off to begin with',
+      Boolean(byDefault()) && byDefault()!.checked === false,
+      byDefault() ? `checked ${byDefault()!.checked}` : 'no setting'
+    )
+    await check(
+      'Settings shows the dev container commands, which you can change',
+      Boolean($('[data-settings-dev-containers] input[aria-label="Run the agent in it"]')) &&
+        /\{agent\}/.test(
+          $<HTMLInputElement>(
+            '[data-settings-dev-containers] input[aria-label="Run the agent in it"]'
+          )?.value ?? ''
+        )
+    )
+
+    await check(
+      'Settings has the address a container reaches this Mac on, host.docker.internal by default',
+      $<HTMLInputElement>(
+        '[data-settings-dev-containers] input[aria-label="Address of this Mac from a container"]'
+      )?.value === 'host.docker.internal'
+    )
+    await check(
+      'Settings → Hooks says hooks are optional and offers the dev container hooks to copy',
+      /optional/.test($('[data-settings-container-hooks]')?.textContent ?? '') &&
+        Boolean(byText('.settings-actions button', 'Copy dev container hooks'))
+    )
+
+    // Home's composer starts on General each time Home opens, so the project
+    // is picked again after every trip to Settings.
+    const pickFixtureProject = async (): Promise<void> => {
+      if (/fixture/.test($('.home-project-chip')?.textContent ?? '')) return
+      if ($('.home-project-chip')) await click($('[aria-label="Clear project"]'))
+      await click($('.home-add-project-pill'))
+      await until(() => Boolean(byText('.home-composer-popover-item', 'fixture-project')))
+      await click(byText('.home-composer-popover-item', 'fixture-project'))
+    }
+    await ctx.goTo('home')
+    await wait(400)
+    const hadProject = Boolean($('.home-project-chip'))
+    await pickFixtureProject()
+    await check(
+      'the composer offers "Start in dev container" in a project with a devcontainer.json',
+      await until(() => devButton()?.textContent?.trim() === 'Start in dev container', 3000),
+      devButton()?.textContent ?? 'no button'
+    )
+    await check(
+      'the dev container button sits beside Start and fits its label',
+      Boolean(devButton()?.closest('.home-composer-start')) &&
+        spills($('.home-composer-start')).length === 0,
+      spills($('.home-composer-start')).join(', ')
+    )
+
+    await ctx.goTo('settings')
+    await wait(400)
+    await click(byDefault())
+    await check(
+      'the dev container default turns on from Settings',
+      await until(() => byDefault()?.checked === true)
+    )
+    await ctx.goTo('home')
+    await wait(400)
+    await pickFixtureProject()
+    await check(
+      'with the default on, the second button starts without the dev container',
+      await until(() => devButton()?.textContent?.trim() === 'Start without dev container', 3000),
+      devButton()?.textContent ?? 'no button'
+    )
+    await api.invoke('settings:set', { devContainerByDefault: false })
+
+    await api.invoke('settings:set', {
+      devContainerRunCommand: 'no-such-devcontainer-cli exec --workspace-folder {folder} {agent}'
+    })
+    await check(
+      'with no dev container CLI found, the button is gone',
+      await until(() => !devButton(), 3000),
+      devButton()?.textContent ?? ''
+    )
+    await api.invoke('settings:set', { devContainerRunCommand: original.devContainerRunCommand })
+    await until(() => Boolean(devButton()), 3000)
+
+    await click($('[aria-label="Clear project"]'))
+    await check(
+      'with no devcontainer.json (General), the button is gone',
+      await until(
+        () => !devButton() && /General/.test($('.home-composer')?.textContent ?? ''),
+        3000
+      ),
+      devButton()?.textContent ?? ''
+    )
+    if (hadProject) {
+      await click($('.home-add-project-pill'))
+      await until(() => Boolean(byText('.home-composer-popover-item', 'fixture-project')))
+      await click(byText('.home-composer-popover-item', 'fixture-project'))
+    }
+    await api.invoke('settings:set', { devContainerByDefault: original.devContainerByDefault })
+  }
+
+  // ---- Switching screens with a session open ------------------------------
+  // Each switch mounts a fresh terminal; its GPU context has to be handed
+  // back, or Chromium hits its cap and the terminal shows a sad face.
+  {
+    const warningsBefore = await api.invoke<number>('dev:webgl-warnings')
+    for (let n = 0; n < 20; n++) {
+      await ctx.openFirstSession()
+      await wait(350)
+      await ctx.goTo(n % 2 ? 'backlog' : 'home')
+      await wait(150)
+    }
+    await ctx.openFirstSession()
+    await wait(1500)
+    const warnings = (await api.invoke<number>('dev:webgl-warnings')) - warningsBefore
+    const canvases = [...document.querySelectorAll<HTMLCanvasElement>('.terminal-surface canvas')]
+    const lost = canvases.some((c) => c.getContext('webgl2')?.isContextLost())
+    await check(
+      'twenty screen switches leave no GPU contexts behind',
+      warnings === 0 && !lost,
+      `${warnings} WebGL warnings, ${canvases.length} canvases, lost=${lost}`
+    )
+  }
+
+  // ---- Session: header, terminal find --------------------------------------
+  await ctx.openFirstSession()
+  // Wait for the screen, not a fixed time: after twenty quick switches it
+  // can take longer than 2s to mount, and every header check below failed.
+  await until(() => Boolean($('.session-detail-header')), 6000)
+  const header = $('.session-detail-header')
+  await check(
+    'the session header is rounded',
+    Boolean(header) && parseFloat(getComputedStyle(header!).borderTopLeftRadius) > 0
+  )
+  await check('the header has Close tab (×)', Boolean($('[aria-label="Close tab (⌘W)"]')))
+  {
+    // A real double-click: the second press carries clickCount 2.
+    const title = $('.session-detail-breadcrumb-title')
+    const before = title?.textContent ?? ''
+    if (title) {
+      title.scrollIntoView({ block: 'center' })
+      const r = title.getBoundingClientRect()
+      const at = {
+        x: Math.round(r.left + Math.min(r.width / 2, 40)),
+        y: Math.round(r.top + r.height / 2)
+      }
+      await input({ type: 'mouseMove', ...at })
+      for (const clickCount of [1, 2]) {
+        await input({ type: 'mouseDown', ...at, button: 'left', clickCount })
+        await input({ type: 'mouseUp', ...at, button: 'left', clickCount })
+      }
+      await wait(300)
+    }
+    const field = $<HTMLInputElement>('.session-detail-header input')
+    await check(
+      "double-clicking the session's title renames it in place",
+      Boolean(field) && field!.value === before,
+      field ? `field holds "${field.value}", title was "${before}"` : 'no rename field'
+    )
+    await key('Escape')
+    await check(
+      'Escape leaves the title as it was',
+      !$('.session-detail-header input') &&
+        $('.session-detail-breadcrumb-title')?.textContent === before
+    )
+  }
+  await check(
+    'the header folder opens the IDE and is a single tile',
+    Boolean($('.session-detail-folder')) &&
+      getComputedStyle($('.session-detail-folder')!).paddingLeft === '0px'
+  )
+  // A session with no ticket offers to make one, prefilled, and links it.
+  {
+    await until(() => Boolean($('.session-detail-ticket--create')), 4000)
+    await click($('.session-detail-ticket--create'))
+    await until(() => Boolean($('.backlog-picker')), 6000)
+    await check(
+      'the ticket button offers to create a ticket or link one',
+      /Create a new ticket/.test($('.backlog-picker')?.textContent ?? '') &&
+        /PROJ-103/.test($('.backlog-picker')?.textContent ?? '')
+    )
+    await key('Enter')
+    await until(() => Boolean($('.cr-modal .backlog-create')), 6000)
+    const summary = $<HTMLInputElement>('.cr-modal input[aria-label="Summary"]')?.value ?? ''
+    const headerTitle = $('.session-detail-breadcrumb-title')?.textContent ?? ''
+    await check(
+      'Create ticket from a session opens the form with its title',
+      summary.length > 0 && summary === headerTitle,
+      `${summary} vs ${headerTitle}`
+    )
+    await click(byText('.cr-modal button', 'Create ticket'))
+    await check(
+      'and links the new ticket to the session',
+      await until(
+        () =>
+          /^[A-Z]+-\d+$/.test($('.session-detail-ticket')?.textContent?.trim() ?? '') &&
+          !$('.session-detail-ticket--create'),
+        6000
+      ),
+      $('.session-detail-ticket')?.textContent ?? 'no pill'
+    )
+  }
+  {
+    type Delivered = { ok: boolean; detail: string }
+    const delivered = await api.invoke<Delivered>('dev:deliver-prompt')
+    await check(
+      'a first prompt is sent in one go, invisible characters stripped',
+      delivered.ok,
+      delivered.detail
+    )
+  }
+
+  const fixtureRecords = [
+    'fixture-rec-working',
+    'fixture-rec-waiting',
+    'fixture-rec-ready',
+    'fixture-rec-done',
+    'fixture-rec-errored',
+    'fixture-rec-idle',
+    'fixture-rec-stopped',
+    'fixture-rec-resumable'
+  ]
+  // Several sessions from a branch that's already checked out: each gets a
+  // detached worktree of its own, and Ship won't push the branch they started from.
+  {
+    type Created = {
+      ok: boolean
+      error?: string
+      record?: { id: string; worktreePath: string; detached?: boolean; branch: string }
+    }
+    const start = (): Promise<Created> =>
+      api.invoke<Created>('sessions:create', {
+        creationId: crypto.randomUUID(),
+        projectId: 'fixture-project',
+        branch: 'fixture/working',
+        basedOn: 'existing',
+        title: 'detached check'
+      })
+    const a = await start()
+    const b = await start()
+    await check(
+      'two sessions can start from a branch that is already checked out',
+      Boolean(
+        a.ok &&
+        b.ok &&
+        a.record?.detached &&
+        b.record?.detached &&
+        a.record.worktreePath !== b.record.worktreePath
+      ),
+      `${a.error ?? a.record?.worktreePath ?? ''} / ${b.error ?? b.record?.worktreePath ?? ''}`
+    )
+    if (a.record) {
+      const shipped = await api.invoke<{ ok: boolean; error?: string }>(
+        'sessions:ship',
+        a.record.id,
+        'title',
+        'body',
+        false
+      )
+      await check(
+        "Ship refuses a detached session until it's on a branch of its own",
+        !shipped.ok && /isn't on a branch of its own/.test(shipped.error ?? ''),
+        shipped.error ?? 'shipped'
+      )
+    }
+    for (const r of [a.record, b.record]) {
+      if (r)
+        await api.invoke('sessions:delete', r.id, { removeWorktree: true, discardChanges: true })
+    }
+  }
+
+  // Link an existing ticket from the same button.
+  for (const id of fixtureRecords) await api.invoke('jira:link', id, null)
+  await ctx.goTo('home')
+  await ctx.openFirstSession()
+  await until(() => Boolean($('.session-detail-ticket--create')), 4000)
+  await click($('.session-detail-ticket--create'))
+  await until(() => Boolean($('.backlog-picker')), 6000)
+  setText($<HTMLInputElement>('.backlog-picker-input'), 'PROJ-103')
+  await wait(200)
+  await key('Enter')
+  await check(
+    'an existing ticket can be linked to a session',
+    await until(() => $('.session-detail-ticket')?.textContent === 'PROJ-103', 4000),
+    $('.session-detail-ticket')?.textContent ?? 'no pill'
+  )
+  for (const id of fixtureRecords) await api.invoke('jira:link', id, 'PROJ-101')
+  await ctx.goTo('home')
+  await ctx.openFirstSession()
+  await wait(1500)
+  await check(
+    'a linked session shows its ticket in the header',
+    $('.session-detail-ticket')?.textContent === 'PROJ-101',
+    $('.session-detail-ticket')?.textContent ?? 'no pill'
+  )
+  const termText = (): number => ($('.xterm-rows')?.textContent ?? '').replace(/\s/g, '').length
+  const textBefore = termText()
+  await click($('.session-detail-ticket'))
+  await wait(300)
+  await check(
+    'opening the ticket panel leaves the terminal showing what it had',
+    textBefore > 0 && termText() >= textBefore * 0.9,
+    `${textBefore} characters before, ${termText()} after`
+  )
+  await check(
+    'and the pill opens that ticket over the session, without leaving it',
+    await until(() => {
+      // Seen, not merely in the page: what's actually drawn at the header's
+      // middle has to be the header. A full-page wrapper once covered it.
+      const header = $('.session-detail-header')
+      const r = header?.getBoundingClientRect()
+      const top = r ? document.elementFromPoint(r.left + 40, r.top + r.height / 2) : null
+      return (
+        ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('PROJ-101') &&
+        Boolean(header && top && header.contains(top)) &&
+        !$('.backlog-list')
+      )
+    }),
+    `${$('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 20) ?? 'no panel'}, session ${Boolean($('.session-detail-header'))}, list ${Boolean($('.backlog-list'))}`
+  )
+  {
+    const before = $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]')?.dataset
+      .value
+    const next = before === 'High' ? 'Low' : 'High'
+    await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]'), next)
+    await check(
+      "the ticket panel's dropdowns are the app's own, not the native menu",
+      !$('.backlog-drawer select') && $$('.backlog-drawer .cr-select').length > 0,
+      `${$$('.backlog-drawer select').length} native, ${$$('.backlog-drawer .cr-select').length} own`
+    )
+    await check(
+      'a ticket can be edited in that panel',
+      await until(
+        () =>
+          $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]')?.dataset.value ===
+          next
+      ),
+      $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]')?.dataset.value ??
+        'no select'
+    )
+    if (before)
+      await setSelect($<HTMLElement>('.backlog-drawer .cr-select[aria-label="Priority"]'), before)
+    await wait(400)
+  }
+  await click($('.session-detail-ticket'))
+  await check(
+    'clicking the ticket again closes its panel',
+    await until(() => !$('.backlog-drawer')),
+    $('.backlog-drawer') ? 'still open' : ''
+  )
+  await click($('.session-detail-ticket'))
+  await until(() => Boolean($('.backlog-drawer')))
+  await click($('.backlog-drawer [aria-label="Open in Tickets"]'))
+  await check(
+    'Open in Tickets carries on with the ticket there',
+    await until(
+      () =>
+        Boolean($('.backlog-list')) &&
+        ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('PROJ-101'),
+      5000
+    ),
+    `list=${Boolean($('.backlog-list'))} drawer=${$('.backlog-drawer')?.getAttribute('aria-label') ?? 'none'}`
+  )
+  await key('Escape')
+  for (const id of fixtureRecords) await api.invoke('jira:link', id, null)
+  await ctx.goTo('home')
+  await ctx.openFirstSession()
+  {
+    // The header squares a top corner exactly when the active tab sits flush
+    // over it, so no rounded notch shows beside the tab.
+    await wait(400)
+    const screen = $('.cr-session-screen')
+    const tab = $('.cr-tab--active')?.getBoundingClientRect()
+    const header = $('.session-detail-header')
+    const h = header?.getBoundingClientRect()
+    const r = header ? parseFloat(getComputedStyle(header).borderTopRightRadius) : 0
+    const wantRight = Boolean(tab && h && tab.right >= h.right - 12)
+    const wantLeft = Boolean(tab && h && tab.left <= h.left + 12)
+    await check(
+      'the session header squares the corner under a flush active tab, and only then',
+      Boolean(screen && tab && h) &&
+        (screen!.dataset.tabFlushRight !== undefined) === wantRight &&
+        (screen!.dataset.tabFlushLeft !== undefined) === wantLeft &&
+        (wantRight ? r === 0 : r > 0),
+      `tab ${tab?.left}-${tab?.right}, header ${h?.left}-${h?.right}, flags L${screen?.dataset.tabFlushLeft !== undefined} R${screen?.dataset.tabFlushRight !== undefined}, radius ${r}`
+    )
+  }
+  await wait(1500)
+
+  const split = (await api.invoke('dev:split-check')) as {
+    target: string | null
+    got: string | null
+  }
+  await check(
+    'a new terminal (+) starts in its session’s worktree',
+    Boolean(split.target) && split.got === split.target,
+    `${split.got ?? 'nothing'} (wanted ${split.target ?? 'no fixture pane'})`
+  )
+
+  // Ctrl combinations belong to the terminal (tmux's Ctrl+B prefix, the
+  // shell's Ctrl+K and Ctrl+F); only ⌘ makes an app shortcut.
+  {
+    const rail = (): boolean => Boolean($('.projects-rail'))
+    const railBefore = rail()
+    await click($('.terminal-surface'))
+    await key('b', ['control'])
+    await key('k', ['control'])
+    await key('f', ['control'])
+    await check(
+      "Ctrl+B, Ctrl+K and Ctrl+F reach the terminal, not the app's sidebar, palette or find",
+      rail() === railBefore && !$('.command-palette-input') && !$('.terminal-search'),
+      `sidebar ${railBefore}→${rail()}, palette ${Boolean($('.command-palette-input'))}, find ${Boolean($('.terminal-search'))}`
+    )
+    await key('b', ['meta'])
+    const toggled = rail() !== railBefore
+    await key('b', ['meta'])
+    await check('⌘B still shows and hides the sidebar', toggled && rail() === railBefore)
+  }
+  await key('f', ['meta'])
+  await check('⌘F opens find in the terminal', Boolean($('.terminal-search')))
+  await typeText('feature')
+  await until(() => /\d+ of \d+/.test($('.terminal-search-count')?.textContent ?? ''), 5000)
+  const count = $('.terminal-search-count')?.textContent ?? ''
+  await check(
+    'find counts matches in the scrollback',
+    /\d+ of \d+/.test(count),
+    count || `empty (query ${$<HTMLInputElement>('.terminal-search-input')?.value ?? 'none'})`
+  )
+  await key('Escape')
+  await check('Escape closes find', !$('.terminal-search'))
+
+  // ==== checks: backlog round — add this team's checks directly below ====
+  await ctx.goTo('backlog')
+  await wait(900)
+  await click($('[aria-label="List view"]'))
+  await click(byText('.backlog-filter', 'Everyone'))
+  if ($('[data-filter-chip="done"] button')) await click($('[data-filter-chip="done"] button'))
+
+  // Bulk bar regression: the familiar M button (an active cycle exists) and
+  // the Cycle picker (more than one cycle exists) should both show, not
+  // just one or the other.
+  await click(row('PROJ-101'))
+  await click(row('TEAM-202')?.querySelector('.backlog-row-pick'))
+  {
+    const bar = $('.backlog-bulk')?.textContent ?? 'no bar'
+    const moveBtn = byText('.backlog-bulk button', 'Move to')
+    const cycleBtn = byText('.backlog-bulk button', 'Cycle')
+    await check(
+      'the bulk bar keeps the familiar Move-to-cycle button alongside the Cycle picker',
+      Boolean(moveBtn) && Boolean(cycleBtn),
+      `move=${Boolean(moveBtn)} cycle=${Boolean(cycleBtn)} bar="${bar}"`
+    )
+  }
+  await key('Escape')
+  await key('Escape')
+  await check('Escape clears the selection', !$('.backlog-bulk'))
+
+  // The top filter row: with the ticket panel open eating its width, it
+  // should stay on one line rather than wrapping (the search box collapses
+  // instead), and every tab must stay fully visible — none of them clipped
+  // or pushed outside the row, whatever the search does.
+  await click(row('PROJ-102'))
+  await until(() => Boolean($('.backlog-drawer')))
+  await wait(400)
+  {
+    const filtersRect = $('.backlog-filters')?.getBoundingClientRect()
+    // One line: the tabs and the menus group share a row (a wrap drops the
+    // menus a full row below). The row's own height includes its 12px
+    // bottom padding, so height alone can't tell one line from two.
+    const tabsTop = $('.backlog-filter-tabs')?.getBoundingClientRect().top ?? NaN
+    const menusRect = $('.backlog-filter-menus')?.getBoundingClientRect()
+    await check(
+      'the filter row stays on one line with the ticket panel open',
+      Boolean(
+        filtersRect &&
+        menusRect &&
+        filtersRect.height > 0 &&
+        Math.abs(menusRect.top - tabsTop) < 8 &&
+        filtersRect.height < 60
+      ),
+      `height ${Math.round(filtersRect?.height ?? 0)}, tabs top ${Math.round(tabsTop)}, menus top ${Math.round(menusRect?.top ?? 0)}`
+    )
+    const tabs = $$('.backlog-filter-tabs .backlog-filter')
+    const outside = tabs.filter((t) => {
+      const r = t.getBoundingClientRect()
+      return (
+        !filtersRect ||
+        r.width === 0 ||
+        r.left < filtersRect.left - 0.5 ||
+        r.right > filtersRect.right + 0.5
+      )
+    })
+    await check(
+      'every tab button stays fully visible in the row, none clipped',
+      tabs.length > 0 && outside.length === 0,
+      `${outside.length} of ${tabs.length} clipped or out of bounds`
+    )
+  }
+  await key('Escape')
+
+  // O: on a ticket with a session already named after it, opens that
+  // session; on one without, starts a new one seeded from it. The Backlog
+  // round above renamed the waiting session back to "Waiting session" (later
+  // checks find it by that title), so name it after PROJ-102 again just for
+  // this check.
+  await api.invoke(
+    'sessions:rename',
+    'fixture-rec-waiting',
+    'PROJ-102 Review the orders model tests'
+  )
+  await ctx.refreshSessions()
+  await ctx.goTo('home')
+  await wait(200)
+  await ctx.goTo('backlog')
+  await wait(900)
+  try {
+    row('PROJ-102')?.focus()
+    await key('o')
+    await check(
+      'O opens the ticket’s existing session',
+      await until(() => Boolean($('.session-detail-breadcrumb-title'))),
+      $('.session-detail-breadcrumb-title')?.textContent ??
+        $('.cr-modal-title')?.textContent ??
+        'no session header'
+    )
+    // A composer opened by mistake would swallow the next check's O.
+    if ($('.cr-modal')) await key('Escape')
+  } finally {
+    await api.invoke('sessions:rename', 'fixture-rec-waiting', 'Waiting session')
+    await ctx.refreshSessions()
+  }
+  await ctx.goTo('backlog')
+  await wait(900)
+  row('TEAM-202')?.focus()
+  await key('o')
+  await check(
+    'O starts a session for a ticket with none, seeded with its title',
+    await until(() => Boolean($('.cr-modal-title')?.textContent?.includes('TEAM-202'))),
+    $('.cr-modal-title')?.textContent ?? 'no composer'
+  )
+  await key('Escape')
+
+  // Sub-tasks: PROJ-101 has two in the fixture, hidden until unfolded, and
+  // never counted as rows of their own.
+  const topLevelCount = rows().length
+  await check(
+    'a ticket with sub-tasks shows a quiet count, not extra rows',
+    Boolean(row('PROJ-101')?.querySelector('.backlog-subtask-count')) && !row('PROJ-104')
+  )
+  await click(row('PROJ-101')?.querySelector('.backlog-subtask-count'))
+  await check(
+    'clicking it unfolds them indented underneath, with key and summary',
+    $$('.backlog-subtask-row').length === 2 &&
+      Boolean(byText('.backlog-subtask-row .backlog-row-key', 'PROJ-104')) &&
+      Boolean(byText('.backlog-subtask-row .backlog-row-key', 'PROJ-105')),
+    $$('.backlog-subtask-row')
+      .map((r) => r.textContent)
+      .join(' | ')
+  )
+  await check('rows() still only counts top-level tickets', rows().length === topLevelCount)
+  await click($$('.backlog-subtask-row')[0])
+  await check(
+    'clicking a sub-task opens its own panel',
+    await until(() =>
+      ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('PROJ-104')
+    )
+  )
+  await check(
+    'a sub-task shows a read-only Parent, not an Epic picker it can’t actually set',
+    !$('.backlog-drawer .cr-select[aria-label="Parent"]') &&
+      ($('.backlog-drawer .backlog-link.backlog-prop-text')?.textContent ?? '').includes(
+        'PROJ-101'
+      ),
+    $('.backlog-drawer .cr-select[aria-label="Parent"]')
+      ? 'still has the Epic select'
+      : ($('.backlog-drawer .backlog-link.backlog-prop-text')?.textContent ?? 'no parent link')
+  )
+  await check(
+    'and no live Cycle select — a sub-task can’t be re-sprinted on its own',
+    !$('.backlog-drawer .cr-select[aria-label="Cycle"]')
+  )
+  await key('Escape')
+
+  // The ticket panel lists sub-tasks too, and can add one.
+  await click(row('PROJ-101'))
+  await until(() => Boolean($('.backlog-drawer')))
+  await check(
+    'the panel lists both sub-tasks',
+    await until(() => $$('.backlog-drawer-subtask').length === 2),
+    `${$$('.backlog-drawer-subtask').length} listed`
+  )
+  await click(byText('.backlog-drawer button', 'Add sub-task'))
+  setText(
+    $<HTMLInputElement>('.backlog-drawer input[aria-label="Sub-task summary"]'),
+    'Confirm the fix with the partner'
+  )
+  await click(byText('.backlog-drawer form button', 'Add'))
+  await check(
+    'adding one puts it straight in the list',
+    await until(() =>
+      $$('.backlog-drawer-subtask').some((el) =>
+        (el.textContent ?? '').includes('Confirm the fix with the partner')
+      )
+    )
+  )
+  await check("a new sub-task doesn't become a top-level row", rows().length === topLevelCount)
+  await key('Escape')
+
+  // PR follow-up: an open PR on a ticket that isn't in review yet offers a
+  // toast to move it there, once — with an Undo after. The "already offered"
+  // list is a stored key, and the fixture's userData (.dev/fixture) survives
+  // between separate gate runs, so start clean and remount to re-read it —
+  // otherwise this never fires again after the first real run.
+  try {
+    localStorage.removeItem('backlog-pr-offered')
+  } catch {
+    // Private window / blocked storage: nothing to clear.
+  }
+  await ctx.goTo('sessions')
+  await wait(200)
+  await ctx.goTo('backlog')
+  await wait(600)
+  await click(row('TEAM-202'))
+  await until(() => Boolean($('.backlog-drawer')))
+  // Earlier rounds move TEAM-202 about; Undo should restore whatever it
+  // was just before the toast's move, not a fixed status.
+  const statusBeforePrMove =
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value ?? ''
+  await setSelect(
+    $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Link a session"]'),
+    'fixture-rec-ready'
+  )
+  await check(
+    'a linked session with an open PR offers a toast, not just the panel nudge',
+    await until(
+      () => /PR #42 is open for TEAM-202/.test($('.toast-message')?.textContent ?? ''),
+      4000
+    ),
+    $('.toast-message')?.textContent ?? 'no toast'
+  )
+  await click(byText('.toast-action', 'Move to '))
+  await check(
+    'its action moves the ticket',
+    await until(
+      () =>
+        $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value ===
+        'In Review'
+    )
+  )
+  await check(
+    'and a follow-up toast offers Undo',
+    await until(() => Boolean(byText('.toast-action', 'Undo')))
+  )
+  await click(byText('.toast-action', 'Undo'))
+  await check(
+    'Undo puts it back',
+    await until(
+      () =>
+        $<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value ===
+        statusBeforePrMove,
+      4000
+    ),
+    `${$<HTMLElement>('.backlog-drawer .cr-select[aria-label="Status"]')?.dataset.value ?? 'no select'} (wanted ${statusBeforePrMove})`
+  )
+  await click($('.backlog-drawer [aria-label="Unlink this session"]'))
+  await key('Escape')
+
+  // Cycle planning — pure helpers first (unit-testable without a rendered
+  // screen: fabricated dates, not the fixture's real ones, since honey-buzzard's
+  // dates are pinned by the CycleProgress "N days left" check above).
+  await check(
+    'parseEstimateHours reads Jira shorthand (1w=5d, 1d=8h)',
+    parseEstimateHours('1d 4h') === 12 && parseEstimateHours('1w') === 40,
+    `${parseEstimateHours('1d 4h')}h, ${parseEstimateHours('1w')}h`
+  )
+  await check(
+    'workingDays counts weekdays only, and defaults to 10 with no dates',
+    workingDays('2026-09-14T00:00:00.000Z', '2026-09-18T00:00:00.000Z') === 5 &&
+      workingDays(undefined, undefined) === 10,
+    `${workingDays('2026-09-14T00:00:00.000Z', '2026-09-18T00:00:00.000Z')}, ${workingDays(undefined, undefined)}`
+  )
+
+  // Planning: a mode of the Tickets list, grouped by cycle, opened from a
+  // cycle's Plan action. Tickets open, filter and drag as anywhere in Tickets.
+  await ctx.goTo('backlog')
+  await wait(600)
+  const group = (lane: string): HTMLElement | null => $(`.backlog-group[data-lane="${lane}"]`)
+  const inGroup = (lane: string, key: string): boolean =>
+    Boolean(group(lane)?.querySelector(`[data-issue="${key}"]`))
+  const dragTo = async (key: string, lane: string): Promise<void> => {
+    const data = new DataTransfer()
+    const el = $(`.backlog-row[data-issue="${key}"]`)
+    el?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: data }))
+    await wait(200)
+    const onto = group(lane)
+    onto?.dispatchEvent(
+      new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data })
+    )
+    onto?.dispatchEvent(
+      new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data })
+    )
+    el?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: data }))
+    await wait(500)
+  }
+  const refreshTickets = async (): Promise<void> => {
+    await click($('.backlog button[aria-label="More"]'))
+    await click(byText('.backlog-menu .cr-popover-item', 'Refresh from Jira'))
+    await wait(600)
+  }
+  const donePlanning = async (): Promise<void> => {
+    await click(byText('.planning-bar button', 'Done planning'))
+    await until(() => !$('.planning-bar'))
+  }
+  {
+    // At real volume (60 more tickets): nothing drawn over anything else.
+    await api.invoke('dev:jira-filler', 60)
+    await refreshTickets()
+    await click($('[aria-label="Plan kestrel"]'))
+    await until(() => Boolean($('.planning-bar')), 3000)
+    const groups = $$('.backlog-group').map((g) => g.getBoundingClientRect())
+    const overlap = groups.some((r, i) => i > 0 && r.top < groups[i - 1].bottom - 1)
+    await check(
+      'with 60 more tickets, planning lays the cycles out without overlap',
+      groups.length >= 3 && !overlap && $$('.backlog-row').length > 20,
+      `${groups.length} groups, ${$$('.backlog-row').length} rows, overlap ${overlap}`
+    )
+    await donePlanning()
+    await api.invoke('dev:jira-filler', 0)
+    await refreshTickets()
+  }
+
+  await click($('[aria-label="Plan kestrel"]'))
+  await check(
+    'Plan opens planning in the list: grouped by cycle, current folded, with the planning bar',
+    (await until(
+      () =>
+        $<HTMLElement>(
+          '.planning-bar .cr-select[aria-label="Cycle to plan"]'
+        )?.textContent?.trim() === 'kestrel'
+    )) &&
+      Boolean(group('current')) &&
+      Boolean(group('sprint-2')) &&
+      Boolean(group('backlog')) &&
+      !inGroup('current', 'PROJ-101'),
+    $$('.backlog-group')
+      .map((g) => g.getAttribute('data-lane'))
+      .join(', ')
+  )
+  await check(
+    'the current cycle says its unfinished tickets carry over when completed in Jira',
+    /carry over to kestrel when you complete honey-buzzard in Jira/.test(
+      $('[data-cycle-strip="current"]')?.textContent ?? ''
+    ),
+    $('[data-cycle-strip="current"]')?.textContent ?? 'no strip'
+  )
+  {
+    const next = group('sprint-2')
+    const shownRows = next?.querySelectorAll('.backlog-row').length ?? 0
+    const titleCount = Number(next?.querySelector('.backlog-group-count')?.textContent ?? -1)
+    await check(
+      'the next cycle lists what carries over, and its count matches its rows',
+      Boolean(next?.querySelector('[data-issue="PROJ-101"] .backlog-row-carry')) &&
+        titleCount === shownRows,
+      `title ${titleCount}, rows ${shownRows}`
+    )
+  }
+  const capacityRows = (): HTMLElement[] => $$('[data-cycle-strip="next"] .cycle-plan-capacity-row')
+  await check(
+    'the next cycle shows everyone’s load, carry-over included, against one default capacity',
+    capacityRows().length > 0 &&
+      new Set(
+        capacityRows().map(
+          (r) => r.querySelector<HTMLInputElement>('.cycle-plan-capacity-input')?.value
+        )
+      ).size === 1 &&
+      /carrying over/.test($('[data-cycle-strip="next"]')?.textContent ?? ''),
+    $('[data-cycle-strip="next"]')?.textContent?.slice(0, 160) ?? 'no strip'
+  )
+  const noEstimate = (): number =>
+    Number(
+      /(\d+) without an estimate/.exec($('[data-cycle-strip="next"]')?.textContent ?? '')?.[1] ?? 0
+    )
+  const before = noEstimate()
+  await dragTo('TEAM-202', 'sprint-2')
+  await check(
+    'dragging a backlog ticket into the next cycle moves it, and its load updates',
+    (await until(() => inGroup('sprint-2', 'TEAM-202'))) &&
+      (await until(() => noEstimate() === before + 1)),
+    `in kestrel: ${inGroup('sprint-2', 'TEAM-202')}; without an estimate ${before} → ${noEstimate()}`
+  )
+  await click(byText('[data-cycle-strip="next"] .cycle-strip-link', `${noEstimate()} without`))
+  await check(
+    '"without an estimate" filters the list to those tickets',
+    (await until(() => Boolean($('[data-filter-chip="no-estimate"]')))) &&
+      !inGroup('sprint-2', 'PROJ-103') &&
+      inGroup('sprint-2', 'TEAM-202'),
+    $$('.backlog-row')
+      .map((r) => r.dataset.issue)
+      .join(', ')
+  )
+  await check(
+    'it shows only that cycle, with a field to type each estimate',
+    !group('backlog') &&
+      !group('current') &&
+      Boolean($('.backlog-row[data-issue="PROJ-102"] .backlog-row-estimate-input')),
+    $$('.backlog-group')
+      .map((g) => g.getAttribute('data-lane'))
+      .join(', ')
+  )
+  {
+    const field = $<HTMLInputElement>(
+      '.backlog-row[data-issue="PROJ-102"] .backlog-row-estimate-input'
+    )
+    field?.focus()
+    await typeText('2h')
+    await key('Enter')
+    await check(
+      'typing an estimate and pressing Enter saves it, and the ticket leaves the list',
+      await until(() => !$('.backlog-row[data-issue="PROJ-102"]')),
+      $$('.backlog-row')
+        .map((r) => r.dataset.issue)
+        .join(', ')
+    )
+  }
+  await click($('[data-filter-chip="no-estimate"] button'))
+  await click($('.backlog-row[data-issue="TEAM-202"]'))
+  await check(
+    'clicking a ticket while planning opens it',
+    await until(() => Boolean($('.backlog-drawer'))),
+    'no panel'
+  )
+  await key('Escape')
+  await until(() => !$('.backlog-drawer'))
+  {
+    // Goals are rarely used: a small link, and a field only while editing.
+    const hadField = Boolean($('.cycle-strip-goal-input'))
+    await click(byText('[data-cycle-strip="next"] .cycle-strip-link', 'Add goal'))
+    const openAfterClick = await until(() => Boolean($('.cycle-strip-goal-input')))
+    await typeText('Ship the partner reports')
+    await key('Enter')
+    await check(
+      'the goal is a small "Add goal" link, and what you type saves as a quiet line',
+      !hadField &&
+        (await until(() =>
+          /Ship the partner reports/.test($('.cycle-strip-goal')?.textContent ?? '')
+        )),
+      `field ${$<HTMLInputElement>('.cycle-strip-goal-input')?.value ?? 'gone'}; focus ${document.activeElement?.tagName}.${document.activeElement?.className}; open after click ${openAfterClick}`
+    )
+  }
+  await dragTo('TEAM-202', 'backlog')
+  await check('and back to the backlog', await until(() => inGroup('backlog', 'TEAM-202')))
+  // Any open cycle can be planned, the current one too.
+  await setSelect($<HTMLElement>('.planning-bar .cr-select[aria-label="Cycle to plan"]'), '1')
+  await check(
+    'the planning bar can switch to planning the current cycle, with no carry-over',
+    (await until(() => Boolean(group('current')?.querySelector('[data-cycle-strip="next"]')))) &&
+      !$('.backlog-row-carry') &&
+      /days left/.test(
+        group('current')?.querySelector('[data-cycle-strip="next"]')?.textContent ?? ''
+      ),
+    group('current')?.querySelector('.cycle-strip')?.textContent?.slice(0, 120) ?? 'no strip'
+  )
+  await donePlanning()
+  await check(
+    'Done planning puts the list back how it was',
+    !$('.planning-bar') && !group('sprint-2') && Boolean(row('PROJ-101')),
+    $$('.backlog-group')
+      .map((g) => g.getAttribute('data-lane'))
+      .join(', ')
+  )
+
+  // Plan cycle with the sidebar hidden: the sidebar row's hover action isn't
+  // there, so the Filter menu's cycle list carries its own "Plan" action.
+  await click($('[aria-label="Hide sidebar"]'))
+  await wait(300)
+  try {
+    await click($('.backlog-menu-button[aria-label^="Filter"]'))
+    await until(() => Boolean($('.backlog-filter-menu')))
+    await check(
+      'the Filter menu offers Plan cycle for the current cycle with the sidebar hidden',
+      Boolean($('.backlog-menu-cycle-row [aria-label^="Plan "]')),
+      $('.backlog-menu-cycle-row [aria-label^="Plan "]')?.getAttribute('aria-label') ?? 'no button'
+    )
+    await click($('.backlog-menu-cycle-row [aria-label^="Plan "]'))
+    await check(
+      'clicking it opens planning with no sidebar in the way',
+      await until(() => Boolean($('.planning-bar'))),
+      'no planning bar'
+    )
+    await key('Escape')
+    await donePlanning()
+  } finally {
+    // Never leave the sidebar hidden for later rounds' checks.
+    await click($('[aria-label="Show sidebar"]'))
+    await wait(300)
+  }
+
+  // ==== checks: sessions round — add this team's checks directly below ====
+
+  // Sessions Control Room didn't start: only ones in your projects show, every
+  // screen offers them the same actions, and Hide sticks.
+  {
+    await api.invoke('dev:unhide-sessions')
+    await ctx.refreshSessions()
+    await ctx.goTo('sessions')
+    // A poll or two for the reset to reach the list; reload rather than wait blind.
+    await until(() => Boolean($('[aria-label="fixture-cursor actions"]')), 8000)
+    await check(
+      'a session in another terminal shows only if it works in one of your projects',
+      /fixture-cursor/.test(document.body.textContent ?? '') &&
+        !/fixture-elsewhere/.test(document.body.textContent ?? ''),
+      'in project shown, outside every project hidden'
+    )
+    const menuLabels = async (button: Element | null | undefined): Promise<string[]> => {
+      await click(button)
+      await until(() => $$('[role="menuitem"]').length > 0, 2000)
+      const labels = $$('[role="menuitem"]').map((m) => m.textContent?.trim() ?? '')
+      await key('Escape')
+      await wait(200)
+      // Read or unread is the same item either way; compare the menus, not the state.
+      return labels
+        .filter((l) => l !== 'Adopt')
+        .map((l) => (l === 'Mark as read' ? 'Mark as unread' : l))
+    }
+    const rowLabels = await menuLabels($('[aria-label="fixture-cursor actions"]'))
+    // Home shows only the most recent few, and earlier checks start newer
+    // sessions; marked unread, Home's Unread filter always has its card.
+    if (!$('[aria-label="fixture-cursor actions"]')?.closest('.sessions-row-unread')) {
+      await click($('[aria-label="fixture-cursor actions"]'))
+      await click(byText('[role="menuitem"]', 'Mark as unread'))
+      await wait(300)
+    }
+    await ctx.goTo('home')
+    await click(byText('.home-recent-filters .cr-pill', 'Unread'))
+    await until(() => Boolean($('[aria-label="Actions for fixture-cursor"]')), 4000)
+    const cardLabels = await menuLabels($('[aria-label="Actions for fixture-cursor"]'))
+    await check(
+      'Home and the Sessions list offer a session in another terminal the same actions',
+      rowLabels.length > 0 &&
+        rowLabels.join('|') === cardLabels.join('|') &&
+        rowLabels.includes('Hide') &&
+        rowLabels.includes('End session…'),
+      `row: ${rowLabels.join(', ')}; card: ${cardLabels.join(', ')}`
+    )
+    await click($('[aria-label="Actions for fixture-cursor"]'))
+    await click(byText('[role="menuitem"]', 'Hide'))
+    await wait(3000) // a poll or more: hidden must survive the list being rebuilt
+    await check(
+      'Hide removes it, and it stays gone after the list refreshes',
+      !$('[aria-label="Actions for fixture-cursor"]'),
+      'still on Home'
+    )
+    // Home's filter is remembered: put it back to everything.
+    await click(byText('.home-recent-filters .cr-pill', 'Unread'))
+  }
+
+  // Opens the named session by its row title, not "whichever session is
+  // first" (openFirstSession's order isn't guaranteed to match the fixture
+  // record a check needs — see the Ship and hand-off notes below).
+  const openSessionByTitle = async (title: string): Promise<void> => {
+    await ctx.goTo('sessions')
+    await wait(600)
+    const row = byText('.sessions-row-title', title)?.closest<HTMLElement>('.sessions-row')
+    await click(row)
+    await wait(900)
+  }
+
+  // Several sessions deleted at once: tick them, then Delete in the bar.
+  {
+    type Created = { ok: boolean; error?: string; record?: { id: string; title: string } }
+    const make = (name: string): Promise<Created> =>
+      api.invoke<Created>('sessions:create', {
+        creationId: crypto.randomUUID(),
+        projectId: 'fixture-project',
+        branch: `fixture/${name}`,
+        basedOn: 'new',
+        title: name
+      })
+    // Deleting keeps the branch, so each run needs names of its own.
+    const run = Date.now().toString(36)
+    const a = await make(`bulk-delete-a-${run}`)
+    const b = await make(`bulk-delete-b-${run}`)
+    await ctx.refreshSessions()
+    await ctx.goTo('sessions')
+    await wait(900)
+    const rowFor = (id?: string): HTMLElement | null =>
+      id ? $(`.sessions-row[data-record-id="${id}"]`) : null
+    await until(() => Boolean(rowFor(a.record?.id) && rowFor(b.record?.id)), 4000)
+    const bar = (): HTMLElement | null => $('.cr-selection-bar[aria-label="Selected sessions"]')
+    await click(rowFor(a.record?.id)?.querySelector('.sessions-row-pick'))
+    rowFor(b.record?.id)?.focus()
+    await key('x')
+    await check(
+      'the check or X picks sessions, and the shared bar offers to act on them together',
+      /2 selected/.test(bar()?.textContent ?? '') &&
+        Boolean(byText('.cr-selection-bar button', 'Open in tabs')),
+      bar()?.textContent ?? `no bar (${a.error ?? ''} ${b.error ?? ''})`
+    )
+    {
+      const cap = bar()?.querySelector('kbd')
+      const style = cap ? getComputedStyle(cap) : null
+      await check(
+        "the Sessions bar's key caps get the shared style, and nothing in it spills",
+        style?.paddingLeft === '5px' && style?.lineHeight === '16px' && spills(bar()).length === 0,
+        `padding ${style?.paddingLeft}, line ${style?.lineHeight}, spills: ${spills(bar()).join(', ')}`
+      )
+    }
+    await key('Backspace')
+    await until(() => Boolean(byText('.cr-modal button', 'Delete 2 sessions')), 3000)
+    await check(
+      'the delete dialog lists every picked session',
+      /bulk-delete-a/.test($('.cr-modal')?.textContent ?? '') &&
+        /bulk-delete-b/.test($('.cr-modal')?.textContent ?? '')
+    )
+    await click(byText('.cr-modal button', 'Delete 2 sessions'))
+    await check(
+      'both are deleted in one go',
+      await until(() => !rowFor(a.record?.id) && !rowFor(b.record?.id) && !bar(), 8000),
+      $('.cr-modal')?.textContent?.slice(0, 120) ?? 'dialog closed'
+    )
+  }
+
+  // The sidebar's projects open to list their sessions, and a session opens
+  // from there.
+  {
+    await ctx.goTo('sessions')
+    await wait(600)
+    const project = (): HTMLElement | null => $('[data-rail-project="fixture-project"]')
+    await click(project()?.querySelector('.projects-rail-disclosure'))
+    const item = (): HTMLElement | undefined =>
+      $$<HTMLElement>('[data-rail-project="fixture-project"] .projects-rail-session').find((b) =>
+        /Working session/.test(b.textContent ?? '')
+      )
+    await check(
+      'a project in the sidebar opens to list its sessions, each with a status word',
+      await until(() =>
+        Boolean(item()?.querySelector('.projects-rail-session-status')?.textContent)
+      ),
+      project()?.textContent?.slice(0, 160) ?? 'no fixture-project in the sidebar'
+    )
+    await click(item())
+    await check(
+      'a session opens from under its project',
+      await until(() =>
+        /Working session/.test($('.session-detail-breadcrumb-title')?.textContent ?? '')
+      ),
+      $('.session-detail-breadcrumb-title')?.textContent ?? 'no session open'
+    )
+    await click(project()?.querySelector('.projects-rail-disclosure'))
+    await check('and the project closes again', !item())
+  }
+
+  // Quick edits in the diff: Edit opens the whole file, Save writes it to the
+  // worktree and offers Commit & push. Never pushes (that's the network); the
+  // file goes back as it was before the check moves on.
+  {
+    await openSessionByTitle('Working session')
+    await click($('[aria-label="View diff"]'))
+    await until(() => $$('.diff-file-head button').some((b) => b.textContent === 'Edit'), 5000)
+    const box = $$<HTMLElement>('.diff-file').find((f) =>
+      [...f.querySelectorAll('button')].some((b) => b.textContent === 'Edit')
+    )
+    {
+      const fullPath = box?.querySelector('.diff-file-path')?.textContent ?? ''
+      const fileName = box?.querySelector('.diff-file-name')?.textContent ?? ''
+      const copy = box?.querySelector<HTMLButtonElement>('.diff-file-copy')
+      await click(copy)
+      await check(
+        'each file in the diff copies its name, not its path',
+        copy?.getAttribute('aria-label') === `Copy ${fileName.replace(/(.)\.[^.]*$/, '$1')}` &&
+          fileName !== '' &&
+          (await until(() => Boolean(copy?.querySelector('.lucide-check')), 2000)),
+        `path "${fullPath}", button "${copy?.getAttribute('aria-label')}"`
+      )
+    }
+    await click([...(box?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Edit'))
+    await until(() => Boolean(box?.querySelector('.diff-edit-textarea')), 3000)
+    const editor = (): HTMLTextAreaElement | null =>
+      box?.querySelector<HTMLTextAreaElement>('.diff-edit-textarea') ?? null
+    const original = editor()?.value ?? ''
+    await check(
+      'Edit in the diff opens the whole file',
+      Boolean(editor()) && original.length > 0,
+      box?.textContent?.slice(0, 120) ?? 'no editable file in the diff'
+    )
+    setText(editor(), `${original}\n// quick edit\n`)
+    await key('Escape')
+    await check(
+      'Esc keeps the diff open while an edit is unsaved',
+      Boolean($('.diff-overlay')),
+      `editor ${editor()?.value.length ?? 'gone'} chars (was ${original.length}), editors on page ${$$('.diff-edit-textarea').length}`
+    )
+    await click(byText('.diff-edit-actions button', 'Save'))
+    await check(
+      'Save writes it and offers Commit & push',
+      await until(() => Boolean(byText('.diff-overlay-actions button', 'Commit & push')), 3000)
+    )
+    await click(byText('.diff-overlay-actions button', 'Commit & push'))
+    await check(
+      'Commit & push asks for a message first',
+      (await until(
+        () => Boolean($('.diff-commit-bar input[aria-label="Commit message"]')),
+        2000
+      )) && Boolean($<HTMLButtonElement>('.diff-commit-bar button[type="submit"]')?.disabled)
+    )
+    await click(byText('.diff-commit-bar button', 'Cancel'))
+    // Put the file back.
+    await click([...(box?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'Edit'))
+    await until(() => Boolean(editor()), 3000)
+    setText(editor(), original)
+    await click(byText('.diff-edit-actions button', 'Save'))
+    await until(() => !editor(), 3000)
+    await key('Escape')
+    await until(() => !$('.diff-overlay'), 2000)
+  }
+
+  // Ship on a branch whose pull request is already open: the PR and what to
+  // do with it, not a form that fails with "already exists".
+  {
+    await openSessionByTitle('Ready session')
+    await click($('[aria-label="Ship"]'))
+    await until(() => Boolean($('.ship-panel')), 3000)
+    await until(() => !/Checking for an existing/.test($('.ship-panel')?.textContent ?? ''), 5000)
+    await check(
+      'Ship on a branch with an open pull request offers what to do with it, not a new one',
+      Boolean($('.ship-panel-pr-existing')) &&
+        Boolean(byText('.ship-panel-pr-actions button', 'Open in GitHub')) &&
+        !$('.ship-panel-pr-form'),
+      $('.ship-panel')?.textContent?.slice(0, 200) ?? 'no Ship panel'
+    )
+    await click(byText('.ship-panel button', 'Close'))
+    await until(() => !$('.ship-panel'), 2000)
+  }
+
+  // Ship panel (plan 7 step 3). No CR_SHIP_FIXTURE from the gate's
+  // shot:fixture env, so this only drives what works without the network:
+  // the panel opens, shows real commits, defaults the PR title, and the
+  // Jira/Slack sections render and work against the Jira fixture. It never
+  // clicks "Push and open PR" — that would really try to push and call gh.
+  // Only 'fixture-rec-working' (branch fixture/working) has commits, so this
+  // opens it by name rather than "the first session" — the fixture doesn't
+  // promise those are the same one.
+  {
+    const SHIP_RECORD = 'fixture-rec-working'
+    await api.invoke('jira:link', SHIP_RECORD, null)
+    await openSessionByTitle('Working session')
+
+    await click($('[aria-label="Ship"]'))
+    await until(() => Boolean($('.ship-panel')), 3000)
+    await check(
+      'Ship opens the panel from the header, on a branch with commits',
+      Boolean($('.ship-panel')),
+      $('.session-detail-header')?.textContent ?? 'no header'
+    )
+
+    await until(() => $$('.ship-panel-commit').length > 0, 3000)
+    await check(
+      "it lists the branch's real commits",
+      $$('.ship-panel-commit').some((el) =>
+        (el.textContent ?? '').includes('Work in progress on the working branch')
+      ),
+      $$('.ship-panel-commit')
+        .map((el) => el.textContent)
+        .join(' | ')
+    )
+
+    const sessionTitle = $('.session-detail-breadcrumb-title')?.textContent?.trim() ?? ''
+    await until(
+      () => ($('.ship-panel-pr-form input') as HTMLInputElement | null)?.value !== '',
+      3000
+    )
+    const titleField = $<HTMLInputElement>('.ship-panel-pr-form input')
+    await check(
+      'an unlinked session defaults the PR title to the session title',
+      Boolean(sessionTitle) && titleField?.value === sessionTitle,
+      `wanted "${sessionTitle}", got "${titleField?.value}"`
+    )
+    await check(
+      'there is no Jira section for an unlinked session',
+      !$('.session-detail .ship-panel-jira-row') ||
+        $$('.ship-panel-section-title').filter((el) => el.textContent?.includes('Jira')).length ===
+          0
+    )
+
+    await key('Escape')
+    await until(() => !$('.ship-panel'), 2000)
+
+    // Link to a Jira ticket with a Slack link, and re-open: PR title takes
+    // "KEY: summary", Jira and Slack sections both appear.
+    await api.invoke('jira:link', SHIP_RECORD, 'PROJ-101')
+    await click($('[aria-label="Ship"]'))
+    await until(() => Boolean($('.ship-panel')), 3000)
+    await until(
+      () =>
+        ($('.ship-panel-pr-form input') as HTMLInputElement | null)?.value.startsWith(
+          'PROJ-101:'
+        ) ?? false,
+      3000
+    )
+    await check(
+      'a linked session defaults the PR title to "KEY: summary"',
+      ($<HTMLInputElement>('.ship-panel-pr-form input')?.value ?? '').startsWith('PROJ-101:'),
+      $<HTMLInputElement>('.ship-panel-pr-form input')?.value ?? 'empty'
+    )
+
+    const jiraHeading = byText('.ship-panel-section-title', '3Jira')
+    await check('the Jira section appears once linked', Boolean(jiraHeading))
+    const moveBtn = byText('.ship-panel-jira-row button', 'Move to In Review')
+    await check('it offers moving the ticket to the review status', Boolean(moveBtn))
+    await click(moveBtn)
+    await check(
+      'moving it updates the ticket',
+      await until(() => byText('.ship-panel-jira-row button', 'Moved to In Review') !== undefined)
+    )
+    // Reset the fixture ticket directly — the UI path is what's under test above.
+    await api.invoke('jira:move', 'PROJ-101', 'In Progress')
+
+    const slackHeading = byText('.ship-panel-section-title', '4Slack')
+    await check('the Slack section appears for a ticket with a Slack link', Boolean(slackHeading))
+
+    await key('Escape')
+    await api.invoke('jira:link', SHIP_RECORD, null)
+    // Leave the tab strip as this block found it, whether or not the checks
+    // above passed.
+    await click($('[aria-label="Close tab (⌘W)"]'))
+    await wait(300)
+  }
+
+  // ⌘⇧T reopens the last closed session tab, like a browser (App.tsx). Its
+  // only meaning app-wide now — "Focus terminal" moved to ⌘⇧E in keyboard.ts
+  // so the two shortcuts never collide.
+  {
+    await ctx.goTo('sessions')
+    await wait(600)
+    const sessionRows = (): HTMLElement[] => $$('.sessions-row')
+    const openTabs = (): HTMLElement[] => $$('.cr-tab:not(.cr-tab--home)')
+    const tabTitle = (t: Element | undefined): string =>
+      t?.querySelector('.cr-tab-title')?.textContent ?? ''
+
+    // Meta-click opens a session as a background tab without switching to
+    // it, as tabsCheck.ts does. A plain click on the second row would
+    // otherwise land on the session detail screen a plain click on the first
+    // row just switched to (SessionsScreen stays mounted behind it), not on
+    // a second row.
+    await click(sessionRows()[0], ['meta'])
+    await wait(400)
+    await click(sessionRows()[1] ?? sessionRows()[0], ['meta'])
+    await wait(400)
+    await check(
+      'two sessions open as tabs, ready to close one',
+      openTabs().length >= 2,
+      `${openTabs().length} tabs`
+    )
+
+    // Switch into one of them so there's a live terminal to click into below.
+    await click(openTabs()[0])
+    await wait(600)
+
+    const closing = openTabs()[openTabs().length - 1]
+    const closingTitle = tabTitle(closing)
+    await click(closing?.querySelector('.cr-tab-close'))
+    await wait(400)
+    await check(
+      'the tab closes',
+      !openTabs().map(tabTitle).includes(closingTitle),
+      `still open: ${openTabs().map(tabTitle).join(', ')}`
+    )
+
+    // Click into the live terminal first — the shortcut has to survive
+    // xterm's own keydown handling, not just fire into an unfocused window.
+    await click($('.terminal-surface'))
+    await wait(200)
+    await key('t', ['meta', 'shift'])
+    await wait(500)
+    await check(
+      '⌘⇧T reopens the last closed tab, even with the terminal focused',
+      openTabs().map(tabTitle).includes(closingTitle),
+      `open: ${openTabs().map(tabTitle).join(', ')} (wanted ${closingTitle})`
+    )
+
+    // Leave no tabs open behind this block, pass or fail.
+    while (openTabs().length > 0) {
+      await click(openTabs()[0]?.querySelector('.cr-tab-close'))
+      await wait(200)
+    }
+  }
+
+  // The footer hint under the terminal reads as the app's other meta text,
+  // not a separate faint monospace style (TerminalFrame). Opens its own
+  // session rather than relying on a tab the block above happened to leave
+  // open.
+  await openSessionByTitle('Working session')
+  await check(
+    'the terminal footer hint uses sentence case',
+    /^[A-Z]/.test($('.terminal-frame-focus-hint')?.textContent?.trim() ?? ''),
+    $('.terminal-frame-focus-hint')?.textContent ?? 'no hint'
+  )
+  await click($('[aria-label="Close tab (⌘W)"]'))
+  await wait(300)
+
+  // Hand-off note: header overflow menu -> dialog with the note built from
+  // the branch's own history -> Post to a linked ticket, or Copy when
+  // unlinked. Linked and unlinked in the same block, so this leaves the
+  // fixture as it found it.
+  {
+    const HANDOFF_RECORD = 'fixture-rec-working'
+    // This record's own branch (scripts/fixtures/build-fixture.ts). Read from
+    // the sessions list instead, this would silently check whichever row's
+    // branch renders first rather than this record's.
+    const branchText = 'fixture/working'
+
+    await api.invoke('jira:link', HANDOFF_RECORD, 'PROJ-101')
+    await openSessionByTitle('Working session')
+
+    await click($('[aria-label="More actions"]'))
+    await click(byText('.session-detail-menu button', 'Write hand-off note'))
+    await until(() => Boolean($('.cr-modal-title')), 3000)
+    await check(
+      '"Write hand-off note" opens a dialog from the header menu',
+      ($('.cr-modal-title')?.textContent ?? '').toLowerCase().includes('hand-off note'),
+      $('.cr-modal-title')?.textContent ?? 'no dialog'
+    )
+
+    await until(() => {
+      const value = $<HTMLTextAreaElement>('[aria-label="Hand-off note"]')?.value ?? ''
+      return value.length > 0 && !value.includes('Building the note')
+    }, 4000)
+    const noteValue = $<HTMLTextAreaElement>('[aria-label="Hand-off note"]')?.value ?? ''
+    await check(
+      'the note carries the branch name',
+      Boolean(branchText) && noteValue.includes(branchText),
+      `branch "${branchText}" not found in: ${noteValue.slice(0, 200)}`
+    )
+
+    const postBtn = byText('.cr-modal button', 'Post to PROJ-101')
+    await check(
+      'a session linked to a ticket offers Post to the ticket, not Copy',
+      Boolean(postBtn),
+      $('.cr-modal')?.textContent ?? 'no dialog'
+    )
+    await click(postBtn)
+    await check('posting closes the dialog', await until(() => !$('.cr-modal'), 3000))
+
+    // Unlink, and reopen the same dialog: no ticket means Copy instead of
+    // Post. The clipboard isn't readable back from this harness, so this
+    // checks the toast HandoffNoteDialog's copy() pushes rather than the
+    // clipboard contents themselves.
+    await api.invoke('jira:link', HANDOFF_RECORD, null)
+    // The menu closed when the first dialog opened; open it again.
+    await click($('[aria-label="More actions"]'))
+    await until(() => Boolean(byText('.session-detail-menu button', 'Write hand-off note')))
+    await click(byText('.session-detail-menu button', 'Write hand-off note'))
+    await until(() => Boolean($('.cr-modal')), 3000)
+
+    const copyBtn = byText('.cr-modal button', 'Copy')
+    await check(
+      'unlinking swaps Post for Copy',
+      Boolean(copyBtn),
+      $('.cr-modal')?.textContent ?? 'no dialog'
+    )
+    await until(() => {
+      const value = $<HTMLTextAreaElement>('[aria-label="Hand-off note"]')?.value ?? ''
+      return value.length > 0 && !value.includes('Building the note')
+    }, 4000)
+    await click(copyBtn)
+    await check(
+      'Copy pushes a toast confirming the note was copied',
+      // Post's own toast may still be showing; look at every toast.
+      await until(() =>
+        $$('.toast-message').some((t) => /copied|could not copy/i.test(t.textContent ?? ''))
+      ),
+      $$('.toast-message')
+        .map((t) => t.textContent)
+        .join(' | ') || 'no toast'
+    )
+
+    await click($('[aria-label="Close tab (⌘W)"]'))
+    await wait(300)
+  }
+
+  // ==== checks: projects round — add this team's checks directly below ====
+  await ctx.goTo('home')
+  await wait(400)
+  // ⌘⇧1, the app-wide shortcut to the Projects list (keyboard.ts).
+  await key('1', ['meta', 'shift'])
+  await wait(600)
+  await check('⌘⇧1 opens the Projects list', Boolean($('.projects-list-screen')))
+
+  // Item 1: a long repo path used to be truncated with a CSS rtl trick that
+  // moved its leading "/" to the end ("Users/…/project/" instead of
+  // "/Users/…/project"). The fix wraps the path in a <bdi> and swaps a
+  // leading home dir for "~" — check the text itself reads correctly (the
+  // rtl truncation is a paint-only effect a DOM check can't see).
+  {
+    const pathEl = $<HTMLElement>('.project-row-path bdi')
+    const text = pathEl?.textContent ?? ''
+    await check(
+      'a project path reads with a leading "/" or "~", not a trailing "/"',
+      /^[/~]/.test(text) && !text.endsWith('/'),
+      `path text: "${text}" (raw ${$('.project-row-path')?.getAttribute('title') ?? 'none'})`
+    )
+  }
+
+  // Item 4: the composer's CTA used to say "Start in ~/" with no project
+  // selected — it should name where the session actually lands (the General
+  // project, home screen sessions with no project chosen).
+  await ctx.goTo('home')
+  await wait(400)
+  {
+    const cta = byText('.home-composer button', 'Start in')
+    await check(
+      'the composer button names General instead of "Start in ~/"',
+      Boolean(cta) && cta!.textContent!.includes('General'),
+      cta?.textContent ?? 'no CTA found'
+    )
+  }
+
+  // Item 4: the four composer icon buttons (Attach, Model, Plan mode,
+  // Background) need a real tooltip each, and the two toggles need a
+  // visibly different on state, not just aria-pressed. Clicks them back
+  // afterwards so the composer is left as it was found. IconButton swallows
+  // `title` (it would double up with its own hover tooltip), so a DOM check
+  // reads the same text off `aria-label`, which Tooltip's label defaults to.
+  {
+    const toggles = $$<HTMLElement>('.home-composer-toggles button.cr-icon-button')
+    await check(
+      'all four composer icon buttons carry a label (used as both tooltip and accessible name)',
+      toggles.length === 4 &&
+        toggles.every((el) => (el.getAttribute('aria-label') ?? '').length > 0),
+      `${toggles.length} buttons, labels: ${toggles.map((el) => el.getAttribute('aria-label')).join(' | ')}`
+    )
+
+    const planButton = $<HTMLElement>(
+      '.home-composer-toggles [aria-pressed][aria-label^="Plan mode"]'
+    )
+    const backgroundButton = $<HTMLElement>(
+      '.home-composer-toggles [aria-pressed][aria-label^="Start in background"]'
+    )
+
+    const flipsVisibly = async (button: HTMLElement | null, label: string): Promise<void> => {
+      if (!button) {
+        await check(`${label} toggle found`, false)
+        return
+      }
+      const before = button.getAttribute('aria-pressed') === 'true'
+      const classesBefore = button.className
+      await click(button)
+      const after = button.getAttribute('aria-pressed') === 'true'
+      const classesAfter = button.className
+      await check(`${label} flips aria-pressed when clicked`, after !== before)
+      await check(
+        `${label}'s on state looks different, not just aria-pressed`,
+        classesAfter !== classesBefore,
+        `before "${classesBefore}", after "${classesAfter}"`
+      )
+      // Click it back — this check shouldn't change what Home starts with.
+      await click(button)
+    }
+
+    await flipsVisibly(planButton, 'Plan mode')
+    await flipsVisibly(backgroundButton, 'Start in background')
+  }
+
+  // Step 2 — the fixture seeds two projects on the same repo path/worktreeRoot
+  // ("fixture-project" and "data-infrastructure"), which used to disagree on
+  // session counts between the Sessions rail (matched by projectId OR a
+  // cwd-prefix, so both projects' sessions landed on both) and the Projects
+  // list (matched by projectId alone). Both now go through the same rule
+  // (resolveSessionProjectId in state/useSessions.ts) — check they agree,
+  // whatever the number turns out to be, rather than hardcoding "9".
+  {
+    await ctx.goTo('home')
+    await wait(400)
+    await key('1', ['meta', 'shift'])
+    await wait(600)
+
+    const countOnCard = (name: string): number | null => {
+      const label = byText('.project-row-name', name)
+      const card = label?.closest('.project-row-card')
+      const text = card?.textContent ?? ''
+      const match = /(\d+)\s+sessions?/.exec(text)
+      return match ? Number(match[1]) : null
+    }
+    const listFixtureCount = countOnCard('fixture-project')
+    const listInfraCount = countOnCard('data-infrastructure')
+
+    await ctx.goTo('sessions')
+    await wait(600)
+
+    const countInRail = (name: string): number | null => {
+      const label = byText('.projects-rail-label', name)
+      const item = label?.closest('.projects-rail-item')
+      const text = item?.querySelector('.projects-rail-count')?.textContent ?? ''
+      return text.trim() === '' ? null : Number(text.trim())
+    }
+    const railFixtureCount = countInRail('fixture-project')
+    const railInfraCount = countInRail('data-infrastructure')
+
+    await check(
+      'the Sessions rail and Projects list agree on fixture-project’s session count',
+      listFixtureCount !== null && listFixtureCount === railFixtureCount,
+      `list ${listFixtureCount}, rail ${railFixtureCount}`
+    )
+    await check(
+      'the Sessions rail and Projects list agree on data-infrastructure’s session count ' +
+        '(a second project on the same path as fixture-project, so it should not inherit ' +
+        'fixture-project’s sessions by path match)',
+      listInfraCount !== null && listInfraCount === railInfraCount,
+      `list ${listInfraCount}, rail ${railInfraCount}`
+    )
+  }
+
+  // ---- Projects tidy ----
+  // When anything is left lying around, each project row loads a tidy-up
+  // strip ending in "Clean up" (projects:tidy, loaded
+  // lazily after the list renders). The fixture's worktree branches are never
+  // pushed, so its row should show at least that count.
+  {
+    await ctx.goTo('home')
+    await wait(400)
+    await key('1', ['meta', 'shift'])
+    await until(() => Boolean($('.projects-list-screen')), 3000)
+
+    await check(
+      'the Projects list is titled Projects, with an Add project button',
+      $('.projects-list-title')?.textContent?.trim() === 'Projects' &&
+        Boolean(
+          $$('.projects-list-header-buttons button').find(
+            (b) => b.textContent?.trim() === 'Add project'
+          )
+        ),
+      `title ${$('.projects-list-title')?.textContent ?? 'none'}`
+    )
+
+    const fixtureCard = (): HTMLElement | null =>
+      $$('.project-row-name')
+        .find((el) => el.textContent?.trim() === 'fixture-project')
+        ?.closest<HTMLElement>('.project-row-card') ?? null
+    const counts = (): string[] =>
+      [...(fixtureCard()?.querySelectorAll('.project-tidy-count') ?? [])].map(
+        (c) => c.textContent?.trim() ?? ''
+      )
+    await check(
+      'the fixture project row shows what needs tidying, with no commit-activity strip',
+      (await until(() => counts().length > 0, 20000)) &&
+        !fixtureCard()?.querySelector('.project-activity'),
+      counts().join(' | ') || 'no tidy-up counts'
+    )
+    if (counts().length > 0) {
+      await check(
+        'the tidy-up counts are words, never zero',
+        counts().every((c) => /^[1-9]\d* [a-z]/.test(c) && !c.includes('·')),
+        counts().join(' | ')
+      )
+      const cleanUp = fixtureCard()?.querySelector<HTMLElement>('.project-tidy-clean') ?? null
+      await check('the tidy-up strip ends in a "Clean up" button', Boolean(cleanUp))
+      await click(cleanUp)
+      await check(
+        '"Clean up" opens the worktree cleanup dialog without opening the project',
+        (await until(
+          () => Boolean($('.cr-modal-title')?.textContent?.includes('Clean up worktrees')),
+          3000
+        )) && Boolean($('.projects-list-screen')),
+        $('.cr-modal-title')?.textContent ?? 'no dialog'
+      )
+      await until(() => Boolean(byText('.cr-modal button', 'Cancel')), 5000)
+      await click(byText('.cr-modal button', 'Cancel'))
+      if ($('.cr-modal')) await key('Escape')
+      await until(() => !$('.cr-modal'), 2000)
+    } else {
+      await log('NOTE fixture-project has no non-zero tidy count; Clean up checks skipped')
+    }
+  }
+
+  // Step 2 — "Clean up worktrees" dialog on the project detail Overview tab.
+  // Opens it, checks the fixture's real worktrees are listed, and that a
+  // worktree with a live session on it (feature-working) can't be selected.
+  // Cancels rather than removing anything, so the fixture is untouched.
+  {
+    await ctx.goTo('home')
+    await wait(400)
+    await key('1', ['meta', 'shift'])
+    await wait(600)
+    const fixtureRow = byText('.project-row-name', 'fixture-project')?.closest(
+      '.project-row-card'
+    ) as HTMLElement | undefined
+    await click(fixtureRow)
+    await until(() => Boolean($('.project-detail')), 3000)
+
+    const worktreesHeader = byText('.cr-disclosure-label', 'Worktrees')?.closest(
+      '.cr-disclosure-header'
+    ) as HTMLElement | undefined
+    await click(worktreesHeader)
+    await wait(300)
+    await check(
+      'Worktrees lists the ones sessions are using, with Open session, not just idle ones',
+      await until(() =>
+        $$('.cr-worktree-card:not(.cr-worktree-card--new)').some((c) =>
+          /Open session/.test(c.textContent ?? '')
+        )
+      ),
+      `${$$('.cr-worktree-card:not(.cr-worktree-card--new)').length} cards; hint ${byText('.cr-disclosure-label', 'Worktrees')?.parentElement?.textContent?.slice(0, 80)}`
+    )
+
+    {
+      const cards = $$('.cr-worktree-card:not(.cr-worktree-card--new)')
+      const live = cards.filter((c) => /Open session/.test(c.textContent ?? ''))
+      await check(
+        'Worktree cards say which have a session, with its status word, and use the branch as the title',
+        live.length > 0 &&
+          live.every((c) => Boolean(c.querySelector('.cr-worktree-card-session .status-badge'))) &&
+          cards.every((c) => Boolean(c.querySelector('.cr-worktree-card-title')?.textContent)),
+        `${live.length} live of ${cards.length}; ${cards.map((c) => c.querySelector('.cr-worktree-card-session')?.textContent).join(' | ')}`
+      )
+    }
+
+    // Clicking a card (not one of its buttons) opens its overlay.
+    {
+      const card = $$('.cr-worktree-card--clickable').find((c) =>
+        /fixture\/working/.test(c.querySelector('.cr-worktree-card-title')?.textContent ?? '')
+      )
+      await click(card?.querySelector<HTMLElement>('.cr-worktree-card-path') ?? null)
+      const opened = await until(() => Boolean($('.wt-overlay')), 2000)
+      const filesShown = await until(() => $$('.wt-overlay-files li').length > 0, 4000)
+      await check(
+        'clicking a worktree card opens its overlay: branch, session, and the uncommitted files',
+        opened &&
+          /fixture\/working/.test($('.cr-modal-title')?.textContent ?? '') &&
+          Boolean($('.wt-overlay .status-badge')) &&
+          filesShown &&
+          Boolean($('.wt-overlay-pathrow [aria-label="Open in Cursor"]')) &&
+          $$('.wt-overlay .backlog-prop').length >= 6,
+        `opened=${opened}; title ${$('.cr-modal-title')?.textContent}; ${$$('.wt-overlay-files li').length} files; ${$('.wt-overlay')?.textContent?.slice(0, 160)}`
+      )
+      await key('Escape')
+      await check('Esc closes the worktree overlay', await until(() => !$('.wt-overlay')))
+    }
+
+    // History: quiet tabs and rows in the Tickets list's style.
+    {
+      const rows = $$('.history-row')
+      await check(
+        'History uses pill tabs (no segmented switch) and rows with a status, title and time',
+        Boolean($('.history-tabs')) &&
+          !$('.overview-section .cr-segmented') &&
+          rows.length > 0 &&
+          rows.every(
+            (r) =>
+              Boolean(r.querySelector('.history-row-title')?.textContent) &&
+              Boolean(r.querySelector('.history-row-time')?.textContent)
+          ) &&
+          Boolean(rows[0]?.querySelector('.history-row-status .status-dot')),
+        `${rows.length} rows; ${rows[0]?.textContent}`
+      )
+    }
+
+    const cleanupButton = byText('.overview-worktrees-actions button', 'Clean up worktrees')
+    await click(cleanupButton)
+    await until(
+      () => Boolean($('.cr-modal-title')?.textContent?.includes('Clean up worktrees')),
+      3000
+    )
+    await check(
+      '"Clean up worktrees" opens a dialog',
+      Boolean($('.cr-modal-title')?.textContent?.includes('Clean up worktrees')),
+      $('.cr-modal-title')?.textContent ?? 'no dialog'
+    )
+
+    // Give the dialog's own worktree listing (a real `git worktree list`, plus
+    // merged/PR/dirty checks) a moment to load before reading it.
+    // The "Looking at…" loading line shares the note class, so wait past it
+    // — the merged/PR checks go through git and gh and can take a while.
+    await until(
+      () =>
+        $$('.wt-cleanup-row').length > 0 ||
+        Boolean(
+          $('.wt-cleanup-note') && !/Looking at/.test($('.wt-cleanup-note')!.textContent ?? '')
+        ),
+      20000
+    )
+    const rows = $$('.wt-cleanup-row')
+    await check(
+      'it lists the fixture’s worktrees',
+      rows.length > 0,
+      rows.length === 0 ? ($('.wt-cleanup-note')?.textContent ?? 'no rows') : `${rows.length} rows`
+    )
+
+    const liveRow = rows.find((r) => r.textContent?.includes('fixture/working'))
+    await check(
+      'the worktree a live session is using is disabled, not offered for removal',
+      Boolean(liveRow) &&
+        liveRow!.classList.contains('wt-cleanup-row--disabled') &&
+        (liveRow as HTMLButtonElement).disabled === true,
+      liveRow?.textContent ?? 'fixture/working row not found'
+    )
+    await check(
+      'each worktree says when it was last committed to, so abandoned ones stand out',
+      rows.some((r) =>
+        /Last commit .+ ago/.test(r.querySelector('.wt-cleanup-row-age')?.textContent ?? '')
+      ),
+      rows.map((r) => r.querySelector('.wt-cleanup-row-age')?.textContent ?? 'no age').join(' | ')
+    )
+
+    // feature-done holds only an untracked `.cursor` link (the fixture adds
+    // it), which must not count as uncommitted changes.
+    const cursorRow = rows.find((r) => r.textContent?.includes('fixture/done'))
+    await check(
+      'a worktree whose only change is the .cursor link does not count as uncommitted',
+      Boolean(cursorRow) && !/uncommitted/.test(cursorRow!.textContent ?? ''),
+      cursorRow?.textContent ?? 'fixture/done row not found'
+    )
+
+    await click(byText('.cr-modal button', 'Cancel'))
+    await until(() => !$('.cr-modal'), 2000)
+  }
+
+  // Step 3 — pin a session from Home's recent list: it should jump to the
+  // front (pinned now sorts ahead of attention rank — see HomeScreen's
+  // comparator) and carry a quiet mark, and unpinning should put things
+  // back. Targets the card by its title/data-session-key, never by index,
+  // and always tries to unpin in a finally-style block — including a direct
+  // IPC fallback — so a failed assertion above can't leave the fixture with
+  // a stray pin.
+  {
+    await ctx.goTo('home')
+    await wait(600)
+    const cardsBefore = $$('.cr-session-card:not(.cr-session-card--new)')
+    await check('Home has at least two recent sessions to pin against', cardsBefore.length >= 2)
+
+    const wrapOf = (card: Element): HTMLElement | null =>
+      card.closest<HTMLElement>('.cr-session-card-wrap')
+    const titleOf = (card: Element): string =>
+      card.querySelector('.cr-session-card-title')?.textContent?.trim() ?? ''
+    const keyOf = (card: Element): string | null =>
+      wrapOf(card)?.getAttribute('data-session-key') ?? null
+    const findByKey = (key: string): Element | undefined =>
+      $$('.cr-session-card:not(.cr-session-card--new)').find((c) => keyOf(c) === key)
+    const isPinned = (card: Element): boolean =>
+      Boolean(wrapOf(card)?.querySelector('.cr-session-card-pinned'))
+
+    const target = cardsBefore[1]
+    const targetTitle = titleOf(target)
+    const targetKey = keyOf(target)
+    const targetId = targetKey?.startsWith('record:') ? targetKey.slice('record:'.length) : null
+
+    const openMenuFor = async (card: Element): Promise<HTMLElement | undefined> => {
+      const button =
+        wrapOf(card)?.querySelector<HTMLElement>('[aria-label^="Actions for"]') ?? undefined
+      await click(button)
+      return button
+    }
+
+    try {
+      await openMenuFor(target)
+      const pinItem = byText('.cr-session-card-menu-list .cr-popover-item', 'Pin')
+      await check('the session card menu offers Pin', Boolean(pinItem))
+      await click(pinItem)
+      await until(() => (targetKey ? isPinned(findByKey(targetKey) ?? target) : true), 3000)
+
+      const cardsAfterPin = $$('.cr-session-card:not(.cr-session-card--new)')
+      await check(
+        'pinning a session moves it to the front of Home',
+        titleOf(cardsAfterPin[0]) === targetTitle,
+        `front is now "${titleOf(cardsAfterPin[0])}", expected "${targetTitle}"`
+      )
+      await check('the pinned session shows a pin mark', isPinned(cardsAfterPin[0]))
+    } finally {
+      // Unpin by key, wherever the card ended up — never by index, since a
+      // failed assertion above may have left it somewhere other than the
+      // front this check expected.
+      const stillThere = targetKey ? findByKey(targetKey) : undefined
+      if (stillThere && isPinned(stillThere)) {
+        await openMenuFor(stillThere)
+        const unpinItem = byText('.cr-session-card-menu-list .cr-popover-item', 'Unpin')
+        if (unpinItem) {
+          await click(unpinItem)
+          await until(() => !isPinned(findByKey(targetKey!) ?? stillThere), 3000)
+        } else if (targetId) {
+          // The menu didn't offer Unpin (e.g. it re-rendered mid-click) —
+          // fall back to the same IPC call the menu item would have made,
+          // so the fixture never comes out of this check with a stray pin.
+          await api.invoke('sessions:setPinned', targetId, false)
+        }
+      } else if (targetId) {
+        // Belt and braces: whatever the DOM shows, make sure the record
+        // itself isn't left pinned.
+        await api.invoke('sessions:setPinned', targetId, false)
+      }
+      await check(
+        'unpinning removes the mark',
+        !$$('.cr-session-card:not(.cr-session-card--new)').some(isPinned)
+      )
+    }
+  }
+
+  // Home lists your open tickets beside your sessions: view one in place,
+  // or start a session for one.
+  {
+    await ctx.goTo('home')
+    await until(() => $$('[data-home-ticket]').length > 0, 6000)
+    const cards = $$<HTMLElement>('[data-home-ticket]')
+    await check(
+      'Home lists your open tickets beside your sessions',
+      cards.length > 0 && Boolean($('.home-recent:not(.home-tickets)')),
+      `${cards.length} tickets: ${cards.map((c) => c.dataset.homeTicket).join(', ')}`
+    )
+    const first = cards[0]?.dataset.homeTicket ?? ''
+    await click(cards[0]?.querySelector('.cr-ticket-card-view'))
+    await check(
+      'View ticket opens it in place, over Home',
+      await until(() => {
+        // Home still drawn beside the panel: its first ticket card is what
+        // sits at that card's left edge, not a page-filling wrapper.
+        const cardEl = $('[data-home-ticket]')
+        const r = cardEl?.getBoundingClientRect()
+        const top = r ? document.elementFromPoint(r.left + 20, r.top + 20) : null
+        return (
+          ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith(first) &&
+          Boolean(cardEl && top && cardEl.contains(top))
+        )
+      }),
+      $('.backlog-drawer')?.getAttribute('aria-label')?.slice(0, 24) ?? 'no panel'
+    )
+    await key('Escape')
+    await until(() => !$('.backlog-drawer'))
+    const fresh = $$<HTMLElement>('[data-home-ticket]').find((c) =>
+      /Start a session/.test(c.textContent ?? '')
+    )
+    if (fresh) {
+      const k = fresh.dataset.homeTicket ?? ''
+      await click(fresh.querySelector('.cr-ticket-card'))
+      await check(
+        'a ticket without a session starts one, the composer filled in from it',
+        await until(() => ($('.cr-modal-title')?.textContent ?? '').startsWith(k)),
+        $('.cr-modal-title')?.textContent ?? 'no composer'
+      )
+      await key('Escape')
+      await until(() => !$('.cr-modal'))
+    } else {
+      await check(
+        'a ticket without a session starts one (fixture had none)',
+        false,
+        'every ticket had a session'
+      )
+    }
+  }
+
+  // ==== checks: palette round — add this team's checks directly below ====
+  await ctx.goTo('home')
+  await wait(400)
+
+  // Typing a ticket key on the loaded board — PROJ-101 is on the fixture
+  // board — shows it and Enter opens its Backlog panel.
+  await key('k', ['meta'])
+  await until(() => Boolean($('.command-palette-input')))
+  await typeText('PROJ-101')
+  await until(() => Boolean(byText('.command-palette-item-label', 'PROJ-101')), 3000)
+  await check(
+    '⌘K "PROJ-101" shows the ticket, from the loaded board',
+    Boolean(byText('.command-palette-item-label', 'PROJ-101'))
+  )
+  await key('Enter')
+  await until(() => Boolean($('.backlog-drawer')))
+  await check(
+    'choosing it opens PROJ-101’s panel on the Backlog',
+    ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('PROJ-101')
+  )
+
+  // "proj 101" (space, lower case) normalizes the same way.
+  await ctx.goTo('home')
+  await wait(400)
+  await key('k', ['meta'])
+  await until(() => Boolean($('.command-palette-input')))
+  await typeText('proj 101')
+  await check(
+    '⌘K normalizes "proj 101" to the ticket, case and separator insensitive',
+    await until(() => Boolean(byText('.command-palette-item-label', 'PROJ-101')), 3000)
+  )
+  await key('Escape')
+
+  // PROJ-104 is Done, so it isn't on the fixture board's Backlog — the result
+  // says so, and Enter would send it to Jira in the browser rather than open
+  // a panel that doesn't exist for it.
+  await ctx.goTo('home')
+  await wait(400)
+  await key('k', ['meta'])
+  await until(() => Boolean($('.command-palette-input')))
+  await typeText('PROJ-104')
+  await until(() => Boolean(byText('.command-palette-item-label', 'PROJ-104')), 3000)
+  const doneTicketItem = byText('.command-palette-item-label', 'PROJ-104')?.closest(
+    '.command-palette-item'
+  )
+  await check(
+    '⌘K on a Done ticket not on the board says "Opens in Jira"',
+    Boolean(
+      doneTicketItem
+        ?.querySelector('.command-palette-item-sublabel')
+        ?.textContent?.includes('Opens in Jira')
+    )
+  )
+  await key('Escape')
+
+  // A branch name (3+ characters): the fixture origin has feature/remote-only.
+  // Choosing it must open the composer already set to run on that branch —
+  // not the default branch (checkout mode dropped the preset) or the
+  // new-branch-name field (worktree mode misread it as one to create).
+  await ctx.goTo('home')
+  await wait(400)
+  try {
+    await key('k', ['meta'])
+    await until(() => Boolean($('.command-palette-input')))
+    await typeText('remote-only')
+    await check(
+      '⌘K matches a branch name across projects',
+      await until(() => Boolean(byText('.command-palette-item-label', 'feature/remote-only')), 5000)
+    )
+    await click(byText('.command-palette-item-label', 'feature/remote-only'))
+    await check(
+      'choosing a branch opens the composer already set to run on it',
+      await until(() => Boolean(byText('button', 'Start on feature/remote-only')), 3000)
+    )
+  } finally {
+    // Whether the assertion above passed or not, close whatever the palette
+    // or the composer sheet left open so the next check starts clean.
+    await key('Escape')
+    await key('Escape')
+  }
+
+  // ---- Skills and rules: rows that open a reader ----
+  // Full-width rows, like sessions and projects, not square tiles. Clicking
+  // one opens the whole file to read, global ones included.
+  {
+    await ctx.goTo('home')
+    await wait(300)
+    await key('1', ['meta', 'shift'])
+    await until(() => Boolean($('.projects-list-screen')), 3000)
+    await click(
+      $$('.project-row-name')
+        .find((el) => el.textContent?.trim() === 'fixture-project')
+        ?.closest<HTMLElement>('.project-row-card') ?? null
+    )
+    await until(() => Boolean($('.project-detail')), 3000)
+    const tab = (name: string): HTMLElement | undefined =>
+      $$<HTMLElement>('.project-detail button, .project-detail [role="tab"]').find(
+        (b) => b.textContent?.trim() === name
+      )
+    for (const [name, rowSel] of [
+      ['Rules', '[data-rule]'],
+      ['Skills', '[data-skill]']
+    ] as const) {
+      await click(tab(name))
+      await until(() => $$(`.doc-row${rowSel}`).length > 0, 5000)
+      const rows = $$<HTMLElement>(`.doc-row${rowSel}`)
+      const list = rows[0]?.parentElement
+      await check(
+        `${name} show as full-width rows`,
+        rows.length > 0 &&
+          Boolean(list) &&
+          Math.abs(rows[0].getBoundingClientRect().width - list!.getBoundingClientRect().width) < 2,
+        `${rows.length} rows`
+      )
+      const openable = rows.find((r) => r.getAttribute('role') === 'button')
+      await click(openable ?? null)
+      await check(
+        `clicking a ${name === 'Rules' ? 'rule' : 'skill'} opens it to read in full`,
+        await until(
+          () =>
+            Boolean($('.doc-reader .md-text')) ||
+            Boolean($('.doc-reader .doc-reader-muted')?.textContent?.includes('empty')),
+          4000
+        ),
+        $('.doc-reader')?.textContent?.slice(0, 160) ?? 'no reader opened'
+      )
+      await key('Escape')
+      await until(() => !$('.doc-reader'), 2000)
+    }
+  }
+
+  // ---- Ship ticks ----
+  // Each Ship step's number turns into a tick once it's done. The Ready
+  // session's branch has an open pull request, so linking it to PROJ-101 (a
+  // ticket with a Slack link) gives a Slack step whose "Copy message" works.
+  {
+    const TICKS_RECORD = 'fixture-rec-ready'
+    const slackTitle = (): HTMLElement | undefined =>
+      $$<HTMLElement>('.ship-panel-section-title').find((el) =>
+        (el.textContent ?? '').includes('Slack')
+      )
+    try {
+      await api.invoke('jira:link', TICKS_RECORD, 'PROJ-101')
+      await openSessionByTitle('Ready session')
+      await click($('[aria-label="Ship"]'))
+      await until(() => Boolean($('.ship-panel')), 3000)
+      await until(() => Boolean(slackTitle()), 5000)
+      const copyBtn = (): HTMLButtonElement | undefined =>
+        byText('.ship-panel button', 'Copy message') as HTMLButtonElement | undefined
+      await until(() => Boolean(copyBtn() && !copyBtn()!.disabled), 5000)
+      await check(
+        "the Slack step shows its number until it's done",
+        Boolean(slackTitle()?.querySelector('.ship-panel-step')) &&
+          !slackTitle()?.querySelector('.ship-panel-step[aria-label="Done"]'),
+        slackTitle()?.outerHTML.slice(0, 200) ?? 'no Slack step'
+      )
+      await click(copyBtn())
+      // The clipboard refuses a window that isn't focused, which the test
+      // window sometimes isn't; then the step rightly stays undone.
+      const copyFailed = (): boolean =>
+        $$('.toast-message').some((t) => /could not copy/i.test(t.textContent ?? ''))
+      await check(
+        'after Copy message the Slack step shows the done tick',
+        await until(
+          () =>
+            Boolean(slackTitle()?.querySelector('.ship-panel-step[aria-label="Done"] svg')) ||
+            copyFailed(),
+          3000
+        ),
+        (slackTitle()?.outerHTML.slice(0, 200) ?? 'no Slack step') +
+          ' | ' +
+          $$('.toast-message')
+            .map((t) => t.textContent)
+            .join(' | ')
+      )
+    } finally {
+      // Close it for certain: left open, it sits over everything after it.
+      await click(byText('.ship-panel-header button', 'Close'))
+      if ($('.ship-panel')) await key('Escape')
+      await until(() => !$('.ship-panel'), 2000)
+      await api.invoke('jira:link', TICKS_RECORD, null)
+      await click($('[aria-label="Close tab (⌘W)"]'))
+      await wait(300)
+    }
+  }
+
+  // ---- Sessions flourishes ----
+  // The fixture has a working session, one that needs an answer, and several
+  // at "your turn".
+  await ctx.goTo('sessions')
+  await wait(600)
+  {
+    const waitingRe = /^waiting \d+[smhd]$/
+    await check(
+      'rows waiting on you say how long, in one unit',
+      await until(
+        () =>
+          $$('.sessions-row-waiting .sessions-row-elapsed').some((el) =>
+            waitingRe.test(el.textContent?.trim() ?? '')
+          ),
+        5000
+      ),
+      $$('.sessions-row-waiting .sessions-row-elapsed')
+        .map((el) => el.textContent?.trim())
+        .join(' | ')
+    )
+    const workingRow = (): HTMLElement | undefined =>
+      $$('.sessions-row').find((row) =>
+        Boolean(row.querySelector('.sessions-row-badge [data-status="working"]'))
+      )
+    await check(
+      "a working session's status dot breathes",
+      await until(() => {
+        const dot = workingRow()?.querySelector('.status-dot-working')
+        if (!dot) return false
+        const anim = getComputedStyle(dot).animationName
+        // Under reduced motion it is meant to be still.
+        const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+        return reduced ? anim === 'none' : anim === 'working-breathe'
+      }, 5000)
+    )
+  }
+
+  // ---- Home flourishes ----
+  // The day in one line, the ticket cards' PR chip, and suggested prompts
+  // under an empty composer. The fixture has waiting sessions, and PROJ-102 is
+  // yours, in review, with an open PR and a session named after it.
+  {
+    // Give one of your open tickets a session, so there's something to
+    // suggest, then land on a fresh Home (it reads the links when it opens).
+    await api.invoke('jira:link', 'fixture-rec-ready', 'PROJ-101')
+    await ctx.refreshSessions()
+    await ctx.goTo('sessions')
+    await ctx.goTo('home')
+    await until(() => $$('[data-home-ticket]').length > 0, 6000)
+    const clauses = $$<HTMLElement>('[data-home-summary] .home-summary-clause')
+    await check(
+      'Home sums up the day in one line, at least one clause',
+      clauses.length > 0 && !($('[data-home-summary]')?.textContent ?? '').includes('·'),
+      clauses.map((c) => c.textContent).join(' ')
+    )
+    const sessionsClause = $<HTMLElement>('[data-home-summary] [data-summary="sessions"]')
+    if (sessionsClause) {
+      await click(sessionsClause)
+      await check(
+        'the sessions clause filters Recent sessions to Your turn',
+        await until(() =>
+          Boolean(
+            $('.home-recent-filters .cr-pill--active')?.textContent?.trim().startsWith('Your turn')
+          )
+        )
+      )
+      // Put the filter back: it is remembered between runs.
+      const yourTurn = byText('.home-recent-filters .cr-pill--active', 'Your turn')
+      if (yourTurn) await click(yourTurn)
+    }
+
+    // PR status arrives after the cards render, so wait for it.
+    const findPrCard = (): HTMLElement | undefined =>
+      $$<HTMLElement>('[data-home-ticket]').find((c) =>
+        Boolean(c.querySelector('.cr-ticket-card-pr'))
+      )
+    await until(() => Boolean(findPrCard()), 4000)
+    const prCard = findPrCard()
+    const chip = prCard?.querySelector<HTMLElement>('.cr-ticket-card-pr')
+    await check(
+      'a ticket card with a pull request shows the PR chip',
+      Boolean(chip && /^PR (open|merged)$/.test(chip.textContent?.trim() ?? '')),
+      prCard ? `${prCard.dataset.homeTicket}: ${chip?.textContent}` : 'no card with a PR'
+    )
+
+    await api.invoke('jira:link', 'fixture-rec-ready', null)
+  }
+
+  // ---- A screen that crashes ----
+  {
+    await ctx.goTo('home')
+    await ctx.crashScreen()
+    await check(
+      'a screen that crashes shows what happened and a way back, with the app still running',
+      await until(() => Boolean($('.screen-boundary')) && Boolean($('.app-titlebar-no-drag'))),
+      $('.screen-boundary')?.textContent?.slice(0, 80) ?? 'no message'
+    )
+    await ctx.goTo('sessions')
+    await check(
+      'and moving to another screen clears it',
+      await until(() => !$('.screen-boundary') && Boolean($('.sessions-view')))
+    )
+  }
+
+  // ---- Title bar tooltips sit under their own control ----
+  // Clamping by the tooltip's maximum width (not its real one) once pulled
+  // every short label near the right edge under the + button.
+  {
+    const misplaced: string[] = []
+    for (const label of ['New session', 'Grid view', 'Help']) {
+      const btn = $(`.app-titlebar-right .cr-icon-button[aria-label="${label}"]`)
+      if (!btn) {
+        misplaced.push(`${label}: no button`)
+        continue
+      }
+      const r = btn.getBoundingClientRect()
+      const at = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+      await input({ type: 'mouseMove', ...at })
+      const shown = await until(() => Boolean($('.cr-tooltip')), 1500)
+      const tip = $('.cr-tooltip')?.getBoundingClientRect()
+      if (!shown || !tip) misplaced.push(`${label}: no tooltip`)
+      else if (Math.abs(tip.left + tip.width / 2 - at.x) > 2)
+        misplaced.push(`${label}: ${Math.round(tip.left + tip.width / 2 - at.x)}px off`)
+      await input({ type: 'mouseMove', x: 5, y: Math.round(window.innerHeight / 2) })
+      await until(() => !$('.cr-tooltip'), 1000)
+    }
+    await check(
+      'title bar tooltips are centred under their own button',
+      misplaced.length === 0,
+      misplaced.join('; ')
+    )
+  }
+
+  // ---- A current cycle Jira completes by itself ----
+  {
+    await api.invoke('dev:jira-sprint-patch', 1, { autoComplete: true, leftoversTo: null })
+    await ctx.goTo('backlog')
+    await wait(400)
+    await refreshTickets()
+    await click($('[aria-label="Plan kestrel"]'))
+    const note = (): string =>
+      $('[data-cycle-strip="current"] .cycle-strip-note')?.textContent ?? ''
+    await check(
+      'with auto-complete on and its leftovers going elsewhere, planning says so and offers to fix it',
+      await until(() => /completes honey-buzzard automatically.*not kestrel/.test(note()), 3000),
+      note()
+    )
+    await click(byText('[data-cycle-strip="current"] .cycle-strip-link', 'Send them to kestrel'))
+    await check(
+      'Send them to kestrel points Jira’s auto-complete at it',
+      await until(() => /move to kestrel\./.test(note()), 3000),
+      note()
+    )
+    await click(byText('.planning-bar button', 'Done planning'))
+    await until(() => !$('.planning-bar'))
+    await api.invoke('dev:jira-sprint-patch', 1, { autoComplete: false, leftoversTo: undefined })
+    await refreshTickets()
+  }
+
+  // ---- An empty duplicate cycle, as Jira's Complete leaves behind ----
+  {
+    const nowDate = new Date()
+    const todayUtc = Date.UTC(nowDate.getUTCFullYear(), nowDate.getUTCMonth(), nowDate.getUTCDate())
+    await api.invoke('jira:createSprint', {
+      boardId: 1,
+      // As Jira makes it: right after the pre-made kestrel.
+      name: 'kestrel 2',
+      // A fortnight from where kestrel ends (12 days out at 17:00 UTC, as the
+      // fixture shifts its own dates to today).
+      startDate: new Date(todayUtc + 12 * 86_400_000 + 17 * 3_600_000).toISOString(),
+      endDate: new Date(todayUtc + 26 * 86_400_000 + 17 * 3_600_000).toISOString()
+    })
+    await ctx.goTo('backlog')
+    await wait(400)
+    await refreshTickets()
+    await click($('[aria-label="Plan kestrel"]'))
+    const dupe = (): HTMLElement | undefined =>
+      $$('.backlog-group').find((g) =>
+        /kestrel 2/.test(g.querySelector('.backlog-group-title')?.textContent ?? '')
+      )
+    await until(() => Boolean(dupe()), 3000)
+    // Its own link: the real next cycle can have one too, once it's empty.
+    await click(
+      [...(dupe()?.querySelectorAll<HTMLElement>('.cycle-strip-link') ?? [])].find((l) =>
+        l.textContent?.startsWith('Delete cycle')
+      )
+    )
+    await click(byText('.cr-confirm-actions button', 'Delete cycle'))
+    await check(
+      'an empty upcoming cycle can be deleted from planning',
+      await until(() => !dupe(), 3000),
+      `${dupe()?.textContent?.slice(0, 80) ?? ''}; links: ${$$('.cycle-strip-link')
+        .map((l) => l.textContent)
+        .join(', ')}`
+    )
+    await click(byText('.planning-bar button', 'Done planning'))
+    await until(() => !$('.planning-bar'))
+  }
+
+  // ---- Completing a cycle (last: it closes the fixture's current cycle) ----
+  {
+    await ctx.goTo('backlog')
+    await wait(600)
+    await check(
+      'a current cycle past its end date asks to be completed',
+      await until(() => /honey-buzzard/.test($('[data-cycle-ended]')?.textContent ?? '')),
+      $('[data-cycle-ended]')?.textContent ?? 'no prompt'
+    )
+    await click(byText('[data-cycle-ended] button', 'Complete it'))
+    const dialogRow = (key: string): HTMLElement | null =>
+      $(`.complete-cycle-row[data-issue="${key}"]`)
+    const destOf = (key: string): HTMLElement | null =>
+      dialogRow(key)?.querySelector<HTMLElement>('.cr-select') ?? null
+    await check(
+      'the review lists every unfinished ticket, each going to the next cycle unless changed',
+      (await until(() => Boolean(dialogRow('PROJ-101')))) &&
+        destOf('PROJ-101')?.textContent?.trim() === 'kestrel' &&
+        !dialogRow('PROJ-104'),
+      $$('.complete-cycle-row')
+        .map((r) => `${r.dataset.issue}→${r.querySelector('.cr-select')?.textContent}`)
+        .join(', ')
+    )
+    await setSelect(destOf('PROJ-102'), 'backlog')
+    const dest102 = destOf('PROJ-102')?.dataset.value
+    // Ticked by default (cycles run back to back); untick it here so the
+    // no-cycle-running prompt gets a turn.
+    const startBox = $<HTMLInputElement>('.complete-cycle-start input')
+    const startTicked = Boolean(startBox?.checked)
+    if (startBox?.checked) await click(startBox)
+    await click(byText('.complete-cycle-actions button', 'Complete honey-buzzard'))
+    await until(() => !$('.complete-cycle'), 4000)
+    await check(
+      '"Start the next cycle" is ticked by default, and with it unticked, Tickets offers to start it',
+      startTicked &&
+        (await until(() => /kestrel/.test($('[data-no-cycle]')?.textContent ?? ''), 3000)),
+      `ticked ${startTicked}; ${$('[data-no-cycle]')?.textContent ?? 'no prompt'}`
+    )
+    await click(byText('[data-no-cycle] button', 'Start kestrel'))
+    await click(byText('.cr-confirm-actions button', 'Start kestrel'))
+    await until(() => !$('[data-no-cycle]'), 3000)
+    await groupBy('Cycle')
+    const lane = (id: string, key: string): boolean =>
+      Boolean($(`.backlog-group[data-lane="${id}"] [data-issue="${key}"]`))
+    await check(
+      'completing moves each ticket where chosen, closes the cycle and starts the next',
+      !$('.complete-cycle') &&
+        !$('[data-cycle-ended]') &&
+        /kestrel/.test($('.backlog-group[data-lane="current"]')?.textContent ?? '') &&
+        lane('current', 'PROJ-101') &&
+        lane('backlog', 'PROJ-102'),
+      `${$$('.backlog-group')
+        .map(
+          (g) =>
+            `${g.dataset.lane}: ${Array.from(g.querySelectorAll<HTMLElement>('[data-issue]'))
+              .map((i) => i.dataset.issue)
+              .join(',')}`
+        )
+        .join(' | ')}; 102 set to ${dest102}; dialog ${Boolean($('.complete-cycle'))}`
+    )
+    await groupBy('Status')
+  }
+
+  await log(`SUMMARY ${passed} passed, ${failed} failed`)
+}

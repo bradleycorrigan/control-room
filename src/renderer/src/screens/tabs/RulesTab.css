@@ -1,0 +1,48 @@
+/* ============================================================================
+   Rules tab (plan 2.2, milestone U7) — read-only list of CLAUDE.md/AGENTS.md
+   files from rules:list. Scoped to RulesTab.tsx only so it never collides
+   with the other tabs. Every colour comes from a theme token.
+   ========================================================================= */
+
+.rules-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-16) var(--space-6);
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.rules-tab-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.rules-tab-add-button {
+  flex: none;
+  font: inherit;
+  font-size: var(--text-caption-size);
+  font-weight: 600;
+  color: var(--accent-fg);
+  background: var(--accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-8);
+  cursor: pointer;
+}
+
+.rules-tab-muted {
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+.rules-tab-error {
+  color: var(--status-error);
+  font-size: var(--text-caption-size);
+}
+
+.rules-tab-empty {
+  color: var(--text-faint);
+  font-size: var(--text-caption-size);
+  padding: var(--space-2) 0;
+}

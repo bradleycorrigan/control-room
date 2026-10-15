@@ -1,0 +1,37 @@
+/* The skill / rule reader: the path and Open in Files on one quiet line,
+   then the text, scrolling inside the dialog so the header stays put. */
+.doc-reader-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  margin-bottom: var(--space-12);
+}
+
+.doc-reader-location {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.doc-reader-body {
+  max-height: min(70vh, 720px);
+  overflow-y: auto;
+  padding-right: var(--space-8);
+}
+
+.doc-reader-muted {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+.doc-reader-error {
+  margin: 0;
+  color: var(--status-error);
+  font-size: var(--text-caption-size);
+}
