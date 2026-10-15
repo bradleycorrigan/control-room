@@ -294,3 +294,7 @@ script; the gate runs every one.
 
 - macOS only, built and tested on Apple silicon.
 - Session discovery depends on Claude Code's own files, which can change between versions.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
