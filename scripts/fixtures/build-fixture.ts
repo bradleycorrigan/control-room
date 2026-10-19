@@ -634,6 +634,16 @@ cliTranscript('fixture-working', [
         cache_read_input_tokens: 5_100_000
       }
     }
+  },
+  // A pull request the agent opened in another repo, which never touches this
+  // worktree's branch: the session header shows it from this line.
+  {
+    type: 'pr-link',
+    sessionId: 'fixture-working',
+    prNumber: 7,
+    prUrl: 'https://github.com/example/other-repo/pull/7',
+    prRepository: 'example/other-repo',
+    timestamp: new Date(now - 10 * 60_000).toISOString()
   }
 ])
 

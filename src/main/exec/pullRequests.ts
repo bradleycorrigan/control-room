@@ -45,3 +45,42 @@ export async function pullRequestFor(
     return null
   }
 }
+
+/** A pull request a session opened, wherever it lives, with its state when GitHub can say. */
+export interface LinkedPullRequest {
+  number: number
+  url: string
+  /** `owner/name`. */
+  repository: string
+  /** Null when gh couldn't say (offline, no access, no gh): the chip still links. */
+  state: 'OPEN' | 'MERGED' | 'CLOSED' | null
+}
+
+// A PR's state changes rarely; the header asks every time the agent finishes
+// a turn, so answers are kept a minute rather than calling gh each time.
+const stateCache = new Map<string, { at: number; state: LinkedPullRequest['state'] }>()
+const STATE_TTL_MS = 60_000
+
+async function pullRequestState(url: string): Promise<LinkedPullRequest['state']> {
+  const cached = stateCache.get(url)
+  if (cached && Date.now() - cached.at < STATE_TTL_MS) return cached.state
+  let state: LinkedPullRequest['state'] = null
+  // gh takes a PR's URL from any directory, so no checkout of its repo is needed.
+  const res = await run('gh', ['pr', 'view', url, '--json', 'state'], { timeoutMs: 10_000 })
+  if (res.code === 0) {
+    try {
+      const s = (JSON.parse(res.stdout) as { state?: string }).state
+      if (s === 'OPEN' || s === 'MERGED' || s === 'CLOSED') state = s
+    } catch {
+      // Leave it unknown.
+    }
+  }
+  stateCache.set(url, { at: Date.now(), state })
+  return state
+}
+
+export async function linkedPullRequests(
+  links: { number: number; url: string; repository: string }[]
+): Promise<LinkedPullRequest[]> {
+  return Promise.all(links.map(async (l) => ({ ...l, state: await pullRequestState(l.url) })))
+}

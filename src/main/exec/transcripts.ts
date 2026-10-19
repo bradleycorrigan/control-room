@@ -385,3 +385,84 @@ export function getTranscriptTitle(sessionId: string): string | null {
   }
   return aiTitle
 }
+
+/** A pull request the session opened, from the `pr-link` line Claude Code writes for each one. */
+export interface TranscriptPrLink {
+  number: number
+  url: string
+  /** `owner/name` — not always the session's own repo: an agent can open one anywhere. */
+  repository: string
+}
+
+// Per transcript: how far it has been scanned and what was found, so a
+// many-MB file is read once and only its new tail after that.
+const prLinkScans = new Map<string, { offset: number; links: Map<string, TranscriptPrLink> }>()
+const PR_LINK_MARKER = Buffer.from('"type":"pr-link"')
+
+/**
+ * Every pull request a session's transcript says it opened, oldest first.
+ * `pr-link` lines can sit anywhere in the file, so unlike the head-and-tail
+ * readers above this scans it all — once, then incrementally.
+ */
+export function listTranscriptPrLinks(sessionId: string): TranscriptPrLink[] {
+  const jsonlPath = findSessionTranscriptPath(sessionId)
+  if (!jsonlPath) return []
+  let scan = prLinkScans.get(jsonlPath)
+  if (!scan) {
+    scan = { offset: 0, links: new Map() }
+    prLinkScans.set(jsonlPath, scan)
+  }
+  let fd: number
+  try {
+    fd = openSync(jsonlPath, 'r')
+  } catch {
+    return [...scan.links.values()]
+  }
+  try {
+    const size = fstatSync(fd).size
+    if (size < scan.offset) {
+      // Rewritten from scratch: start over.
+      scan.offset = 0
+      scan.links.clear()
+    }
+    if (size > scan.offset) {
+      const buf = Buffer.alloc(size - scan.offset)
+      readSync(fd, buf, 0, buf.length, scan.offset)
+      // Only whole lines; a half-written last line waits for the next scan.
+      const end = buf.lastIndexOf(0x0a) + 1
+      let start = 0
+      while (start < end) {
+        const nl = buf.indexOf(0x0a, start)
+        const line = buf.subarray(start, nl)
+        start = nl + 1
+        if (line.indexOf(PR_LINK_MARKER) === -1) continue
+        try {
+          const parsed = JSON.parse(line.toString('utf8')) as {
+            prNumber?: unknown
+            prUrl?: unknown
+            prRepository?: unknown
+          }
+          if (
+            typeof parsed.prNumber === 'number' &&
+            typeof parsed.prUrl === 'string' &&
+            parsed.prUrl.startsWith('https://')
+          ) {
+            scan.links.set(parsed.prUrl, {
+              number: parsed.prNumber,
+              url: parsed.prUrl,
+              repository: typeof parsed.prRepository === 'string' ? parsed.prRepository : ''
+            })
+          }
+        } catch {
+          // A malformed line is skipped, never fatal.
+        }
+      }
+      scan.offset += end
+    }
+  } catch {
+    // Unreadable right now: report what was found so far.
+  } finally {
+    closeSync(fd)
+  }
+  return [...scan.links.values()]
+}

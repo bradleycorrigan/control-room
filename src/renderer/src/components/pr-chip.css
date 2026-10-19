@@ -1,0 +1,45 @@
+/* Pull request chip: dot, number and state. Sessions rows, cards and the
+   session header all render this one. */
+.cr-pr-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 22px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-meta-size);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cr-pr-chip:hover {
+  border-color: var(--text-faint);
+}
+
+.cr-pr-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--text-faint);
+}
+
+.cr-pr-chip--open .cr-pr-chip-dot {
+  background: var(--status-done);
+}
+
+.cr-pr-chip--merged .cr-pr-chip-dot {
+  background: var(--accent);
+}
+
+.cr-pr-chip-repo {
+  color: var(--text-muted);
+}
+
+.cr-pr-chip--20 {
+  height: 20px;
+}

@@ -4236,6 +4236,31 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
     },
     // ---- Ship ticks ----
     {
+      name: 'Pull requests opened in another repo',
+      run: async () => {
+        // The Working session's agent opened a PR in example/other-repo. Its
+        // own branch has nothing to ship, so the header is the only place
+        // that PR can show: as a chip naming the other repo, opening on click.
+        await openSessionByTitle('Working session')
+        await until(() => Boolean($('.session-detail-header')), 6000)
+        const chip = (): HTMLElement | null =>
+          $('.session-detail-status-row .cr-pr-chip') as HTMLElement | null
+        await until(() => Boolean(chip()), 6000)
+        const text = chip()?.textContent ?? ''
+        await check(
+          'the header shows a PR the agent opened in another repo, naming that repo',
+          text.includes('other-repo') && text.includes('PR #7'),
+          chip()?.outerHTML.slice(0, 200) ?? 'no PR chip in the header'
+        )
+        await check(
+          "with no word from GitHub, the chip says no state rather than guessing one",
+          Boolean(chip()?.classList.contains('cr-pr-chip--unknown')) &&
+            !/open|merged|closed/.test(text.replace('other-repo', '')),
+          text
+        )
+      }
+    },
+    {
       name: 'Ship ticks',
       run: async () => {
         // Each Ship step's number turns into a tick once it's done. The Ready

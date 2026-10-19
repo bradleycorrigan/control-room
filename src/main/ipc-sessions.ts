@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { getState } from './store/store'
-import { pullRequestFor } from './exec/pullRequests'
+import { pullRequestFor, linkedPullRequests } from './exec/pullRequests'
+import { listTranscriptPrLinks } from './exec/transcripts'
 import { handoffGitSummary } from './exec/sessionGit'
 import { buildHandoffNote, lastAssistantMessage } from './exec/handoffNote'
 import {
@@ -65,6 +66,19 @@ export function registerSessionsIpc(): void {
     const unpushed = branch ? await unpushedCount(record.worktreePath, branch) : null
 
     return { git, branch, unpushed }
+  })
+
+  // Pull requests the agent opened, in any repo: read from the transcript's
+  // pr-link lines, so one opened outside this session's worktree still shows.
+  ipcMain.handle('sessions:linkedPrs', async (_evt, id: string) => {
+    const record = getState().sessions.find((s) => s.id === id)
+    if (!record) return []
+    const ids = [record.originalClaudeSessionId, record.claudeSessionId].filter(
+      (x): x is string => typeof x === 'string' && x.length > 0
+    )
+    const byUrl = new Map<string, ReturnType<typeof listTranscriptPrLinks>[number]>()
+    for (const sid of ids) for (const l of listTranscriptPrLinks(sid)) byUrl.set(l.url, l)
+    return linkedPullRequests([...byUrl.values()])
   })
 
   // With a pull request already open: push the new commits to it.

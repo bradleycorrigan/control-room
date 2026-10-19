@@ -29,7 +29,6 @@ import {
   renameSession,
   getAppSettings,
   listWorktreePullRequests,
-  openExternal,
   type WorktreePullRequest
 } from '../api'
 import { useStoredState } from '../state/useStoredState'
@@ -37,6 +36,7 @@ import { useTicketKeys } from '../state/useTicketKeys'
 import { resolveSessionProjectId } from '../state/useSessions'
 import { sessionTitle } from '../lib/session-title'
 import './sessions-list.css'
+import PrChip from '../components/PrChip'
 
 interface Props {
   sessions: LiveSession[]
@@ -208,34 +208,9 @@ function matchesStatus(session: LiveSession, filter: StatusFilterId[]): boolean 
 // nothing running at all.
 const FINISHED: SessionStatus[] = ['done', 'stopped', 'missing', 'errored']
 
-const PR_WORDS: Record<WorktreePullRequest['state'], string> = {
-  OPEN: 'open',
-  MERGED: 'merged',
-  CLOSED: 'closed'
-}
-
 // The pull request for a session's branch, read by rows and cards without
 // threading it through every group component.
 const SessionPrs = createContext<(s: LiveSession) => WorktreePullRequest | null>(() => null)
-
-/** Dot, number and state. A button, so it opens the PR without opening the row. */
-function PrChip({ pr }: { pr: WorktreePullRequest }): React.JSX.Element {
-  return (
-    <button
-      type="button"
-      className={`sessions-pr-chip sessions-pr-chip--${pr.state.toLowerCase()}`}
-      title={`Open pull request #${pr.number} on GitHub`}
-      onClick={(e) => {
-        e.stopPropagation()
-        void openExternal(pr.url)
-      }}
-      onKeyDown={(e) => e.stopPropagation()}
-    >
-      <span className="sessions-pr-chip-dot" aria-hidden="true" />
-      PR #{pr.number} {PR_WORDS[pr.state]}
-    </button>
-  )
-}
 
 // The Jira ticket a session is for, and how to open it, read by rows and
 // cards the same way.

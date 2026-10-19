@@ -32,7 +32,9 @@ import {
   loadJiraBoard,
   type JiraBoardData
 } from '../api'
-import { getShipInfo } from '../api-sessions'
+import { getShipInfo, getLinkedPullRequests } from '../api-sessions'
+import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
+import PrChip from '../components/PrChip'
 // Every disabled control below is gated by a condition named after one of
 // these — never a literal true/false or a "not implemented yet" string
 // (CLAUDE.md non-negotiable). NOT_LIVE and TERMINAL_REACHABLE key
@@ -274,6 +276,21 @@ export default function SessionDetail({
     // until you left the session and came back.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordId, session.status, session.activityAt, shipCheck])
+  // Pull requests the agent opened, in any repo. One opened in another repo
+  // never reaches this worktree's branch, so Ship can't show it; this can.
+  // Checked on the same beats as Ship: when a turn ends or status changes.
+  const [linkedPrs, setLinkedPrs] = useState<LinkedPullRequest[]>([])
+  useEffect(() => {
+    if (!recordId) return
+    let cancelled = false
+    void getLinkedPullRequests(recordId).then((prs) => {
+      if (!cancelled) setLinkedPrs(prs ?? [])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [recordId, session.status, session.activityAt])
+
   const hasCommitsAhead =
     !!session.record && !session.record.investigation && rawCommitsAhead === true
 
@@ -587,6 +604,17 @@ export default function SessionDetail({
                 {ticketBoard === 'loading' ? 'Opening…' : 'Create or link ticket'}
               </button>
             )}
+            {linkedPrs.map((pr) => {
+              const repoName = pr.repository.split('/').pop() ?? ''
+              return (
+                <PrChip
+                  key={pr.url}
+                  pr={pr}
+                  size={20}
+                  repo={repoName && repoName !== projectName ? repoName : undefined}
+                />
+              )
+            })}
           </div>
           {renameError && <p className="session-detail-inline-error">{renameError}</p>}
         </div>

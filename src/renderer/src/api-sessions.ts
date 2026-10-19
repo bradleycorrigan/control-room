@@ -4,7 +4,7 @@
 // the worktree and transcript itself.
 
 import type { HandoffGitSummary } from '../../main/exec/sessionGit'
-import type { PullRequestInfo } from '../../main/exec/pullRequests'
+import type { PullRequestInfo, LinkedPullRequest } from '../../main/exec/pullRequests'
 
 export interface HandoffNoteResult {
   note: string
@@ -63,4 +63,9 @@ export function commitAndPushSessionFiles(
 /** Takes a draft pull request out of draft. */
 export function markPullRequestReady(id: string, prNumber: number): Promise<ShipResult> {
   return window.api.invoke<ShipResult>('sessions:prReady', id, prNumber)
+}
+
+/** Pull requests the session's agent opened, in any repo, from its transcript. */
+export function getLinkedPullRequests(id: string): Promise<LinkedPullRequest[]> {
+  return window.api.invoke<LinkedPullRequest[]>('sessions:linkedPrs', id)
 }

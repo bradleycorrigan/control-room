@@ -263,6 +263,7 @@ const PAGE_SHARDS = [
     'Dev containers',
     'Projects tidy',
     'Skills and rules',
+    'Pull requests opened in another repo',
     'Ship ticks'
   ],
   [
