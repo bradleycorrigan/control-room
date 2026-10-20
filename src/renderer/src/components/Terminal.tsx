@@ -481,7 +481,14 @@ const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(
         cols: term.cols,
         rows: term.rows
       })
-      if (disposed) return
+      if (disposed) {
+        // Closed while the attach was on its way: main has already counted
+        // it, so give it back. Left alone, the PTY outlived the terminal and
+        // the next terminal on this pane joined it without the modes tmux
+        // sets at attach (the agent's full screen, mouse scrolling).
+        if (result.ok && !result.fallback) void terminalDetach(tmuxSessionName, paneId)
+        return
+      }
       if (!result.ok || result.fallback) {
         onFallback(result.reason ?? 'tmux control mode is unavailable')
         return

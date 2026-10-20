@@ -188,6 +188,8 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
     const { runTmux } = await import('../exec/run')
     const panes = await runTmux(['list-panes', '-s', '-t', `=${FIXTURE_TMUX}`, '-F', '#{pane_id}'])
     for (const pane of panes.stdout.split('\n').filter(Boolean)) {
+      // Start from an empty line: an earlier check can leave keys typed there.
+      await runTmux(['send-keys', '-t', pane, 'C-c'])
       await runTmux(['send-keys', '-t', pane, '-l', '--', command])
       await runTmux(['send-keys', '-t', pane, 'C-m'])
     }

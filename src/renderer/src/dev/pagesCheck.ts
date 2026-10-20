@@ -2370,6 +2370,58 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         }
       }
     },
+    // ---- Scrolling a full-screen agent ----
+    {
+      name: 'Scrolling a full-screen agent',
+      run: async () => {
+        // Claude Code draws in the alternate screen and keeps its own history,
+        // so tmux has none: scrolling up only works if the wheel reaches the
+        // agent as mouse reports. A stand-in program asks for them the same way
+        // (alternate screen, SGR mouse) and prints whatever it receives.
+        await openSessionByTitle('Working session')
+        await until(() => Boolean($('.xterm-screen')), 6000)
+        await api.invoke('dev:pane-command', 'python3 -c \'import os,tty,select,time;w=lambda b:os.write(1,b);w(b"\\x1b[?1049h\\x1b[?1000h\\x1b[?1006hWHEEL-"+b"READY\\r\\n");tty.setraw(0);end=time.time()+8;[w(b"got:"+repr(os.read(0,64)).encode()+b"\\r\\n") for r in iter(lambda: time.time()<end and select.select([0],[],[],0.2), False) if r[0]];w(b"\\x1b[?1000l\\x1b[?1006l\\x1b[?1049l");os.system("stty sane")\'')
+        const rows = (): string => $('.xterm-rows')?.textContent ?? ''
+        await until(() => rows().includes('WHEEL-READY'), 5000)
+        await check(
+          'the probe is running in the session terminal',
+          rows().includes('WHEEL-READY'),
+          rows().slice(-300)
+        )
+        // Switching away and back mounts a fresh terminal onto the PTY that is
+        // already attached. tmux set mouse reporting on that client once, at
+        // attach, and never says it again, so the new terminal has to be told.
+        // Hold a second attach on the pane, as a terminal closed mid-attach
+        // used to, so reopening the session joins a PTY that already exists.
+        const live = (await api.invoke('sessions:list')) as Array<{
+          record: { title: string } | null
+          tmux: { sessionName: string; paneId: string } | null
+        }>
+        const working = live.find((x) => x.record?.title === 'Working session')?.tmux
+        if (working) await api.invoke('terminal:attach', working.sessionName, working.paneId, 0)
+        await openSessionByTitle('Waiting session')
+        await until(() => Boolean($('.xterm-screen')), 6000)
+        await wait(600)
+        await openSessionByTitle('Working session')
+        await until(() => Boolean($('.xterm-screen')), 6000)
+        await wait(800)
+        const screen = $('.xterm-screen')
+        const r = screen?.getBoundingClientRect()
+        if (r) {
+          const at = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+          await input({ type: 'mouseMove', ...at })
+          await input({ type: 'mouseWheel', ...at, deltaX: 0, deltaY: 120, wheelTicksY: 1 })
+        }
+        await until(() => /got:/.test(rows().split('WHEEL-READY').pop() ?? ''), 3000)
+        await check(
+          'scrolling the wheel over a full-screen agent sends it mouse wheel reports',
+          /got:.*<6[45];/.test(rows()),
+          rows().slice(-400) || 'terminal empty'
+        )
+        if (working) await api.invoke('terminal:detach', working.sessionName, working.paneId)
+        await wait(8500)
+      }
+    },
     // ---- Session: header, terminal find ----
     {
       name: 'Session: header, terminal find',

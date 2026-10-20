@@ -75,6 +75,8 @@ interface PtyEntry {
   // caller is still relying on it — only a matching number of `stopPty`
   // calls does that.
   refCount: number
+  /** The proc's own data/exit listeners, so a replaced client goes quiet first. */
+  listeners: pty.IDisposable[]
 }
 
 const ptyByPane = new Map<string, PtyEntry>()
@@ -120,6 +122,17 @@ export async function startPty(
   if (existing) {
     existing.refCount += 1
     await pinWindow(existing.groupedName, paneId)
+    // A new terminal joining this PTY missed everything tmux set when the
+    // client first attached: the alternate screen, mouse reporting, bracketed
+    // paste. tmux never says those again, so a full-screen agent (Claude Code)
+    // looked like plain text and the wheel scrolled the terminal's own few
+    // lines instead of the agent's history. A fresh client says them all and
+    // redraws, for this terminal and any other on the same pane.
+    try {
+      replaceClient(existing, paneId, cols, rows)
+    } catch {
+      // The old client carries on; this terminal just misses those modes.
+    }
     return { ok: true }
   }
 
@@ -145,32 +158,61 @@ export async function startPty(
 
   let proc: pty.IPty
   try {
-    proc = pty.spawn('tmux', ['-u', 'attach', '-t', grouped], {
-      name: 'xterm-256color',
-      cols: Math.max(1, cols || 80),
-      rows: Math.max(1, rows || 24),
-      env: {
-        ...ENV,
-        TERM: 'xterm-256color',
-        FORCE_COLOR: '3',
-        COLORTERM: 'truecolor'
-      } as { [key: string]: string }
-    })
+    proc = spawnClient(grouped, cols, rows)
   } catch (err) {
     await killOurSession(grouped)
     return { ok: false, reason: String(err) }
   }
 
-  const entry: PtyEntry = { proc, groupedName: grouped, refCount: 1 }
+  const entry: PtyEntry = { proc, groupedName: grouped, refCount: 1, listeners: [] }
   ptyByPane.set(paneId, entry)
-
-  proc.onData((data) => emitter.emit('output', paneId, data))
-  proc.onExit(() => {
-    ptyByPane.delete(paneId)
-    emitter.emit('exit', paneId)
-  })
+  listen(entry, paneId)
 
   return { ok: true }
+}
+
+function spawnClient(grouped: string, cols: number, rows: number): pty.IPty {
+  return pty.spawn('tmux', ['-u', 'attach', '-t', grouped], {
+    name: 'xterm-256color',
+    cols: Math.max(1, cols || 80),
+    rows: Math.max(1, rows || 24),
+    env: {
+      ...ENV,
+      TERM: 'xterm-256color',
+      FORCE_COLOR: '3',
+      COLORTERM: 'truecolor'
+    } as { [key: string]: string }
+  })
+}
+
+function listen(entry: PtyEntry, paneId: string): void {
+  const proc = entry.proc
+  entry.listeners = [
+    proc.onData((data) => emitter.emit('output', paneId, data)),
+    proc.onExit(() => {
+      // Only the current client's exit ends the pane's PTY; a replaced one
+      // exiting is expected.
+      if (ptyByPane.get(paneId)?.proc !== proc) return
+      ptyByPane.delete(paneId)
+      emitter.emit('exit', paneId)
+    })
+  ]
+}
+
+/** Swaps in a freshly attached tmux client. The old one is silenced before it
+ * is killed: on its way out tmux resets the terminal (leaves the alternate
+ * screen, stops mouse reporting), and that must not reach the new one. */
+function replaceClient(entry: PtyEntry, paneId: string, cols: number, rows: number): void {
+  const fresh = spawnClient(entry.groupedName, cols || entry.proc.cols, rows || entry.proc.rows)
+  const old = entry.proc
+  for (const l of entry.listeners) l.dispose()
+  entry.proc = fresh
+  listen(entry, paneId)
+  try {
+    old.kill()
+  } catch {
+    // already gone
+  }
 }
 
 export function writePty(paneId: string, data: string): boolean {

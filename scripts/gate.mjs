@@ -255,7 +255,7 @@ results.push(...(await Promise.all(staticRuns)))
 // shard: they close the fixture's current cycle.
 const PAGE_SHARDS = [
   ['Backlog'],
-  ['Session: header'],
+  ['Session: header', 'Scrolling a full-screen agent'],
   [
     'Dropping',
     'Sessions',
