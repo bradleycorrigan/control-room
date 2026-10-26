@@ -29,8 +29,11 @@ import {
   renameSession,
   getAppSettings,
   listWorktreePullRequests,
+  archiveSession,
+  unarchiveSession,
   type WorktreePullRequest
 } from '../api'
+import { Picker } from './backlog/Picker'
 import { useStoredState } from '../state/useStoredState'
 import { useTicketKeys } from '../state/useTicketKeys'
 import { resolveSessionProjectId } from '../state/useSessions'
@@ -517,6 +520,47 @@ const SessionSelection = createContext<{
   toggle: (recordId: string, range?: boolean) => void
 }>({ selected: new Set(), toggle: () => {} })
 
+/**
+ * Picking a session for a bulk action, the same way wherever it's shown (a
+ * list row or a grid card): its check, and what a click does. ⇧-click picks
+ * the run up to it; once anything is picked a plain click picks too, as on
+ * the Backlog; ⌘-click still opens it in a background tab.
+ */
+function usePick(
+  session: LiveSession,
+  title: string,
+  checkClassName: string
+): {
+  recordId: string | null
+  picked: boolean
+  picking: boolean
+  check: React.ReactNode
+  onClick: (e: React.MouseEvent, open: (background?: boolean) => void) => void
+} {
+  const selection = useContext(SessionSelection)
+  const recordId = session.record?.id ?? null
+  const picked = recordId !== null && selection.selected.has(recordId)
+  const picking = selection.selected.size > 0
+  return {
+    recordId,
+    picked,
+    picking,
+    check: recordId ? (
+      <PickCheck
+        on={picked}
+        label={`Select ${title}`}
+        className={checkClassName}
+        onToggle={() => selection.toggle(recordId)}
+      />
+    ) : null,
+    onClick: (e, open) => {
+      if (recordId && e.shiftKey) selection.toggle(recordId, true)
+      else if (picking && recordId && !e.metaKey && !e.ctrlKey) selection.toggle(recordId)
+      else open(e.metaKey || e.ctrlKey)
+    }
+  }
+}
+
 interface SessionListRowProps {
   session: LiveSession
   /** `background`: ⌘- or middle-click — open it in a tab without switching. */
@@ -538,12 +582,14 @@ function SessionListRow({
   onRenamed
 }: SessionListRowProps): React.JSX.Element {
   const title = sessionTitle(session)
-  const selection = useContext(SessionSelection)
   const pr = useContext(SessionPrs)(session)
-  const recordId = session.record?.id ?? null
-  const picked = recordId !== null && selection.selected.has(recordId)
-  // Once anything is picked, a plain click picks too, as on the Backlog.
-  const picking = selection.selected.size > 0
+  const {
+    recordId,
+    picked,
+    picking,
+    check,
+    onClick: pickClick
+  } = usePick(session, title, 'sessions-row-pick')
   const branch = session.record?.investigation
     ? 'no worktree'
     : (session.record?.branch ?? session.agentName ?? null)
@@ -629,14 +675,7 @@ function SessionListRow({
         tabIndex={0}
         data-session-item
         data-record-id={recordId ?? undefined}
-        // As on the Backlog: ⇧-click picks the run up to this row, and once
-        // anything is picked a plain click picks too. ⌘-click still opens
-        // it in a background tab, as it always has here.
-        onClick={(e) => {
-          if (recordId && e.shiftKey) selection.toggle(recordId, true)
-          else if (picking && recordId && !e.metaKey && !e.ctrlKey) selection.toggle(recordId)
-          else onOpen(e.metaKey || e.ctrlKey)
-        }}
+        onClick={(e) => pickClick(e, onOpen)}
         onAuxClick={(e) => {
           if (e.button === 1) onOpen(true)
         }}
@@ -647,14 +686,7 @@ function SessionListRow({
           }
         }}
       >
-        {recordId && (
-          <PickCheck
-            on={picked}
-            label={`Select ${title}`}
-            className="sessions-row-pick"
-            onToggle={() => selection.toggle(recordId)}
-          />
-        )}
+        {check}
         {/* Line 1: the title. The status chip used to sit before it in a
             column sized for "external session", so a short chip like "done"
             left a wide hole; it now leads the second line instead. */}
@@ -1127,13 +1159,22 @@ function SessionCard({
   const branch = session.record?.investigation
     ? 'no worktree'
     : (session.record?.branch ?? session.agentName ?? null)
+  const { recordId, picked, picking, check, onClick } = usePick(session, title, 'session-card-pick')
   return (
     <div
-      className={session.unread ? 'session-card session-card-unread' : 'session-card'}
+      className={[
+        'session-card',
+        session.unread ? 'session-card-unread' : '',
+        picked ? 'session-card--picked' : '',
+        picking ? 'session-card--picking' : ''
+      ]
+        .filter(Boolean)
+        .join(' ')}
       role="button"
       tabIndex={0}
       data-session-item
-      onClick={(e) => onOpen(e.metaKey || e.ctrlKey)}
+      data-record-id={recordId ?? undefined}
+      onClick={(e) => onClick(e, onOpen)}
       onAuxClick={(e) => {
         if (e.button === 1) onOpen(true)
       }}
@@ -1145,7 +1186,10 @@ function SessionCard({
       }}
     >
       <div className="session-card-top">
-        <Badge status={session.status} />
+        <span className="session-card-lead">
+          {check}
+          <Badge status={session.status} />
+        </span>
         {activityLabel(session) && (
           <span className="session-card-time">{activityLabel(session)}</span>
         )}
@@ -1441,6 +1485,7 @@ export default function SessionsScreen({
   // Bulk delete: sessions picked by their row's checkbox.
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [deletingPicked, setDeletingPicked] = useState(false)
+  const [statusAnchor, setStatusAnchor] = useState<HTMLElement | null>(null)
   const lastPicked = useRef<string | null>(null)
   const pickedSessions = sessions.filter((s) => s.record && picked.has(s.record.id))
   const pickedRecords = pickedSessions.map((s) => s.record!)
@@ -1467,18 +1512,46 @@ export default function SessionsScreen({
     }),
     [picked]
   )
-  useDismissible(picked.size > 0 && !deletingPicked, 'overlay', () => {
+  useDismissible(picked.size > 0 && !deletingPicked && !statusAnchor, 'overlay', () => {
     setPicked(new Set())
   })
   const openPicked = (): void => {
     for (const s of pickedSessions) onOpenSession(s.key, true)
     setPicked(new Set())
   }
+  // Bulk status: Active or Done, the two a person sets by hand. Done is
+  // "Mark as done": nothing is stopped, it just leaves the Active board.
+  const allDone = pickedRecords.length > 0 && pickedRecords.every((r) => r.archivedAt)
+  const noneDone = pickedRecords.every((r) => !r.archivedAt)
+  const setPickedStatus = async (to: 'active' | 'done'): Promise<void> => {
+    const targets = pickedRecords.filter((r) => (to === 'done' ? !r.archivedAt : r.archivedAt))
+    const results = await Promise.all(
+      targets.map((r) => (to === 'done' ? archiveSession(r.id) : unarchiveSession(r.id)))
+    )
+    const failed = targets.filter((_, i) => !results[i].ok)
+    const done = targets.length - failed.length
+    const word = to === 'done' ? 'marked done' : 'moved back to Active'
+    if (failed.length === 0) {
+      pushToast?.(
+        targets.length === 0
+          ? `Already ${to === 'done' ? 'done' : 'active'}.`
+          : `${done} session${done === 1 ? '' : 's'} ${word}.${to === 'done' ? ' Nothing was stopped.' : ''}`
+      )
+      setPicked(new Set())
+    } else {
+      pushToast?.(
+        `${done} ${word}. ${failed.length} couldn't be: ${results.find((r) => !r.ok)?.error ?? 'unknown error'}`
+      )
+      // Keep the ones that failed picked, to try again.
+      setPicked(new Set(failed.map((r) => r.id)))
+    }
+    handleSessionRowChanged()
+  }
   // X picks the focused row; with anything picked, ⌫ deletes and O opens
   // them all in tabs. Never while typing in a field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.metaKey || e.ctrlKey || e.altKey || deletingPicked) return
+      if (e.metaKey || e.ctrlKey || e.altKey || deletingPicked || statusAnchor) return
       const target = e.target as HTMLElement | null
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return
       if (target?.isContentEditable) return
@@ -1494,6 +1567,15 @@ export default function SessionsScreen({
       } else if (picked.size > 0 && key === 'o') {
         e.preventDefault()
         openPicked()
+      } else if (picked.size > 0 && key === 's') {
+        // As on the Backlog: the picker opens at the focused row or card, else
+        // at the first one picked.
+        const anchor =
+          target?.closest<HTMLElement>('[data-record-id]') ??
+          document.querySelector<HTMLElement>(`[data-record-id="${[...picked][0]}"]`)
+        if (!anchor) return
+        e.preventDefault()
+        setStatusAnchor(anchor)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -1541,10 +1623,28 @@ export default function SessionsScreen({
                 <SelectionAction shortcut="O" onClick={openPicked}>
                   Open in tabs
                 </SelectionAction>
+                <SelectionAction shortcut="S" onClick={setStatusAnchor}>
+                  Status
+                </SelectionAction>
                 <SelectionAction shortcut="⌫" onClick={() => setDeletingPicked(true)}>
                   Delete
                 </SelectionAction>
               </SelectionBar>
+            )}
+            {statusAnchor && pickedRecords.length > 0 && (
+              <Picker
+                anchor={statusAnchor}
+                title="Set status"
+                options={[
+                  { value: 'active', label: 'Active', checked: noneDone },
+                  { value: 'done', label: 'Done', checked: allDone }
+                ]}
+                onPick={(v) => {
+                  setStatusAnchor(null)
+                  void setPickedStatus(v === 'done' ? 'done' : 'active')
+                }}
+                onClose={() => setStatusAnchor(null)}
+              />
             )}
             {deletingPicked && pickedRecords.length > 0 && (
               <DeleteSessionsDialog

@@ -184,6 +184,32 @@
   justify-content: space-between;
 }
 
+.session-card-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+/* Bulk pick on a card: the same check as a list row, ahead of the status.
+   It shows on hover or keyboard focus, and on every card once anything is
+   picked. */
+.session-card-pick {
+  display: none;
+}
+
+.session-card:hover .session-card-pick,
+.session-card:focus-visible .session-card-pick,
+.session-card-pick:focus-visible,
+.session-card--picking .session-card-pick {
+  display: inline-flex;
+}
+
+.session-card--picked,
+.session-card--picked:hover {
+  background: var(--accent-soft);
+}
+
 .session-card-time {
   font-size: var(--text-mono-size);
   color: var(--text-muted);

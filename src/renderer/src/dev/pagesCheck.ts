@@ -2380,7 +2380,10 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         // (alternate screen, SGR mouse) and prints whatever it receives.
         await openSessionByTitle('Working session')
         await until(() => Boolean($('.xterm-screen')), 6000)
-        await api.invoke('dev:pane-command', 'python3 -c \'import os,tty,select,time;w=lambda b:os.write(1,b);w(b"\\x1b[?1049h\\x1b[?1000h\\x1b[?1006hWHEEL-"+b"READY\\r\\n");tty.setraw(0);end=time.time()+8;[w(b"got:"+repr(os.read(0,64)).encode()+b"\\r\\n") for r in iter(lambda: time.time()<end and select.select([0],[],[],0.2), False) if r[0]];w(b"\\x1b[?1000l\\x1b[?1006l\\x1b[?1049l");os.system("stty sane")\'')
+        await api.invoke(
+          'dev:pane-command',
+          'python3 -c \'import os,tty,select,time;w=lambda b:os.write(1,b);w(b"\\x1b[?1049h\\x1b[?1000h\\x1b[?1006hWHEEL-"+b"READY\\r\\n");tty.setraw(0);end=time.time()+8;[w(b"got:"+repr(os.read(0,64)).encode()+b"\\r\\n") for r in iter(lambda: time.time()<end and select.select([0],[],[],0.2), False) if r[0]];w(b"\\x1b[?1000l\\x1b[?1006l\\x1b[?1049l");os.system("stty sane")\''
+        )
         const rows = (): string => $('.xterm-rows')?.textContent ?? ''
         await until(() => rows().includes('WHEEL-READY'), 5000)
         await check(
@@ -3281,6 +3284,90 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             await until(() => !rowFor(a.record?.id) && !rowFor(b.record?.id) && !bar(), 8000),
             $('.cr-modal')?.textContent?.slice(0, 120) ?? 'dialog closed'
           )
+        }
+
+        // Grid view picks the same way the list does, and the bar's Status
+        // marks every picked session done at once.
+        {
+          type Created = { ok: boolean; error?: string; record?: { id: string; title: string } }
+          const make = (name: string): Promise<Created> =>
+            api.invoke<Created>('sessions:create', {
+              creationId: crypto.randomUUID(),
+              projectId: 'fixture-project',
+              branch: `fixture/${name}`,
+              basedOn: 'new',
+              title: name
+            })
+          const run = Date.now().toString(36)
+          const a = await make(`bulk-status-a-${run}`)
+          const b = await make(`bulk-status-b-${run}`)
+          await ctx.refreshSessions()
+          await ctx.goTo('sessions')
+          await wait(900)
+          await click($('.sessions-view-option[aria-label="Grid view"]'))
+          const cardFor = (id?: string): HTMLElement | null =>
+            id ? $(`.session-card[data-record-id="${id}"]`) : null
+          await until(() => Boolean(cardFor(a.record?.id) && cardFor(b.record?.id)), 4000)
+          await check(
+            'grid view shows the new sessions as cards',
+            Boolean(cardFor(a.record?.id) && cardFor(b.record?.id)),
+            `${$$('.session-card').length} cards, ${$$('.session-card[data-record-id]').length} with an id; grid: ${Boolean($('.sessions-card-grid'))}; created: ${a.ok}/${b.ok} ${a.error ?? ''}`
+          )
+          const bar = (): HTMLElement | null =>
+            $('.cr-selection-bar[aria-label="Selected sessions"]')
+          {
+            const card = cardFor(a.record?.id)
+            card?.scrollIntoView({ block: 'center' })
+            const r = card?.getBoundingClientRect()
+            if (r) {
+              await input({
+                type: 'mouseMove',
+                x: Math.round(r.left + r.width / 2),
+                y: Math.round(r.top + r.height / 2)
+              })
+            }
+            await wait(200)
+          }
+          await click(cardFor(a.record?.id)?.querySelector('.session-card-pick'))
+          // Once anything is picked, a plain click on a card picks it too.
+          await click(cardFor(b.record?.id)?.querySelector('.session-card-title'))
+          await check(
+            'in grid view, the check on a card picks it, and then a plain click picks another',
+            /2 selected/.test(bar()?.textContent ?? '') &&
+              Boolean(cardFor(a.record?.id)?.classList.contains('session-card--picked')) &&
+              Boolean(cardFor(b.record?.id)?.classList.contains('session-card--picked')),
+            bar()?.textContent ?? `no bar (${a.error ?? ''} ${b.error ?? ''})`
+          )
+          await key('s')
+          const doneOption = (): HTMLElement | null => $('.backlog-picker [data-value="done"]')
+          await until(() => Boolean(doneOption()), 3000)
+          await check('S opens a status picker for the picked sessions', Boolean(doneOption()))
+          await click(doneOption())
+          // Marked done with nothing running, a session leaves the live list.
+          type Listed = { record: { id: string } | null }
+          const stillListed = async (): Promise<string[]> =>
+            (await api.invoke<Listed[]>('sessions:list'))
+              .map((x) => x.record?.id)
+              .filter((id): id is string => id === a.record?.id || id === b.record?.id)
+          let left = await stillListed()
+          for (let i = 0; i < 20 && left.length > 0; i++) {
+            await wait(200)
+            left = await stillListed()
+          }
+          await check(
+            'choosing Done marks every picked session done, and the selection clears',
+            left.length === 0 && !bar(),
+            bar()?.textContent ?? `still active: ${left.join(', ')}`
+          )
+          await click($('.sessions-view-option[aria-label="List view"]'))
+          for (const id of [a.record?.id, b.record?.id]) {
+            if (id)
+              await api.invoke('sessions:delete', id, {
+                removeWorktree: true,
+                discardChanges: true
+              })
+          }
+          await ctx.refreshSessions()
         }
 
         // The sidebar's projects open to list their sessions, and a session opens
@@ -4305,7 +4392,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           chip()?.outerHTML.slice(0, 200) ?? 'no PR chip in the header'
         )
         await check(
-          "with no word from GitHub, the chip says no state rather than guessing one",
+          'with no word from GitHub, the chip says no state rather than guessing one',
           Boolean(chip()?.classList.contains('cr-pr-chip--unknown')) &&
             !/open|merged|closed/.test(text.replace('other-repo', '')),
           text
