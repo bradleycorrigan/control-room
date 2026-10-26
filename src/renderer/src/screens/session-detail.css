@@ -297,21 +297,14 @@
 
 .session-detail-status-row {
   display: flex;
-  align-items: baseline;
+  /* Centred, not baseline: the status badge, the ticket pill, the create
+     button and PR chips each start with a dot or icon, and a flex item's
+     baseline comes from its first child, so baseline lined each one up on
+     a different edge. Every item here is a single line, so centring them
+     lines their text up too. */
+  align-items: center;
   gap: var(--space-12);
   min-width: 0;
-}
-
-/* Badge (the status word) is a flex row itself (dot + word), so it has no
-   single text baseline for the row's `baseline` above to find — align it on
-   its own word instead of the dot, so it lines up with the ticket pill's
-   text rather than the whole badge's bounding box. */
-.session-detail-status-row .status-badge-word {
-  vertical-align: baseline;
-}
-.session-detail-status-row > .status-badge {
-  display: inline-flex;
-  align-items: baseline;
 }
 
 /* The ticket this session works on — opens it on Backlog. */
