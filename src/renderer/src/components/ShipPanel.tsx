@@ -1,6 +1,7 @@
 import { GitHubGlyph } from '../screens/backlogGlyphs'
 import { useEffect, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
+import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
 import {
   getShipInfo,
   shipPullRequest,
@@ -32,6 +33,14 @@ interface Props {
   onClose: () => void
   onOpenDiff: () => void
   pushToast?: (message: string) => void
+  /**
+   * A pull request the agent opened somewhere other than this session's own
+   * branch (usually another repo). The panel is then about that PR: no commits
+   * to review or push, since they live in a checkout this session doesn't own.
+   */
+  linkedPr?: LinkedPullRequest
+  /** Shown before a linked PR's number when it's in a repo other than the project's. */
+  linkedRepo?: string
 }
 
 type ButtonState = 'idle' | 'busy' | 'done' | 'error'
@@ -53,8 +62,11 @@ function StepBadge({ n, done }: { n: number; done: boolean }): React.JSX.Element
 }
 
 /**
- * The Ship flow (plan 7 step 3): review, open the PR, tell Jira, tell
- * Slack — one panel instead of four separate places to remember. Every
+ * A pull request's panel, opened from its pill in the session header (or the
+ * "Open pull request" pill before there is one): review, open the PR, tell
+ * Jira, tell Slack — one panel instead of four separate places to remember.
+ * Each PR pill opens its own, so a session with several PRs gets one each.
+ * Every
  * section only appears once it has something real to do (CLAUDE.md: a
  * control exists only if it works) — no Jira section on an unlinked
  * session, no Slack section without a Slack link on the ticket.
@@ -66,14 +78,28 @@ export default function ShipPanel({
   jiraReady,
   onClose,
   onOpenDiff,
-  pushToast
+  pushToast,
+  linkedPr,
+  linkedRepo
 }: Props): React.JSX.Element {
   useDismissible(true, 'modal', onClose)
   const recordId = session.record!.id
   const sessionTitle = session.record?.title ?? session.agentName ?? session.cwd
 
-  const [info, setInfo] = useState<ShipInfo | null | undefined>(undefined)
-  const [existingPr, setExistingPr] = useState<PullRequestInfo | null | undefined>(undefined)
+  // A linked PR's panel starts with everything it will ever load; the panel
+  // is keyed on the PR, so a different one mounts a fresh panel.
+  const [info, setInfo] = useState<ShipInfo | null | undefined>(linkedPr ? null : undefined)
+  const [existingPr, setExistingPr] = useState<PullRequestInfo | null | undefined>(() =>
+    linkedPr
+      ? {
+          number: linkedPr.number,
+          url: linkedPr.url,
+          title: linkedPr.title ?? `${linkedPr.repository} #${linkedPr.number}`,
+          state: linkedPr.state ?? 'OPEN',
+          isDraft: linkedPr.isDraft
+        }
+      : undefined
+  )
   const [handoffNote, setHandoffNote] = useState<string | null | undefined>(undefined)
   const [board, setBoard] = useState<JiraBoardData | null>(null)
   // The header's own ticketKey (useTicketKey in SessionDetail) only refetches
@@ -96,6 +122,8 @@ export default function ShipPanel({
     linkedTicketKey !== undefined ? (linkedTicketKey ?? propTicketKey) : propTicketKey
 
   useEffect(() => {
+    // A PR in another repo: what gh said about it is all there is (initial state above).
+    if (linkedPr) return
     let cancelled = false
     void Promise.all([getShipInfo(recordId), getSessionPullRequest(recordId)]).then(
       ([shipInfo, pr]) => {
@@ -107,7 +135,7 @@ export default function ShipPanel({
     return () => {
       cancelled = true
     }
-  }, [recordId])
+  }, [recordId, linkedPr])
 
   useEffect(() => {
     let cancelled = false
@@ -191,7 +219,10 @@ export default function ShipPanel({
     if (!existingPr) return
     setPrAction('ready')
     setPrActionError(null)
-    const result = await markPullRequestReady(recordId, existingPr.number)
+    const result = await markPullRequestReady(
+      recordId,
+      linkedPr ? existingPr.url : existingPr.number
+    )
     setPrAction(null)
     if (!result.ok) return setPrActionError(result.error ?? 'Could not mark it ready.')
     setExistingPr({ ...existingPr, isDraft: false })
@@ -259,15 +290,27 @@ export default function ShipPanel({
 
   // When each step counts as done, from the state the panel already has.
   const [diffOpened, setDiffOpened] = useState(false)
+  const showReview = !linkedPr
   const reviewDone = commits.length > 0 && (info?.unpushed === 0 || diffOpened)
   const prDone =
     Boolean(existingPr && (existingPr.state === 'OPEN' || existingPr.state === 'MERGED')) &&
-    info?.unpushed === 0
+    (Boolean(linkedPr) || info?.unpushed === 0)
   const showJira = Boolean(ticketKey && jiraReady)
   const jiraDone = commentState === 'done' || moveState === 'done'
   const showSlack = Boolean(slackLink)
   const slackDone = copied
-  const allDone = reviewDone && prDone && (!showJira || jiraDone) && (!showSlack || slackDone)
+  const allDone =
+    (!showReview || reviewDone) && prDone && (!showJira || jiraDone) && (!showSlack || slackDone)
+  // Steps are numbered by what's shown, so a linked PR's panel starts at 1.
+  const stepNumber = {
+    review: 1,
+    pr: showReview ? 2 : 1,
+    jira: showReview ? 3 : 2,
+    slack: (showReview ? 3 : 2) + (showJira ? 1 : 0)
+  }
+  const prName = existingPr
+    ? `${linkedRepo ? `${linkedRepo} ` : ''}PR #${existingPr.number}`
+    : 'New pull request'
   // Once every step shown is done, the panel says so until it closes, even
   // if something later (a new commit) would undo a step.
   const [shipped, setShipped] = useState(false)
@@ -279,7 +322,7 @@ export default function ShipPanel({
         className="ship-panel"
         role="dialog"
         aria-modal="true"
-        aria-label="Ship"
+        aria-label={prName}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="ship-panel-header">
@@ -290,8 +333,8 @@ export default function ShipPanel({
             </div>
           ) : (
             <div key="ship" className="ship-panel-title">
-              <Icon name="Rocket" size={20} />
-              <h2>Ship</h2>
+              <GitHubGlyph size={18} />
+              <h2>{existingPr === undefined && !linkedPr ? 'Pull request' : prName}</h2>
             </div>
           )}
           <Button variant="ghost" size="compact" onClick={onClose}>
@@ -300,59 +343,61 @@ export default function ShipPanel({
         </div>
 
         <div className="ship-panel-body">
-          {/* 1. Review */}
-          <section className="ship-panel-section">
-            <h3 className="ship-panel-section-title">
-              <StepBadge n={1} done={reviewDone} />
-              Review
-            </h3>
-            {loadingReview ? (
-              <p className="ship-panel-muted">Loading commits…</p>
-            ) : (
-              <>
-                <div className="ship-panel-commits">
-                  {commits.length === 0 ? (
-                    <p className="ship-panel-muted">
-                      {session.record?.detached
-                        ? `No commits yet. This session started from ${branch} and isn't on a branch of its own yet.`
-                        : `No commits yet on ${branch}.`}
-                    </p>
-                  ) : (
-                    commits.map((c) => (
-                      <div key={c.sha} className="ship-panel-commit">
-                        <span className="ship-panel-commit-sha">{c.sha}</span>
-                        <span className="ship-panel-commit-subject">{c.subject}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <div className="ship-panel-inline">
-                  <Button
-                    variant="outlined"
-                    size="compact"
-                    onClick={() => {
-                      setDiffOpened(true)
-                      onOpenDiff()
-                    }}
-                  >
-                    View diff
-                  </Button>
-                  {info?.git && info.git.filesChanged > 0 && (
-                    <p className="ship-panel-diffstat">
-                      {info.git.filesChanged} file{info.git.filesChanged === 1 ? '' : 's'} changed,{' '}
-                      <span className="ship-panel-add">+{info.git.added}</span>{' '}
-                      <span className="ship-panel-remove">−{info.git.removed}</span>
-                    </p>
-                  )}
-                </div>
-              </>
-            )}
-          </section>
+          {/* 1. Review — this branch's commits; a linked PR's live elsewhere. */}
+          {showReview && (
+            <section className="ship-panel-section">
+              <h3 className="ship-panel-section-title">
+                <StepBadge n={stepNumber.review} done={reviewDone} />
+                Review
+              </h3>
+              {loadingReview ? (
+                <p className="ship-panel-muted">Loading commits…</p>
+              ) : (
+                <>
+                  <div className="ship-panel-commits">
+                    {commits.length === 0 ? (
+                      <p className="ship-panel-muted">
+                        {session.record?.detached
+                          ? `No commits yet. This session started from ${branch} and isn't on a branch of its own yet.`
+                          : `No commits yet on ${branch}.`}
+                      </p>
+                    ) : (
+                      commits.map((c) => (
+                        <div key={c.sha} className="ship-panel-commit">
+                          <span className="ship-panel-commit-sha">{c.sha}</span>
+                          <span className="ship-panel-commit-subject">{c.subject}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="ship-panel-inline">
+                    <Button
+                      variant="outlined"
+                      size="compact"
+                      onClick={() => {
+                        setDiffOpened(true)
+                        onOpenDiff()
+                      }}
+                    >
+                      View diff
+                    </Button>
+                    {info?.git && info.git.filesChanged > 0 && (
+                      <p className="ship-panel-diffstat">
+                        {info.git.filesChanged} file{info.git.filesChanged === 1 ? '' : 's'}{' '}
+                        changed, <span className="ship-panel-add">+{info.git.added}</span>{' '}
+                        <span className="ship-panel-remove">−{info.git.removed}</span>
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+            </section>
+          )}
 
           {/* 2. Pull request */}
           <section className="ship-panel-section">
             <h3 className="ship-panel-section-title">
-              <StepBadge n={2} done={prDone} />
+              <StepBadge n={stepNumber.pr} done={prDone} />
               Pull request
             </h3>
             {existingPr === undefined ? (
@@ -382,7 +427,7 @@ export default function ShipPanel({
                 )}
                 {openPr && (
                   <div className="ship-panel-pr-actions">
-                    {(info?.unpushed ?? 0) > 0 && (
+                    {!linkedPr && (info?.unpushed ?? 0) > 0 && (
                       <Button
                         size="compact"
                         onClick={() => void pushToPr()}
@@ -411,13 +456,25 @@ export default function ShipPanel({
                       <GitHubGlyph size={13} />
                       Open in GitHub
                     </Button>
-                    {info?.unpushed === 0 && !openPr.isDraft && (
+                    {!linkedPr && info?.unpushed === 0 && !openPr.isDraft && (
                       <span className="ship-panel-muted">Up to date with your latest commit.</span>
                     )}
                     {prActionError && <p className="ship-panel-error">{prActionError}</p>}
                   </div>
                 )}
-                {!openPr && (
+                {existingPr && !openPr && (
+                  <div className="ship-panel-pr-actions">
+                    <Button
+                      variant="outlined"
+                      size="compact"
+                      onClick={() => void openExternal(existingPr.url)}
+                    >
+                      <GitHubGlyph size={13} />
+                      Open in GitHub
+                    </Button>
+                  </div>
+                )}
+                {!openPr && !linkedPr && (
                   <div className="ship-panel-pr-form">
                     <label className="ship-panel-field">
                       <span>Title</span>
@@ -459,7 +516,7 @@ export default function ShipPanel({
           {showJira && (
             <section className="ship-panel-section">
               <h3 className="ship-panel-section-title">
-                <StepBadge n={3} done={jiraDone} />
+                <StepBadge n={stepNumber.jira} done={jiraDone} />
                 Jira
               </h3>
               <div className="ship-panel-jira-row">
@@ -502,7 +559,7 @@ export default function ShipPanel({
           {slackLink && (
             <section className="ship-panel-section">
               <h3 className="ship-panel-section-title">
-                <StepBadge n={4} done={slackDone} />
+                <StepBadge n={stepNumber.slack} done={slackDone} />
                 Slack
               </h3>
               <div className="ship-panel-jira-row">

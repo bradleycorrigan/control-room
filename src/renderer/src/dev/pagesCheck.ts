@@ -2477,8 +2477,11 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         )
         // A session with no ticket offers to make one, prefilled, and links it.
         {
-          await until(() => Boolean($('.session-detail-ticket--create')), 4000)
-          await click($('.session-detail-ticket--create'))
+          await until(
+            () => Boolean($('.session-detail-ticket--create:not(.session-detail-pr-create)')),
+            4000
+          )
+          await click($('.session-detail-ticket--create:not(.session-detail-pr-create)'))
           await until(() => Boolean($('.backlog-picker')), 6000)
           await check(
             'the ticket button offers to create a ticket or link one',
@@ -2500,7 +2503,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             await until(
               () =>
                 /^[A-Z]+-\d+$/.test($('.session-detail-ticket')?.textContent?.trim() ?? '') &&
-                !$('.session-detail-ticket--create'),
+                !$('.session-detail-ticket--create:not(.session-detail-pr-create)'),
               6000
             ),
             $('.session-detail-ticket')?.textContent ?? 'no pill'
@@ -2582,8 +2585,11 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         for (const id of fixtureRecords) await api.invoke('jira:link', id, null)
         await ctx.goTo('home')
         await ctx.openFirstSession()
-        await until(() => Boolean($('.session-detail-ticket--create')), 4000)
-        await click($('.session-detail-ticket--create'))
+        await until(
+          () => Boolean($('.session-detail-ticket--create:not(.session-detail-pr-create)')),
+          4000
+        )
+        await click($('.session-detail-ticket--create:not(.session-detail-pr-create)'))
         await until(() => Boolean($('.backlog-picker')), 6000)
         setText($<HTMLInputElement>('.backlog-picker-input'), 'PROJ-103')
         await wait(200)
@@ -3479,14 +3485,24 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         // do with it, not a form that fails with "already exists".
         {
           await openSessionByTitle('Ready session')
-          await click($('[aria-label="Ship"]'))
+          const branchPill = (): HTMLElement | undefined =>
+            $$<HTMLElement>('.session-detail-status-row .cr-pr-chip').find((el) =>
+              (el.textContent ?? '').includes('PR #42')
+            )
+          await until(() => Boolean(branchPill()), 6000)
+          await check(
+            "the header shows the branch's own pull request as a pill, and no Ship button",
+            Boolean(branchPill()) && !$('[aria-label="Ship"]'),
+            $('.session-detail-header')?.textContent ?? 'no header'
+          )
+          await click(branchPill())
           await until(() => Boolean($('.ship-panel')), 3000)
           await until(
             () => !/Checking for an existing/.test($('.ship-panel')?.textContent ?? ''),
             5000
           )
           await check(
-            'Ship on a branch with an open pull request offers what to do with it, not a new one',
+            "the branch PR's pill opens its panel: what to do with it, not a new one",
             Boolean($('.ship-panel-pr-existing')) &&
               Boolean(byText('.ship-panel-pr-actions button', 'Open in GitHub')) &&
               !$('.ship-panel-pr-form'),
@@ -3509,10 +3525,13 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           await api.invoke('jira:link', SHIP_RECORD, null)
           await openSessionByTitle('Working session')
 
-          await click($('[aria-label="Ship"]'))
+          const createPill = (): HTMLElement | undefined =>
+            byText('.session-detail-status-row button', 'Open pull request')
+          await until(() => Boolean(createPill()), 6000)
+          await click(createPill())
           await until(() => Boolean($('.ship-panel')), 3000)
           await check(
-            'Ship opens the panel from the header, on a branch with commits',
+            '"Open pull request" opens the panel from the header, on a branch with commits',
             Boolean($('.ship-panel')),
             $('.session-detail-header')?.textContent ?? 'no header'
           )
@@ -3552,7 +3571,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           // Link to a Jira ticket with a Slack link, and re-open: PR title takes
           // "KEY: summary", Jira and Slack sections both appear.
           await api.invoke('jira:link', SHIP_RECORD, 'PROJ-101')
-          await click($('[aria-label="Ship"]'))
+          await click(createPill())
           await until(() => Boolean($('.ship-panel')), 3000)
           await until(
             () =>
@@ -4397,6 +4416,24 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             !/open|merged|closed/.test(text.replace('other-repo', '')),
           text
         )
+        // Clicking it opens that PR's own panel rather than GitHub: no commits
+        // to review (they're in the other repo's checkout) and no form to open
+        // a new one, just what can be done with this PR.
+        await click(chip())
+        await until(() => Boolean($('.ship-panel')), 3000)
+        const panel = $('.ship-panel')
+        await check(
+          "the other repo's PR pill opens a panel about that PR",
+          (panel?.getAttribute('aria-label') ?? '').includes('other-repo PR #7') &&
+            !$$('.ship-panel-section-title').some((el) =>
+              (el.textContent ?? '').includes('Review')
+            ) &&
+            !$('.ship-panel-pr-form') &&
+            Boolean(byText('.ship-panel-pr-actions button', 'Open in GitHub')),
+          panel?.textContent?.slice(0, 200) ?? 'no panel'
+        )
+        await key('Escape')
+        await until(() => !$('.ship-panel'), 2000)
       }
     },
     {
@@ -4414,7 +4451,12 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           try {
             await api.invoke('jira:link', TICKS_RECORD, 'PROJ-101')
             await openSessionByTitle('Ready session')
-            await click($('[aria-label="Ship"]'))
+            const pill = (): HTMLElement | undefined =>
+              $$<HTMLElement>('.session-detail-status-row .cr-pr-chip').find((el) =>
+                (el.textContent ?? '').includes('PR #42')
+              )
+            await until(() => Boolean(pill()), 6000)
+            await click(pill())
             await until(() => Boolean($('.ship-panel')), 3000)
             await until(() => Boolean(slackTitle()), 5000)
             const copyBtn = (): HTMLButtonElement | undefined =>

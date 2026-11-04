@@ -60,9 +60,9 @@ export function commitAndPushSessionFiles(
   return window.api.invoke<ShipResult>('sessions:commitPush', id, paths, message)
 }
 
-/** Takes a draft pull request out of draft. */
-export function markPullRequestReady(id: string, prNumber: number): Promise<ShipResult> {
-  return window.api.invoke<ShipResult>('sessions:prReady', id, prNumber)
+/** Takes a draft pull request out of draft: the branch's own by number, any other by URL. */
+export function markPullRequestReady(id: string, pr: number | string): Promise<ShipResult> {
+  return window.api.invoke<ShipResult>('sessions:prReady', id, pr)
 }
 
 /** Pull requests the session's agent opened, in any repo, from its transcript. */

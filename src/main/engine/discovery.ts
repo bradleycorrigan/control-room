@@ -25,6 +25,7 @@ import {
 } from './hooks-server'
 import { isUnread, lastActivityAt, migrateSeen } from './seen'
 import { getTranscriptTitle } from '../exec/transcripts'
+import { preStartPaneFor, preStartStatus } from './pre-start'
 import type { LiveSession, SessionRecord } from '../store/types'
 
 const TMUX_FIELD_RE = /^(.+):(@\d+)\.(%\d+)$/
@@ -33,6 +34,10 @@ const TMUX_FIELD_RE = /^(.+):(@\d+)\.(%\d+)$/
 // A dev container session whose pane still shows a shell this soon after it
 // was made is taken to be starting (a launcher script runs in one).
 const CONTAINER_START_GRACE_MS = 10 * 60_000
+
+// Pane id -> when discovery first saw Claude running in it with no session
+// file (see pre-start.ts). Dropped as soon as the pane has one, or is gone.
+const preStartPanes = new Map<string, number>()
 
 export const SHELL_COMMANDS = new Set(['zsh', 'bash', 'fish', 'sh', '-zsh', '-bash', 'login'])
 
@@ -659,6 +664,7 @@ export async function discoverLiveSessions(): Promise<LiveSession[]> {
   // Registered records with no live session: 'stopped', or 'missing' if the worktree is gone
   // (this happens when `wtrm` runs behind the app's back).
   const liveRecordIds = new Set(live.map((l) => l.record?.id).filter(Boolean))
+  const preStartSeen = new Set<string>()
   for (const record of state.sessions) {
     if (record.archivedAt) continue
     if (liveRecordIds.has(record.id)) continue
@@ -745,6 +751,41 @@ export async function discoverLiveSessions(): Promise<LiveSession[]> {
       }
     }
 
+    // Claude is running in this session's own pane but has no session file
+    // yet: booting, or asking something before it starts. Show the pane so
+    // the question can be answered (pre-start.ts).
+    const preStartPane = worktreeExists
+      ? preStartPaneFor(record, panesByPaneId, SHELL_COMMANDS)
+      : null
+    if (preStartPane) {
+      preStartSeen.add(preStartPane.paneId)
+      const firstSeen = preStartPanes.get(preStartPane.paneId) ?? now
+      preStartPanes.set(preStartPane.paneId, firstSeen)
+      const preStart = preStartStatus(firstSeen, now)
+      live.push({
+        record,
+        key: recordKey,
+        status: preStart.status,
+        statusReason: preStart.reason,
+        claudePid: null,
+        claudeSessionId: record.claudeSessionId,
+        cwd: record.worktreePath,
+        agentName: record.title,
+        rawStatus: null,
+        waitingFor: preStart.waitingFor,
+        tmux: toJoined(preStartPane),
+        alive: true,
+        lastEvent: null,
+        cursorTheme: readCursorTheme(record.workspaceFile),
+        updatedAt: now,
+        backgroundAgentId: null,
+        subagents: [],
+        unread: false,
+        activityAt: null
+      })
+      continue
+    }
+
     const lastEvent = latestHookEvent(record.claudeSessionId, record.worktreePath)
     const recordActivityAt = lastActivityAt({
       claudeSessionId: record.claudeSessionId,
@@ -778,6 +819,10 @@ export async function discoverLiveSessions(): Promise<LiveSession[]> {
       unread: isUnread(recordKey, recordActivityAt),
       activityAt: recordActivityAt
     })
+  }
+
+  for (const paneId of preStartPanes.keys()) {
+    if (!preStartSeen.has(paneId)) preStartPanes.delete(paneId)
   }
 
   return live

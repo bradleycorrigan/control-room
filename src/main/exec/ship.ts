@@ -99,13 +99,16 @@ export async function pushBranch(worktreePath: string, branch: string): Promise<
     : { ok: false, error: res.stderr.trim() || 'git push failed' }
 }
 
-/** `gh pr ready <number>`: a draft pull request, ready for review. */
+/**
+ * `gh pr ready <number or url>`: a draft pull request, ready for review. A
+ * URL works from any directory, so a PR in another repo needs no checkout.
+ */
 export async function markReadyForReview(
   worktreePath: string,
-  prNumber: number
+  pr: number | string
 ): Promise<ShipResult> {
   if (isFixture()) return { ok: true }
-  const res = await run('gh', ['pr', 'ready', String(prNumber)], {
+  const res = await run('gh', ['pr', 'ready', String(pr)], {
     cwd: worktreePath,
     timeoutMs: 60_000
   })

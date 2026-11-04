@@ -15,20 +15,23 @@ export interface PrChipProps {
   repo?: string
   /** 20 to sit beside the session header's ticket pill; 22 in lists. */
   size?: 20 | 22
+  /** Replaces opening GitHub: the session header opens the PR's panel instead. */
+  onOpen?: () => void
 }
 
 /** Dot, number and state. A button, so it opens the PR without opening the row. */
-export default function PrChip({ pr, repo, size = 22 }: PrChipProps): React.JSX.Element {
+export default function PrChip({ pr, repo, size = 22, onOpen }: PrChipProps): React.JSX.Element {
   const state = pr.state ? pr.state.toLowerCase() : 'unknown'
   const name = repo ? `${repo} #${pr.number}` : `#${pr.number}`
   return (
     <button
       type="button"
       className={`cr-pr-chip cr-pr-chip--${state}${size === 20 ? ' cr-pr-chip--20' : ''}`}
-      title={`Open pull request ${name} on GitHub`}
+      title={onOpen ? `Pull request ${name}` : `Open pull request ${name} on GitHub`}
       onClick={(e) => {
         e.stopPropagation()
-        void openExternal(pr.url)
+        if (onOpen) onOpen()
+        else void openExternal(pr.url)
       }}
       onKeyDown={(e) => e.stopPropagation()}
     >

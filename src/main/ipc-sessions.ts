@@ -1,6 +1,11 @@
 import { ipcMain } from 'electron'
 import { getState } from './store/store'
-import { pullRequestFor, linkedPullRequests } from './exec/pullRequests'
+import {
+  pullRequestFor,
+  linkedPullRequests,
+  isPullRequestUrl,
+  forgetPullRequestDetails
+} from './exec/pullRequests'
 import { listTranscriptPrLinks } from './exec/transcripts'
 import { handoffGitSummary } from './exec/sessionGit'
 import { buildHandoffNote, lastAssistantMessage } from './exec/handoffNote'
@@ -113,13 +118,16 @@ export function registerSessionsIpc(): void {
     }
   )
 
-  // A draft pull request, out of draft.
-  ipcMain.handle('sessions:prReady', async (_evt, id: string, prNumber: number) => {
+  // A draft pull request, out of draft: the branch's own by number, or one
+  // in another repo by its GitHub address.
+  ipcMain.handle('sessions:prReady', async (_evt, id: string, pr: number | string) => {
     const record = getState().sessions.find((s) => s.id === id)
     if (!record) return { ok: false, error: 'Session not found.' }
-    if (!Number.isInteger(prNumber) || prNumber <= 0)
-      return { ok: false, error: 'No pull request.' }
-    return markReadyForReview(record.worktreePath, prNumber)
+    const byNumber = typeof pr === 'number' && Number.isInteger(pr) && pr > 0
+    if (!byNumber && !isPullRequestUrl(pr)) return { ok: false, error: 'No pull request.' }
+    const result = await markReadyForReview(record.worktreePath, pr)
+    if (result.ok && typeof pr === 'string') forgetPullRequestDetails(pr)
+    return result
   })
 
   // Ship flow, step 2 — push the branch and open the pull request. Title and

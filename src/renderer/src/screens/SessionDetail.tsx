@@ -30,7 +30,9 @@ import {
   getSessionTicketLinks,
   linkSessionToTicket,
   loadJiraBoard,
-  type JiraBoardData
+  getSessionPullRequest,
+  type JiraBoardData,
+  type PullRequestInfo
 } from '../api'
 import { getShipInfo, getLinkedPullRequests } from '../api-sessions'
 import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
@@ -168,9 +170,13 @@ export default function SessionDetail({
   const [maximized, setMaximized] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [diffOpen, setDiffOpen] = useState(false)
-  const [shipOpen, setShipOpen] = useState(false)
-  // Set when "View diff" is clicked from inside the Ship panel, so closing
-  // the diff brings the panel back rather than leaving it dismissed.
+  // The pull request panel: which PR it's about. `branch` is this session's
+  // own branch (its PR, or the form to open one); `linked` is a PR the agent
+  // opened elsewhere. Null when closed.
+  type ShipTarget = { kind: 'branch' } | { kind: 'linked'; pr: LinkedPullRequest }
+  const [shipTarget, setShipTarget] = useState<ShipTarget | null>(null)
+  // Set when "View diff" is clicked from inside the panel, so closing the
+  // diff brings the panel back rather than leaving it dismissed.
   const shipReopenAfterDiff = useRef(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
@@ -277,8 +283,8 @@ export default function SessionDetail({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recordId, session.status, session.activityAt, shipCheck])
   // Pull requests the agent opened, in any repo. One opened in another repo
-  // never reaches this worktree's branch, so Ship can't show it; this can.
-  // Checked on the same beats as Ship: when a turn ends or status changes.
+  // never reaches this worktree's branch; this finds it in the transcript.
+  // Checked when a turn ends, status changes, or the PR panel closes.
   const [linkedPrs, setLinkedPrs] = useState<LinkedPullRequest[]>([])
   useEffect(() => {
     if (!recordId) return
@@ -289,10 +295,27 @@ export default function SessionDetail({
     return () => {
       cancelled = true
     }
-  }, [recordId, session.status, session.activityAt])
+  }, [recordId, session.status, session.activityAt, shipCheck])
 
   const hasCommitsAhead =
     !!session.record && !session.record.investigation && rawCommitsAhead === true
+
+  // This branch's own pull request, if it has one. Only looked for once the
+  // branch has commits: before that there's nothing a PR could hold.
+  const [branchPr, setBranchPr] = useState<PullRequestInfo | null>(null)
+  useEffect(() => {
+    if (!recordId || !hasCommitsAhead) return
+    let cancelled = false
+    void getSessionPullRequest(recordId).then((pr) => {
+      if (!cancelled) setBranchPr(pr)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [recordId, hasCommitsAhead, session.status, session.activityAt, shipCheck])
+  // Every pill: the branch's PR first, then the ones the agent opened
+  // elsewhere. The branch's PR can be in both lists; it keeps its own pill.
+  const otherPrs = linkedPrs.filter((pr) => pr.url !== branchPr?.url)
 
   // Opening a session marks it read (and decays M5's 'done'). Again whenever
   // its status changes while it is open: a turn that finishes in front of you
@@ -604,7 +627,19 @@ export default function SessionDetail({
                 {ticketBoard === 'loading' ? 'Opening…' : 'Create or link ticket'}
               </button>
             )}
-            {linkedPrs.map((pr) => {
+            {branchPr && hasCommitsAhead && (
+              <PrChip
+                pr={{
+                  ...branchPr,
+                  state: ['OPEN', 'MERGED', 'CLOSED'].includes(branchPr.state)
+                    ? (branchPr.state as 'OPEN' | 'MERGED' | 'CLOSED')
+                    : null
+                }}
+                size={20}
+                onOpen={() => setShipTarget({ kind: 'branch' })}
+              />
+            )}
+            {otherPrs.map((pr) => {
               const repoName = pr.repository.split('/').pop() ?? ''
               return (
                 <PrChip
@@ -612,9 +647,21 @@ export default function SessionDetail({
                   pr={pr}
                   size={20}
                   repo={repoName && repoName !== projectName ? repoName : undefined}
+                  onOpen={() => setShipTarget({ kind: 'linked', pr })}
                 />
               )
             })}
+            {hasCommitsAhead && branchPr?.state !== 'OPEN' && (
+              <button
+                type="button"
+                className="session-detail-ticket session-detail-ticket--create session-detail-pr-create"
+                title="Review this branch's commits and open a pull request"
+                onClick={() => setShipTarget({ kind: 'branch' })}
+              >
+                <Icon name="Plus" size={12} />
+                Open pull request
+              </button>
+            )}
           </div>
           {renameError && <p className="session-detail-inline-error">{renameError}</p>}
         </div>
@@ -640,15 +687,6 @@ export default function SessionDetail({
                 size={28}
                 variant="ghost"
                 onClick={() => setDiffOpen(true)}
-              />
-            )}
-            {hasCommitsAhead && (
-              <IconButton
-                icon="Rocket"
-                label="Ship"
-                size={28}
-                variant="ghost"
-                onClick={() => setShipOpen(true)}
               />
             )}
             {canResume && (
@@ -818,28 +856,42 @@ export default function SessionDetail({
           onClose={() => {
             setDiffOpen(false)
             setShipCheck((n) => n + 1)
-            // "View diff" from the Ship panel hides the panel to show the
+            // "View diff" from the PR panel hides the panel to show the
             // diff on top of it (neither uses a portal, so they'd otherwise
             // share a layer and the panel — opened later — would win).
             // Bring it back once the diff closes.
             if (shipReopenAfterDiff.current) {
               shipReopenAfterDiff.current = false
-              setShipOpen(true)
+              setShipTarget({ kind: 'branch' })
             }
           }}
         />
       )}
 
-      {shipOpen && session.record && branch && (
+      {shipTarget && session.record && (shipTarget.kind === 'linked' || branch) && (
         <ShipPanel
+          key={shipTarget.kind === 'linked' ? shipTarget.pr.url : 'branch'}
           session={session}
-          branch={branch}
+          branch={branch ?? ''}
           ticketKey={ticketKey}
           jiraReady={jiraReady}
-          onClose={() => setShipOpen(false)}
+          linkedPr={shipTarget.kind === 'linked' ? shipTarget.pr : undefined}
+          linkedRepo={
+            shipTarget.kind === 'linked'
+              ? (() => {
+                  const name = shipTarget.pr.repository.split('/').pop() ?? ''
+                  return name && name !== projectName ? name : undefined
+                })()
+              : undefined
+          }
+          onClose={() => {
+            setShipTarget(null)
+            // Opening a PR or taking one out of draft changes its pill.
+            setShipCheck((n) => n + 1)
+          }}
           onOpenDiff={() => {
             shipReopenAfterDiff.current = true
-            setShipOpen(false)
+            setShipTarget(null)
             setDiffOpen(true)
           }}
           pushToast={pushToast}
