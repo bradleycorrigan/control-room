@@ -39,7 +39,9 @@ import { useTicketKeys } from '../state/useTicketKeys'
 import { resolveSessionProjectId } from '../state/useSessions'
 import { sessionTitle } from '../lib/session-title'
 import './sessions-list.css'
-import PrChip from '../components/PrChip'
+import { PrChips, type PrChipProps } from '../components/PrChip'
+import { getAllLinkedPullRequests } from '../api-sessions'
+import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
 
 interface Props {
   sessions: LiveSession[]
@@ -211,9 +213,11 @@ function matchesStatus(session: LiveSession, filter: StatusFilterId[]): boolean 
 // nothing running at all.
 const FINISHED: SessionStatus[] = ['done', 'stopped', 'missing', 'errored']
 
-// The pull request for a session's branch, read by rows and cards without
-// threading it through every group component.
-const SessionPrs = createContext<(s: LiveSession) => WorktreePullRequest | null>(() => null)
+// A session's pull requests (its branch's, then any the agent opened
+// elsewhere), read by rows and cards without threading them through every
+// group component.
+type SessionPr = PrChipProps['pr']
+const SessionPrs = createContext<(s: LiveSession) => SessionPr[]>(() => [])
 
 // The Jira ticket a session is for, and how to open it, read by rows and
 // cards the same way.
@@ -325,11 +329,13 @@ function useSessionLinks(
 ): {
   openPr: (s: LiveSession) => boolean
   prOf: (s: LiveSession) => WorktreePullRequest | null
+  prsOf: (s: LiveSession) => SessionPr[]
   ticketOf: (s: LiveSession) => string | null
 } {
   const [prBranches, setPrBranches] = useState<Map<string, Record<string, WorktreePullRequest>>>(
     new Map()
   )
+  const [linked, setLinked] = useState<Record<string, LinkedPullRequest[]>>({})
   const ticketKey = useTicketKeys()
   const projectIds = useMemo(
     () =>
@@ -352,6 +358,11 @@ function useSessionLinks(
       ).then((entries) => {
         if (live) setPrBranches(new Map(entries))
       })
+      void getAllLinkedPullRequests()
+        .catch(() => ({}))
+        .then((all) => {
+          if (live) setLinked(all)
+        })
     }
     load()
     const id = setInterval(load, 120_000)
@@ -366,9 +377,14 @@ function useSessionLinks(
     return (r?.branch && prBranches.get(r.projectId)?.[r.branch]) || null
   }
   const openPr = (s: LiveSession): boolean => prOf(s)?.state === 'OPEN'
+  const prsOf = (s: LiveSession): SessionPr[] => {
+    const own = prOf(s)
+    const others = (s.record ? (linked[s.record.id] ?? []) : []).filter((p) => p.url !== own?.url)
+    return own ? [own, ...others] : others
+  }
   const ticketOf = (s: LiveSession): string | null => ticketKey(s.record)
 
-  return { openPr, prOf, ticketOf }
+  return { openPr, prOf, prsOf, ticketOf }
 }
 
 interface ProjectGroup {
@@ -582,7 +598,7 @@ function SessionListRow({
   onRenamed
 }: SessionListRowProps): React.JSX.Element {
   const title = sessionTitle(session)
-  const pr = useContext(SessionPrs)(session)
+  const prs = useContext(SessionPrs)(session)
   const {
     recordId,
     picked,
@@ -743,7 +759,7 @@ function SessionListRow({
           )}
 
           <TicketPill session={session} />
-          {pr && <PrChip pr={pr} />}
+          <PrChips prs={prs} />
 
           {since !== null ? (
             <div
@@ -1094,7 +1110,7 @@ function SessionGroupBody({
   onOpenInIde?: (session: LiveSession) => void
   onFocusTerminal?: (session: LiveSession) => void
 }): React.JSX.Element {
-  const prOf = useContext(SessionPrs)
+  const prsOf = useContext(SessionPrs)
   const adoptFor = (session: LiveSession): (() => void) | undefined => {
     if (session.record) return undefined
     const projectId = adoptTo(session)
@@ -1108,7 +1124,7 @@ function SessionGroupBody({
             key={session.key}
             session={session}
             projectName={null}
-            pr={prOf(session)}
+            prs={prsOf(session)}
             onOpen={(background) => onOpenSession(session.key, background)}
             onAdopt={adoptFor(session)}
           />
@@ -1140,7 +1156,7 @@ interface SessionCardProps {
   /** `background`: ⌘- or middle-click — open it in a tab without switching. */
   onOpen: (background?: boolean) => void
   onAdopt?: () => void
-  pr?: WorktreePullRequest | null
+  prs?: SessionPr[]
 }
 
 // Plan 2.4 — "sessions as cards in a responsive grid, same card as the
@@ -1153,7 +1169,7 @@ function SessionCard({
   projectName,
   onOpen,
   onAdopt,
-  pr
+  prs
 }: SessionCardProps): React.JSX.Element {
   const title = sessionTitle(session)
   const branch = session.record?.investigation
@@ -1209,7 +1225,7 @@ function SessionCard({
       )}
       <div className="session-card-bottom">
         <TicketPill session={session} />
-        {pr && <PrChip pr={pr} />}
+        <PrChips prs={prs ?? []} />
         {projectName && <span className="cr-project-pill">{projectName}</span>}
         {onAdopt && (
           <button
@@ -1359,7 +1375,7 @@ export default function SessionsScreen({
   const [hideFinished, setHideFinished] = useStoredState('sessions-hide-finished', false)
   const [prOnly, setPrOnly] = useStoredState('sessions-pr-only', false)
   const [ticketOnly, setTicketOnly] = useStoredState('sessions-ticket-only', false)
-  const { openPr, prOf, ticketOf } = useSessionLinks(sessions, projects)
+  const { openPr, prOf, prsOf, ticketOf } = useSessionLinks(sessions, projects)
   const filtersOn =
     unreadOnly ||
     statusFilter.length > 0 ||
@@ -1597,7 +1613,7 @@ export default function SessionsScreen({
     : null
 
   return (
-    <SessionPrs.Provider value={prOf}>
+    <SessionPrs.Provider value={prsOf}>
       <SessionTickets.Provider
         value={{
           ticketOf,

@@ -65,6 +65,11 @@ export function markPullRequestReady(id: string, pr: number | string): Promise<S
   return window.api.invoke<ShipResult>('sessions:prReady', id, pr)
 }
 
+/** Every session's linked pull requests, keyed by record id; sessions with none are left out. */
+export function getAllLinkedPullRequests(): Promise<Record<string, LinkedPullRequest[]>> {
+  return window.api.invoke<Record<string, LinkedPullRequest[]>>('sessions:linkedPrsAll')
+}
+
 /** Pull requests the session's agent opened, in any repo, from its transcript. */
 export function getLinkedPullRequests(id: string): Promise<LinkedPullRequest[]> {
   return window.api.invoke<LinkedPullRequest[]>('sessions:linkedPrs', id)

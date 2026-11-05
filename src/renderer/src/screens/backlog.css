@@ -2505,6 +2505,15 @@
   background: color-mix(in srgb, var(--surface) 70%, var(--bg));
 }
 
+/* A block of text, not a value to change: no hover tint across all of it. */
+.backlog-prop--description:hover {
+  background: var(--bg);
+}
+
+.backlog-prop--description .backlog-drawer-text {
+  font-size: var(--text-label-size);
+}
+
 .backlog-prop-label {
   font-size: var(--text-caption-size);
   color: var(--text-muted);

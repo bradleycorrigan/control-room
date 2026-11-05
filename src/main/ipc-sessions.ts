@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { getState } from './store/store'
+import type { SessionRecord } from './store/types'
 import {
   pullRequestFor,
   linkedPullRequests,
@@ -75,15 +76,29 @@ export function registerSessionsIpc(): void {
 
   // Pull requests the agent opened, in any repo: read from the transcript's
   // pr-link lines, so one opened outside this session's worktree still shows.
-  ipcMain.handle('sessions:linkedPrs', async (_evt, id: string) => {
-    const record = getState().sessions.find((s) => s.id === id)
-    if (!record) return []
+  const prLinksOf = (record: SessionRecord): ReturnType<typeof listTranscriptPrLinks> => {
     const ids = [record.originalClaudeSessionId, record.claudeSessionId].filter(
       (x): x is string => typeof x === 'string' && x.length > 0
     )
     const byUrl = new Map<string, ReturnType<typeof listTranscriptPrLinks>[number]>()
     for (const sid of ids) for (const l of listTranscriptPrLinks(sid)) byUrl.set(l.url, l)
-    return linkedPullRequests([...byUrl.values()])
+    return [...byUrl.values()]
+  }
+  ipcMain.handle('sessions:linkedPrs', async (_evt, id: string) => {
+    const record = getState().sessions.find((s) => s.id === id)
+    if (!record) return []
+    return linkedPullRequests(prLinksOf(record))
+  })
+  // The same for every session at once, for the Sessions list's cards and
+  // rows. Transcripts are scanned incrementally and gh answers are cached, so
+  // a refresh only reads what's new.
+  ipcMain.handle('sessions:linkedPrsAll', async () => {
+    const out: Record<string, Awaited<ReturnType<typeof linkedPullRequests>>> = {}
+    for (const record of getState().sessions) {
+      const links = prLinksOf(record)
+      if (links.length > 0) out[record.id] = await linkedPullRequests(links)
+    }
+    return out
   })
 
   // With a pull request already open: push the new commits to it.

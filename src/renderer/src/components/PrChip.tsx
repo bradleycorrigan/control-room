@@ -19,6 +19,37 @@ export interface PrChipProps {
   onOpen?: () => void
 }
 
+/**
+ * A session's pull requests where there's room for one: the first (an open one
+ * if there is one) as a chip, then "+N" for the rest, named in its tooltip.
+ */
+export function PrChips({
+  prs,
+  size = 22
+}: {
+  prs: PrChipProps['pr'][]
+  size?: 20 | 22
+}): React.JSX.Element | null {
+  if (prs.length === 0) return null
+  const first = prs.find((p) => p.state === 'OPEN') ?? prs[0]
+  const rest = prs.filter((p) => p !== first)
+  return (
+    <>
+      <PrChip pr={first} size={size} />
+      {rest.length > 0 && (
+        <span
+          className={`cr-pr-chip-more${size === 20 ? ' cr-pr-chip-more--20' : ''}`}
+          title={rest
+            .map((p) => `PR #${p.number}${p.state ? ` ${PR_WORDS[p.state]}` : ''}`)
+            .join('\n')}
+        >
+          +{rest.length}
+        </span>
+      )}
+    </>
+  )
+}
+
 /** Dot, number and state. A button, so it opens the PR without opening the row. */
 export default function PrChip({ pr, repo, size = 22, onOpen }: PrChipProps): React.JSX.Element {
   const state = pr.state ? pr.state.toLowerCase() : 'unknown'

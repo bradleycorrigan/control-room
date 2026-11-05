@@ -43,3 +43,22 @@
 .cr-pr-chip--20 {
   height: 20px;
 }
+
+/* "+N": the session's other pull requests, after the one chip there's room for. */
+.cr-pr-chip-more {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-meta-size);
+  white-space: nowrap;
+}
+
+.cr-pr-chip-more--20 {
+  height: 20px;
+}

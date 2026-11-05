@@ -644,6 +644,16 @@ cliTranscript('fixture-working', [
     prUrl: 'https://github.com/example/other-repo/pull/7',
     prRepository: 'example/other-repo',
     timestamp: new Date(now - 10 * 60_000).toISOString()
+  },
+  // A second one, so the Sessions list has a session with more PRs than its
+  // card shows: one chip, then "+1".
+  {
+    type: 'pr-link',
+    sessionId: 'fixture-working',
+    prNumber: 8,
+    prUrl: 'https://github.com/example/other-repo/pull/8',
+    prRepository: 'example/other-repo',
+    timestamp: new Date(now - 9 * 60_000).toISOString()
   }
 ])
 

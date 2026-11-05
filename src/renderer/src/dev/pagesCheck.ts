@@ -4434,6 +4434,28 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         )
         await key('Escape')
         await until(() => !$('.ship-panel'), 2000)
+        await click($('[aria-label="Close tab (⌘W)"]'))
+        await wait(300)
+
+        // The Sessions list has room for one PR per session: the first as a
+        // chip, then "+1" for the other, named in its tooltip.
+        await ctx.goTo('sessions')
+        const row = (): HTMLElement | undefined =>
+          $$<HTMLElement>('.sessions-row, .session-card').find((el) =>
+            (el.textContent ?? '').includes('Working session')
+          )
+        await until(() => Boolean(row()?.querySelector('.cr-pr-chip-more')), 6000)
+        const more = row()?.querySelector('.cr-pr-chip-more')
+        await check(
+          'a session with two PRs shows one chip and "+1" in the Sessions list',
+          row()?.querySelectorAll('.cr-pr-chip').length === 1 &&
+            (row()?.querySelector('.cr-pr-chip')?.textContent ?? '').includes('PR #7') &&
+            more?.textContent === '+1' &&
+            (more?.getAttribute('title') ?? '').includes('PR #8'),
+          row()
+            ? `chips: ${[...row()!.querySelectorAll('.cr-pr-chip')].map((c) => c.textContent).join(' | ')}; more: "${more?.textContent ?? 'none'}" title "${more?.getAttribute('title') ?? ''}"`
+            : 'no Working session in the list'
+        )
       }
     },
     {
