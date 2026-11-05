@@ -237,8 +237,17 @@
 .session-card-bottom {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--space-8);
   margin-top: var(--space-0-5, 4px);
+}
+
+/* PRs, project and Adopt: one group on the right, packed together. */
+.session-card-bottom-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  margin-left: auto;
 }
 
 /* JSX used to reference .session-list-row-adopt, a class from a deleted

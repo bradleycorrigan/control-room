@@ -1225,20 +1225,24 @@ function SessionCard({
       )}
       <div className="session-card-bottom">
         <TicketPill session={session} />
-        <PrChips prs={prs ?? []} />
-        {projectName && <span className="cr-project-pill">{projectName}</span>}
-        {onAdopt && (
-          <button
-            type="button"
-            className="session-card-adopt"
-            onClick={(e) => {
-              e.stopPropagation()
-              onAdopt()
-            }}
-          >
-            Adopt
-          </button>
-        )}
+        {/* Everything else sits on the right, ticket or no ticket, so a PR
+            never takes the ticket's place on the left. */}
+        <div className="session-card-bottom-end">
+          <PrChips prs={prs ?? []} />
+          {projectName && <span className="cr-project-pill">{projectName}</span>}
+          {onAdopt && (
+            <button
+              type="button"
+              className="session-card-adopt"
+              onClick={(e) => {
+                e.stopPropagation()
+                onAdopt()
+              }}
+            >
+              Adopt
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

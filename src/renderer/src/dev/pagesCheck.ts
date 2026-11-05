@@ -4456,6 +4456,31 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             ? `chips: ${[...row()!.querySelectorAll('.cr-pr-chip')].map((c) => c.textContent).join(' | ')}; more: "${more?.textContent ?? 'none'}" title "${more?.getAttribute('title') ?? ''}"`
             : 'no Working session in the list'
         )
+
+        // In grid view a card's PRs sit on the right edge, ticket or no
+        // ticket, never in the ticket's place on the left.
+        await click($('.sessions-view-option[aria-label="Grid view"]'))
+        const card = (): HTMLElement | null =>
+          $('.session-card[data-record-id="fixture-rec-working"]')
+        await until(() => Boolean(card()?.querySelector('.cr-pr-chip-more')), 6000)
+        const bottom = card()?.querySelector('.session-card-bottom')?.getBoundingClientRect()
+        const end = card()?.querySelector('.cr-pr-chip-more')?.getBoundingClientRect()
+        const firstChip = card()?.querySelector('.cr-pr-chip')?.getBoundingClientRect()
+        await check(
+          "a card's PRs sit on the right, packed together, with no ticket on the left",
+          Boolean(bottom && end && firstChip) &&
+            Math.abs(bottom!.right - end!.right) <= 2 &&
+            end!.left - firstChip!.right <= 8 &&
+            firstChip!.left > bottom!.left + bottom!.width / 3,
+          bottom && end && firstChip
+            ? `row ${bottom.left}-${bottom.right}; chip ${firstChip.left}-${firstChip.right}; +1 ${end.left}-${end.right}`
+            : `cards: ${$$('.session-card').length}; ids: ${$$('.session-card')
+                .map((c) => c.getAttribute('data-record-id'))
+                .join(
+                  ','
+                )}; working card: ${card()?.querySelector('.session-card-bottom')?.outerHTML.slice(0, 300) ?? 'none'}`
+        )
+        await click($('[aria-label="List view"]'))
       }
     },
     {
