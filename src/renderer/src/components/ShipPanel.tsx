@@ -297,7 +297,9 @@ export default function ShipPanel({
     (Boolean(linkedPr) || info?.unpushed === 0)
   const showJira = Boolean(ticketKey && jiraReady)
   const jiraDone = commentState === 'done' || moveState === 'done'
-  const showSlack = Boolean(slackLink)
+  // Copying the review message doesn't need a ticket: it's just the PR's
+  // title and link. The ticket only adds the thread to post it in.
+  const showSlack = Boolean(slackLink || existingPr)
   const slackDone = copied
   const allDone =
     (!showReview || reviewDone) && prDone && (!showJira || jiraDone) && (!showSlack || slackDone)
@@ -556,20 +558,22 @@ export default function ShipPanel({
           )}
 
           {/* 4. Slack */}
-          {slackLink && (
+          {showSlack && (
             <section className="ship-panel-section">
               <h3 className="ship-panel-section-title">
                 <StepBadge n={stepNumber.slack} done={slackDone} />
                 Slack
               </h3>
               <div className="ship-panel-jira-row">
-                <Button
-                  variant="outlined"
-                  size="compact"
-                  onClick={() => void openExternal(slackLink.url)}
-                >
-                  Open Slack thread
-                </Button>
+                {slackLink && (
+                  <Button
+                    variant="outlined"
+                    size="compact"
+                    onClick={() => void openExternal(slackLink.url)}
+                  >
+                    Open Slack thread
+                  </Button>
+                )}
                 <Button
                   variant="outlined"
                   size="compact"

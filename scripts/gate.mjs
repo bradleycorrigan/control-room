@@ -294,7 +294,8 @@ function shardEnv(fixtureRoot) {
     CR_SESSIONS_DIR: join(fixtureRoot, 'sessions'),
     CR_CLAUDE_PROJECTS_DIR: join(fixtureRoot, 'claude-projects'),
     CR_JIRA_FIXTURE: join(root, 'scripts', 'fixtures', 'jira-issues.json'),
-    CR_PR_FIXTURE: 'fixture-rec-ready'
+    CR_PR_FIXTURE: 'fixture-rec-ready',
+    CR_TICKET_DRAFT_BIN: join(root, 'scripts', 'fixtures', 'fake-claude-draft.sh')
   }
 }
 

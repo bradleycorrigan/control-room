@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Input, Modal, Textarea } from '../../components/primitives'
 import {
   createJiraIssue,
@@ -7,6 +7,7 @@ import {
   type JiraIssue,
   type JiraIssueType
 } from '../../api'
+import type { TicketDraftResult } from '../../api-sessions'
 import { useStoredState } from '../../state/useStoredState'
 import Select from '../../components/Select'
 
@@ -21,6 +22,7 @@ export function CreateTicket({
   defaultInCycle,
   initialSummary = '',
   initialDescription = '',
+  draft,
   onCreated,
   onClose
 }: {
@@ -30,6 +32,11 @@ export function CreateTicket({
   /** Prefill — e.g. from a session: its title and what it was asked to do. */
   initialSummary?: string
   initialDescription?: string
+  /**
+   * Fills the fields from elsewhere once it answers (a session's draft by
+   * Haiku). Anything the user has already changed by then stays theirs.
+   */
+  draft?: () => Promise<TicketDraftResult>
   onCreated: (issue: JiraIssue, skipped: string[]) => void
   onClose: () => void
 }): React.JSX.Element {
@@ -55,6 +62,39 @@ export function CreateTicket({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const currentProject = projects.includes(project) ? project : (projects[0] ?? '')
+
+  const [drafting, setDrafting] = useState(Boolean(draft))
+  const [draftError, setDraftError] = useState<string | null>(null)
+  const touched = useRef(new Set<string>())
+  const touch = (field: string): void => {
+    touched.current.add(field)
+  }
+  useEffect(() => {
+    if (!draft) return
+    let live = true
+    void draft()
+      .catch((e: unknown): TicketDraftResult => ({ ok: false, error: String(e) }))
+      .then((r) => {
+        if (!live) return
+        setDrafting(false)
+        if (!r.ok) {
+          setDraftError(r.error)
+          return
+        }
+        const t = touched.current
+        const d = r.value
+        if (!t.has('summary')) setSummary(d.summary)
+        if (!t.has('description') && d.description) setDescription(d.description)
+        if (!t.has('priority') && d.priority) setPriority(d.priority)
+        if (!t.has('epic') && d.epicKey) setParentKey(d.epicKey)
+        if (!t.has('labels') && d.labels.length > 0) setLabels(d.labels.join(', '))
+      })
+    return () => {
+      live = false
+    }
+    // Drafts once, when the form opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     let live = true
@@ -155,6 +195,13 @@ export function CreateTicket({
             </Select>
           </label>
         </div>
+        {(drafting || draftError) && (
+          <p className="backlog-note backlog-create-draft" role="status">
+            {drafting
+              ? 'Drafting the fields from this session…'
+              : `Couldn't draft from the session (${draftError}). The title and last prompt are filled in instead.`}
+          </p>
+        )}
         <label className="backlog-field">
           <span>Summary</span>
           <Input
@@ -162,7 +209,10 @@ export function CreateTicket({
             aria-label="Summary"
             placeholder="What needs doing"
             value={summary}
-            onChange={(e) => setSummary(e.target.value)}
+            onChange={(e) => {
+              touch('summary')
+              setSummary(e.target.value)
+            }}
           />
         </label>
         <label className="backlog-field">
@@ -173,7 +223,10 @@ export function CreateTicket({
             rows={5}
             placeholder="Context, links, what done looks like"
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => {
+              touch('description')
+              setDescription(e.target.value)
+            }}
           />
         </label>
         <div className="backlog-create-row">
@@ -183,7 +236,10 @@ export function CreateTicket({
               className="backlog-select"
               aria-label="Epic"
               value={parentKey}
-              onChange={(e) => setParentKey(e.target.value)}
+              onChange={(e) => {
+                touch('epic')
+                setParentKey(e.target.value)
+              }}
             >
               <option value="">No epic</option>
               {board.epics.map((ep) => (
@@ -199,7 +255,10 @@ export function CreateTicket({
               className="backlog-select"
               aria-label="Priority"
               value={priority}
-              onChange={(e) => setPriority(e.target.value)}
+              onChange={(e) => {
+                touch('priority')
+                setPriority(e.target.value)
+              }}
             >
               {board.priorities.map((p) => (
                 <option key={p} value={p}>
@@ -217,7 +276,10 @@ export function CreateTicket({
               placeholder={board.labels.slice(0, 3).join(', ') || 'data-ask'}
               list="backlog-create-labels"
               value={labels}
-              onChange={(e) => setLabels(e.target.value)}
+              onChange={(e) => {
+                touch('labels')
+                setLabels(e.target.value)
+              }}
             />
             <datalist id="backlog-create-labels">
               {board.labels.map((l) => (

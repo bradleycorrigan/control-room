@@ -34,7 +34,7 @@ import {
   type JiraBoardData,
   type PullRequestInfo
 } from '../api'
-import { getShipInfo, getLinkedPullRequests } from '../api-sessions'
+import { getShipInfo, getLinkedPullRequests, draftTicketFromSession } from '../api-sessions'
 import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
 import PrChip from '../components/PrChip'
 // Every disabled control below is gated by a condition named after one of
@@ -503,6 +503,13 @@ export default function SessionDetail({
             board={ticketBoard}
             defaultInCycle
             initialSummary={title}
+            draft={() =>
+              draftTicketFromSession(session.record!.id, {
+                epics: ticketBoard.epics,
+                labels: ticketBoard.labels,
+                priorities: ticketBoard.priorities
+              })
+            }
             initialDescription={[
               session.record.lastPrompt ?? '',
               session.record.branch && !session.record.investigation

@@ -5,6 +5,17 @@
 
 import type { HandoffGitSummary } from '../../main/exec/sessionGit'
 import type { PullRequestInfo, LinkedPullRequest } from '../../main/exec/pullRequests'
+import type { TicketDraftChoices, TicketDraftResult } from '../../main/exec/ticketDraft'
+
+export type { TicketDraftResult }
+
+/** Haiku's draft of a ticket for this session, limited to the board's own epics, labels and priorities. */
+export function draftTicketFromSession(
+  id: string,
+  choices: TicketDraftChoices
+): Promise<TicketDraftResult> {
+  return window.api.invoke<TicketDraftResult>('sessions:draftTicket', id, choices)
+}
 
 export interface HandoffNoteResult {
   note: string

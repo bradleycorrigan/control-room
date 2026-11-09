@@ -7,7 +7,17 @@ import {
   isPullRequestUrl,
   forgetPullRequestDetails
 } from './exec/pullRequests'
-import { listTranscriptPrLinks } from './exec/transcripts'
+import { listTranscriptPrLinks, listUserPrompts } from './exec/transcripts'
+import { resolveClaudeBinary } from './exec/claude'
+import { run } from './exec/run'
+import {
+  buildTicketDraftPrompt,
+  parseTicketDraft,
+  sanitiseChoices,
+  ticketDraftArgs,
+  type TicketDraftResult
+} from './exec/ticketDraft'
+import { tmpdir } from 'node:os'
 import { handoffGitSummary } from './exec/sessionGit'
 import { buildHandoffNote, lastAssistantMessage } from './exec/handoffNote'
 import {
@@ -100,6 +110,65 @@ export function registerSessionsIpc(): void {
     }
     return out
   })
+
+  // Create ticket from a session: Haiku drafts the fields from what the
+  // session asked, did and opened. Headless and quiet: no tools, no hooks
+  // (so it never shows up as a session here), nothing saved. The fixture
+  // never calls the real claude; CR_TICKET_DRAFT_BIN points the gate at a
+  // stand-in so this path still runs there.
+  ipcMain.handle(
+    'sessions:draftTicket',
+    async (_evt, id: string, rawChoices: unknown): Promise<TicketDraftResult> => {
+      const record = getState().sessions.find((s) => s.id === id)
+      if (!record) return { ok: false, error: 'Session not found.' }
+      const bin =
+        process.env.CR_TICKET_DRAFT_BIN ??
+        (process.env.CR_SESSIONS_DIR ? null : await resolveClaudeBinary())
+      if (!bin) return { ok: false, error: 'Claude Code was not found.' }
+
+      const choices = sanitiseChoices(rawChoices)
+      const project = getState().projects.find((p) => p.id === record.projectId)
+      const ids = [record.originalClaudeSessionId, record.claudeSessionId].filter(
+        (x, i, all): x is string => typeof x === 'string' && x.length > 0 && all.indexOf(x) === i
+      )
+      const branch = record.investigation ? null : await currentBranch(record)
+      const [git, branchPr, linked] = await Promise.all([
+        record.investigation
+          ? Promise.resolve(null)
+          : handoffGitSummary(record.worktreePath, project?.baseRef ?? 'origin/main'),
+        branch ? pullRequestFor(record.id, record.worktreePath, branch) : Promise.resolve(null),
+        linkedPullRequests(prLinksOf(record))
+      ])
+      const pullRequests = [
+        ...(branchPr ? [{ url: branchPr.url, title: branchPr.title ?? null }] : []),
+        ...linked
+          .filter((p) => p.url !== branchPr?.url)
+          .map((p) => ({ url: p.url, title: p.title }))
+      ]
+      const prompt = buildTicketDraftPrompt(
+        {
+          title: record.title,
+          projectName: project?.name ?? null,
+          branch: branch ?? null,
+          prompts: ids.flatMap((sid) => listUserPrompts(sid)),
+          lastReply: lastAssistantMessage(record.claudeSessionId),
+          pullRequests,
+          commits: git?.commits.map((c) => c.subject) ?? []
+        },
+        choices
+      )
+      const res = await run(bin, ticketDraftArgs(prompt, choices), {
+        cwd: tmpdir(),
+        timeoutMs: 90_000
+      })
+      if (res.code !== 0 && !res.stdout.trim())
+        return {
+          ok: false,
+          error: res.stderr.trim().split('\n').pop() || 'Claude stopped without an answer.'
+        }
+      return parseTicketDraft(res.stdout, choices)
+    }
+  )
 
   // With a pull request already open: push the new commits to it.
   ipcMain.handle('sessions:push', async (_evt, id: string) => {

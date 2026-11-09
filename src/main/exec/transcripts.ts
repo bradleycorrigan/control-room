@@ -466,3 +466,40 @@ export function listTranscriptPrLinks(sessionId: string): TranscriptPrLink[] {
   }
   return [...scan.links.values()]
 }
+
+/**
+ * What the user typed to the session, oldest first: the text of each user
+ * turn, without tool results, slash-command echoes or system reminders. Read
+ * from the head and tail only, so a long session gives its first asks and its
+ * latest ones. For drafting a ticket from the session.
+ */
+export function listUserPrompts(sessionId: string): string[] {
+  const jsonlPath = findSessionTranscriptPath(sessionId)
+  if (!jsonlPath) return []
+  const out: string[] = []
+  for (const line of parseLines(readHeadAndTail(jsonlPath, HEAD_BYTES, TAIL_BYTES))) {
+    if (line.type !== 'user') continue
+    const message = line.message as { role?: string; content?: unknown } | undefined
+    if (message?.role !== 'user') continue
+    const content = message.content
+    const text =
+      typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content
+              .filter(
+                (b): b is { type: 'text'; text: string } =>
+                  (b as { type?: string })?.type === 'text' &&
+                  typeof (b as { text?: unknown }).text === 'string'
+              )
+              .map((b) => b.text)
+              .join('\n')
+          : ''
+    const trimmed = text.trim()
+    // Claude Code's own wrappers (<command-name>, <system-reminder>,
+    // <local-command-stdout>…) aren't anything the user asked for.
+    if (!trimmed || trimmed.startsWith('<')) continue
+    if (out[out.length - 1] !== trimmed) out.push(trimmed)
+  }
+  return out
+}

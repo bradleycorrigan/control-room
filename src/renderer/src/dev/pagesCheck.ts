@@ -2494,8 +2494,33 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           const headerTitle = $('.session-detail-breadcrumb-title')?.textContent ?? ''
           await check(
             'Create ticket from a session opens the form with its title',
-            summary.length > 0 && summary === headerTitle,
+            // The stand-in draft can answer before this reads the field.
+            summary.length > 0 &&
+              (summary === headerTitle || summary === `Drafted: ${headerTitle}`),
             `${summary} vs ${headerTitle}`
+          )
+          // Then Haiku's draft (a stand-in in the gate) fills the fields from
+          // the session, keeping only what the board has: the label it made
+          // up is dropped.
+          // Inputs by value; Epic and Priority are pickers (buttons), by text.
+          const field = (label: string): string => {
+            const el = $<HTMLElement>(`.cr-modal [aria-label="${label}"]`)
+            return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+              ? el.value
+              : (el?.textContent?.trim() ?? '')
+          }
+          await until(() => field('Summary').startsWith('Drafted:'), 6000)
+          await check(
+            'the draft fills summary, description, epic, priority and labels from the session',
+            field('Summary') === `Drafted: ${headerTitle}` &&
+              /Drafted by the fixture/.test(field('Description')) &&
+              field('Epic').includes('TEAM-60') &&
+              field('Priority') === 'High' &&
+              field('Labels') === 'data-ask' &&
+              !$('.backlog-create-draft'),
+            ['Summary', 'Description', 'Epic', 'Priority', 'Labels']
+              .map((l) => `${l}=${field(l)}`)
+              .join(' | ') + ` | note: ${$('.backlog-create-draft')?.textContent ?? 'none'}`
           )
           await click(byText('.cr-modal button', 'Create ticket'))
           await check(
@@ -4434,6 +4459,28 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         )
         await key('Escape')
         await until(() => !$('.ship-panel'), 2000)
+        // Squeezed, the status row wraps to a second line: no pill runs past
+        // the column into the header's buttons, and none wraps its own text.
+        {
+          const column = $('.session-detail-breadcrumb-column')
+          const prevWidth = column?.style.maxWidth ?? ''
+          if (column) column.style.maxWidth = '260px'
+          await wait(100)
+          const edge = column?.getBoundingClientRect().right ?? 0
+          const pills = $$<HTMLElement>('.session-detail-status-row > *')
+          const bad = pills.filter((el) => {
+            const r = el.getBoundingClientRect()
+            return r.right > edge + 1 || r.height > 24
+          })
+          await check(
+            'a squeezed status row wraps: every pill stays one line and inside the column',
+            pills.length >= 3 && bad.length === 0,
+            bad
+              .map((el) => `${el.textContent} ${Math.round(el.getBoundingClientRect().height)}px`)
+              .join(', ') || `${pills.length} pills`
+          )
+          if (column) column.style.maxWidth = prevWidth
+        }
         await click($('[aria-label="Close tab (⌘W)"]'))
         await wait(300)
 
@@ -4496,6 +4543,28 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
               (el.textContent ?? '').includes('Slack')
             )
           try {
+            // No ticket yet: the Slack step still offers Copy message, just no
+            // thread to open.
+            await openSessionByTitle('Ready session')
+            {
+              const pill42 = (): HTMLElement | undefined =>
+                $$<HTMLElement>('.session-detail-status-row .cr-pr-chip').find((el) =>
+                  (el.textContent ?? '').includes('PR #42')
+                )
+              await until(() => Boolean(pill42()), 6000)
+              await click(pill42())
+              await until(() => Boolean(slackTitle()), 5000)
+              await check(
+                'without a ticket the panel still offers Copy message, and no Slack thread',
+                Boolean(byText('.ship-panel button', 'Copy message')) &&
+                  !byText('.ship-panel button', 'Open Slack thread'),
+                $('.ship-panel')?.textContent?.slice(0, 300) ?? 'no panel'
+              )
+              await key('Escape')
+              await until(() => !$('.ship-panel'), 2000)
+              await click($('[aria-label="Close tab (⌘W)"]'))
+              await wait(300)
+            }
             await api.invoke('jira:link', TICKS_RECORD, 'PROJ-101')
             await openSessionByTitle('Ready session')
             const pill = (): HTMLElement | undefined =>

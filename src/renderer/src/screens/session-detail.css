@@ -303,13 +303,19 @@
      a different edge. Every item here is a single line, so centring them
      lines their text up too. */
   align-items: center;
-  gap: var(--space-12);
+  /* Wraps rather than squeezing: with a ticket and several PRs the row ran
+     under the header's buttons, and the pills shrank and wrapped their own
+     text. Each pill keeps its one line; the row takes a second. */
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-12);
   min-width: 0;
 }
 
 /* The ticket this session works on — opens it on Backlog. */
 .session-detail-ticket {
+  flex: none;
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   height: 20px;
   padding: 0 var(--space-8);
