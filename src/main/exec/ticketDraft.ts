@@ -176,15 +176,21 @@ export function sanitiseChoices(input: unknown): TicketDraftChoices {
   return { epics, labels: strings(o.labels, 200), priorities: strings(o.priorities, 20) }
 }
 
-/** argv for the headless run: no tools, no MCP, no hooks or settings, nothing saved. */
-export function ticketDraftArgs(prompt: string, choices: TicketDraftChoices): string[] {
+/**
+ * argv for a headless Haiku run: no tools, no MCP, no hooks or settings,
+ * nothing saved. Low effort: these are short writing jobs, and thinking was
+ * a third of the wait.
+ */
+export function headlessHaikuArgs(prompt: string, systemPrompt: string, schema?: string): string[] {
   return [
     '-p',
     prompt,
     '--model',
     'haiku',
+    '--effort',
+    'low',
     '--system-prompt',
-    TICKET_DRAFT_SYSTEM_PROMPT,
+    systemPrompt,
     '--tools',
     '',
     '--strict-mcp-config',
@@ -193,7 +199,61 @@ export function ticketDraftArgs(prompt: string, choices: TicketDraftChoices): st
     '--no-session-persistence',
     '--output-format',
     'json',
-    '--json-schema',
-    ticketDraftSchema(choices)
+    ...(schema ? ['--json-schema', schema] : [])
   ]
+}
+
+export function ticketDraftArgs(prompt: string, choices: TicketDraftChoices): string[] {
+  return headlessHaikuArgs(prompt, TICKET_DRAFT_SYSTEM_PROMPT, ticketDraftSchema(choices))
+}
+
+// --- Session titles ---------------------------------------------------------
+
+export const SESSION_TITLE_SYSTEM_PROMPT = `You name coding-agent sessions so they're easy to find in a list.
+Reply with the title only: 3 to 6 words, sentence case, no quotes, no full stop.
+Name what the session is about overall, as it stands now, not just the first message. Keep specific names (tables, models, PR numbers, people, products).`
+
+export function buildSessionTitlePrompt(
+  ctx: Pick<TicketDraftContext, 'title' | 'projectName' | 'prompts' | 'lastReply'>
+): string {
+  const lines = [`Current title: ${ctx.title}`]
+  if (ctx.projectName) lines.push(`Repository: ${ctx.projectName}`)
+  lines.push('', 'What the user asked, oldest first:')
+  const prompts = promptsWithin(ctx.prompts)
+  if (prompts.length === 0) lines.push('(nothing recorded)')
+  prompts.forEach((p, i) => lines.push(`--- message ${i + 1} ---`, p))
+  if (ctx.lastReply)
+    lines.push('', "The agent's latest reply:", clip(ctx.lastReply, MAX_REPLY_CHARS))
+  lines.push('', 'A better title for this session:')
+  return lines.join('\n')
+}
+
+export function sessionTitleArgs(prompt: string): string[] {
+  return headlessHaikuArgs(prompt, SESSION_TITLE_SYSTEM_PROMPT)
+}
+
+export type SessionTitleResult = { ok: true; value: string } | { ok: false; error: string }
+
+/** Plain-text answer to one clean line: no quotes, prefix or full stop. */
+export function parseSessionTitle(stdout: string): SessionTitleResult {
+  let outer: { is_error?: boolean; result?: string }
+  try {
+    outer = JSON.parse(stdout.trim())
+  } catch {
+    return { ok: false, error: 'Claude gave an answer that could not be read.' }
+  }
+  if (outer.is_error)
+    return { ok: false, error: clip(String(outer.result ?? 'Claude failed.'), 200) }
+  const line =
+    String(outer.result ?? '')
+      .split('\n')
+      .map((l) => l.trim())
+      .find(Boolean) ?? ''
+  const title = line
+    .replace(/^(title|suggested title)\s*:\s*/i, '')
+    .replace(/^["'“‘*]+|["'”’*]+$/g, '')
+    .replace(/\.$/, '')
+    .trim()
+  if (!title) return { ok: false, error: 'Claude gave no title.' }
+  return { ok: true, value: clip(title, 80) }
 }

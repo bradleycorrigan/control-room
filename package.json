@@ -18,7 +18,7 @@
     "fixture:build": "tsx scripts/fixtures/build-fixture.ts",
     "fixture:tmux": "tsx scripts/fixtures/tmux-panes.ts",
     "fixture": "npm run fixture:build && npm run fixture:tmux",
-    "shot:fixture": "CR_PR_FIXTURE=fixture-rec-ready CR_TICKET_DRAFT_BIN=\"$PWD/scripts/fixtures/fake-claude-draft.sh\" CR_JIRA_FIXTURE=\"$PWD/scripts/fixtures/jira-issues.json\" CR_SESSIONS_DIR=\"$PWD/.dev/fixture/sessions\" CR_CLAUDE_PROJECTS_DIR=\"$PWD/.dev/fixture/claude-projects\" node scripts/shot.mjs",
+    "shot:fixture": "CR_PR_FIXTURE=fixture-rec-ready CR_HAIKU_BIN=\"$PWD/scripts/fixtures/fake-claude-haiku.sh\" CR_JIRA_FIXTURE=\"$PWD/scripts/fixtures/jira-issues.json\" CR_SESSIONS_DIR=\"$PWD/.dev/fixture/sessions\" CR_CLAUDE_PROJECTS_DIR=\"$PWD/.dev/fixture/claude-projects\" node scripts/shot.mjs",
     "contrast-check": "tsx src/renderer/src/theme/contrast-check.ts",
     "verify:files-write": "tsx scripts/verify-files-write.ts",
     "verify:clean-description": "tsx scripts/verify-clean-description.ts",

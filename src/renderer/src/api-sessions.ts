@@ -5,7 +5,16 @@
 
 import type { HandoffGitSummary } from '../../main/exec/sessionGit'
 import type { PullRequestInfo, LinkedPullRequest } from '../../main/exec/pullRequests'
-import type { TicketDraftChoices, TicketDraftResult } from '../../main/exec/ticketDraft'
+import type {
+  TicketDraftChoices,
+  TicketDraftResult,
+  SessionTitleResult
+} from '../../main/exec/ticketDraft'
+
+/** Haiku's suggestion for a better session title, from what it asked and did. */
+export function suggestSessionTitle(id: string): Promise<SessionTitleResult> {
+  return window.api.invoke<SessionTitleResult>('sessions:suggestTitle', id)
+}
 
 export type { TicketDraftResult }
 

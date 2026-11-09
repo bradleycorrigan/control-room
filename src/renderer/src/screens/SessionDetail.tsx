@@ -58,6 +58,8 @@ import PrChip from '../components/PrChip'
 // investigate-mode session, which has no worktree to diff.
 import { useDismissible } from '../keyboard'
 import { CreateTicket } from './backlog/CreateTicket'
+import { useTitleSuggestion } from '../components/useTitleSuggestion'
+import { MenuItems } from '../components/MenuItems'
 import { Picker, type PickerOption } from './backlog/Picker'
 
 interface Props {
@@ -188,6 +190,17 @@ export default function SessionDetail({
   const [renameValue, setRenameValue] = useState('')
   const [renameBusy, setRenameBusy] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
+  const renameField = useRef<HTMLInputElement>(null)
+  const titleSuggestion = useTitleSuggestion(
+    renaming ? (session.record?.id ?? null) : null,
+    (t) => {
+      setRenameValue(t)
+      requestAnimationFrame(() => {
+        renameField.current?.focus()
+        renameField.current?.select()
+      })
+    }
+  )
   const [resuming, setResuming] = useState(false)
   // Plan 4 Part 7.4 — context window panel. `undefined` = not yet fetched
   // (button not shown), `null` = fetched but no transcript data available
@@ -584,6 +597,7 @@ export default function SessionDetail({
                 }}
               >
                 <input
+                  ref={renameField}
                   autoFocus
                   value={renameValue}
                   onChange={(e) => setRenameValue(e.target.value)}
@@ -592,6 +606,18 @@ export default function SessionDetail({
                   }}
                   disabled={renameBusy}
                 />
+                <button
+                  type="button"
+                  onClick={titleSuggestion.suggest}
+                  disabled={renameBusy || titleSuggestion.state === 'waiting'}
+                  title={titleSuggestion.error ?? 'A name from what this session asked and did'}
+                >
+                  {titleSuggestion.state === 'waiting'
+                    ? 'Suggesting…'
+                    : titleSuggestion.state === 'error'
+                      ? 'Try again'
+                      : 'Suggest'}
+                </button>
                 <button type="submit" disabled={renameBusy}>
                   {renameBusy ? 'Saving…' : 'Save'}
                 </button>
@@ -764,26 +790,7 @@ export default function SessionDetail({
               different orders, so what you could do to a session depended on
               where you happened to be looking at it. Rename stays in place
               here — there is a title on screen to turn into a field. */}
-          {[
-            // "Write hand-off note…" is one of the shared actions from
-            // useSessionActions now — it renders the same on this menu, the
-            // sessions list rows and the session cards.
-            ...sessionActions(session)
-          ].map((action) => (
-            <button
-              key={action.label}
-              role="menuitem"
-              className={action.danger ? 'session-detail-menu-destructive' : undefined}
-              disabled={Boolean(action.disabled)}
-              title={action.disabled}
-              onClick={() => {
-                setMenuOpen(false)
-                action.onClick()
-              }}
-            >
-              {action.label}
-            </button>
-          ))}
+          <MenuItems items={sessionActions(session)} onPicked={() => setMenuOpen(false)} />
         </Popover>
       </div>
 

@@ -140,27 +140,6 @@
   padding: var(--space-2);
 }
 
-.session-detail-menu button {
-  text-align: left;
-  padding: 6px var(--space-2);
-  border-radius: var(--radius-sm);
-  border: none;
-  background: transparent;
-  color: var(--text);
-  font-size: var(--text-label-size);
-  cursor: pointer;
-  font-family: var(--font-ui);
-}
-
-.session-detail-menu button:hover:not(:disabled) {
-  background: var(--surface);
-}
-
-.session-detail-menu button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
 .session-detail-terminal-msg {
   display: flex;
   align-items: center;
@@ -241,13 +220,6 @@
 
 /* A destructive item in a menu reads as destructive before it is clicked, not
    only in the dialog that follows. */
-/* Scoped to the menu, or `.session-detail-menu button` (0,1,1) outranks this
-   single class (0,1,0) and Delete renders in ordinary text — which is what it
-   had been doing, while the same action on a session card was red. */
-.session-detail-menu button.session-detail-menu-destructive {
-  color: var(--status-error);
-}
-
 .session-detail-menu button.session-detail-menu-destructive:hover:not(:disabled) {
   background: color-mix(in srgb, var(--status-error) 12%, transparent);
   color: var(--status-error);

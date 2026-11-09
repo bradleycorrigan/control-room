@@ -203,17 +203,6 @@ export function openSessionInIde(id: string): Promise<OpenInIdeResult> {
   return window.api.invoke<OpenInIdeResult>('session:openIde', id)
 }
 
-export interface FocusTerminalResult {
-  ok: boolean
-  noClients?: boolean
-  tmuxSessionName?: string
-  error?: string
-}
-
-export function focusSessionTerminal(id: string): Promise<FocusTerminalResult> {
-  return window.api.invoke<FocusTerminalResult>('session:focusTerminal', id)
-}
-
 export interface SessionDiffFile {
   path: string
   added: number

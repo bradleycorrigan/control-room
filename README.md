@@ -100,8 +100,6 @@ Settings has a section for each area (Views, New sessions, Dev containers, Appea
 listed down the left. These are the ones worth a look first:
 
 - **New sessions**: the model and thinking level every new session starts with.
-- **Terminal app**: the app that "Focus terminal" brings to the front. Terminal by default; set it
-  to iTerm, Ghostty or whatever you use.
 - **Setup command** (a project's page → Worktree settings): runs in a new worktree's terminal before
   the agent starts, like `npm install`. Empty by default.
 - **`~/.zsh/wt-setup.sh`** (optional): if this file exists, the workspace file Control Room writes

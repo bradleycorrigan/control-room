@@ -127,7 +127,7 @@ export interface SessionRecord {
 export interface AppSettings {
   hookPort: number // default 47821
   pollIntervalMs: number // default 2000
-  terminalApp: string // default "Terminal", used by `open -a` for Focus terminal
+  terminalApp: string // unused since Focus terminal went; kept so old state files still load
   notifyOn: Array<'needs_attention' | 'ready' | 'done' | 'errored'>
   hooksInstalled: boolean
   hooksInstalledUrl: string | null

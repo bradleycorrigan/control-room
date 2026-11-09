@@ -12,6 +12,8 @@ import DeleteSessionsDialog from '../components/DeleteSessionsDialog'
 import { useDismissible } from '../keyboard'
 import { PickCheck, SelectionAction, SelectionBar } from '../components/selection'
 import { useSessionActions } from '../components/useSessionActions'
+import { useTitleSuggestion } from '../components/useTitleSuggestion'
+import { MenuItems, type MenuItem } from '../components/MenuItems'
 import {
   Button,
   Badge,
@@ -68,7 +70,6 @@ interface Props {
    * pane in the terminal app — the same actions the session detail header
    * and command palette already perform, reachable here per-row. */
   onOpenInIde?: (session: LiveSession) => void
-  onFocusTerminal?: (session: LiveSession) => void
   /** Shows a short, non-blocking message on failure (e.g. Adopt returning
    * null) — matches ProjectDetail's own pushToast prop. Optional so this
    * screen still renders without it: falls back to window.alert, this
@@ -450,13 +451,7 @@ function buildProjectGroups(
   return { groups, other: sortSessions(other, mode) }
 }
 
-interface OverflowAction {
-  label: string
-  onClick: () => void
-  danger?: boolean
-  /** Why it can't be used right now: shown greyed, with this as its tooltip. */
-  disabled?: string
-}
+type OverflowAction = MenuItem
 
 // Shared by the project container header and each session row — plan 5's
 // "hover-revealed overflow menu". Renders nothing (not even the button)
@@ -503,24 +498,11 @@ function OverflowMenu({
         className="overflow-menu-list"
         aria-label={label}
       >
-        {actions.map((action) => (
-          <button
-            key={action.label}
-            type="button"
-            role="menuitem"
-            className={
-              action.danger ? 'overflow-menu-item overflow-menu-item-danger' : 'overflow-menu-item'
-            }
-            disabled={Boolean(action.disabled)}
-            title={action.disabled}
-            onClick={() => {
-              setOpen(false)
-              action.onClick()
-            }}
-          >
-            {action.label}
-          </button>
-        ))}
+        <MenuItems
+          items={actions}
+          onPicked={() => setOpen(false)}
+          itemClassName="overflow-menu-item"
+        />
       </Popover>
     </div>
   )
@@ -583,7 +565,6 @@ interface SessionListRowProps {
   onOpen: (background?: boolean) => void
   onAdopt?: () => void
   onOpenInIde?: () => void
-  onFocusTerminal?: () => void
   onDeleted?: () => void
   onRenamed?: () => void
 }
@@ -620,6 +601,17 @@ function SessionListRow({
   const [renameValue, setRenameValue] = useState('')
   const [renameBusy, setRenameBusy] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
+  const renameField = useRef<HTMLInputElement>(null)
+  const titleSuggestion = useTitleSuggestion(
+    renaming ? (session.record?.id ?? null) : null,
+    (t) => {
+      setRenameValue(t)
+      requestAnimationFrame(() => {
+        renameField.current?.focus()
+        renameField.current?.select()
+      })
+    }
+  )
   // Job 2 — sub-agents nested under this session. Collapsed by default: the
   // count on the row is the thing that must not be missed, the list itself
   // is opt-in detail.
@@ -717,6 +709,7 @@ function SessionListRow({
               onClick={(e) => e.stopPropagation()}
             >
               <input
+                ref={renameField}
                 autoFocus
                 value={renameValue}
                 onChange={(e) => setRenameValue(e.target.value)}
@@ -725,6 +718,18 @@ function SessionListRow({
                 }}
                 disabled={renameBusy}
               />
+              <button
+                type="button"
+                onClick={titleSuggestion.suggest}
+                disabled={renameBusy || titleSuggestion.state === 'waiting'}
+                title={titleSuggestion.error ?? 'A name from what this session asked and did'}
+              >
+                {titleSuggestion.state === 'waiting'
+                  ? 'Suggesting…'
+                  : titleSuggestion.state === 'error'
+                    ? 'Try again'
+                    : 'Suggest'}
+              </button>
               <button type="submit" disabled={renameBusy}>
                 {renameBusy ? 'Saving…' : 'Save'}
               </button>
@@ -885,7 +890,6 @@ interface ProjectContainerProps {
   onNewSession?: (projectId?: string) => void
   onProjectsChanged?: () => void
   onOpenInIde?: (session: LiveSession) => void
-  onFocusTerminal?: (session: LiveSession) => void
   pushToast?: (message: string) => void
 }
 
@@ -899,7 +903,6 @@ function ProjectContainer({
   onNewSession,
   onProjectsChanged,
   onOpenInIde,
-  onFocusTerminal,
   pushToast
 }: ProjectContainerProps): React.JSX.Element {
   const { project, sessions, hasAttention } = group
@@ -1078,7 +1081,6 @@ function ProjectContainer({
           onAdopt={onAdopt}
           onRowChanged={onRowChanged}
           onOpenInIde={onOpenInIde}
-          onFocusTerminal={onFocusTerminal}
         />
       )}
     </section>
@@ -1097,8 +1099,7 @@ function SessionGroupBody({
   onOpenSession,
   onAdopt,
   onRowChanged,
-  onOpenInIde,
-  onFocusTerminal
+  onOpenInIde
 }: {
   sessions: LiveSession[]
   view: 'list' | 'grid'
@@ -1108,7 +1109,6 @@ function SessionGroupBody({
   onAdopt: (session: LiveSession, projectId: string) => void
   onRowChanged: () => void
   onOpenInIde?: (session: LiveSession) => void
-  onFocusTerminal?: (session: LiveSession) => void
 }): React.JSX.Element {
   const prsOf = useContext(SessionPrs)
   const adoptFor = (session: LiveSession): (() => void) | undefined => {
@@ -1141,7 +1141,6 @@ function SessionGroupBody({
           onOpen={(background) => onOpenSession(session.key, background)}
           onAdopt={adoptFor(session)}
           onOpenInIde={onOpenInIde ? () => onOpenInIde(session) : undefined}
-          onFocusTerminal={onFocusTerminal ? () => onFocusTerminal(session) : undefined}
           onDeleted={onRowChanged}
           onRenamed={onRowChanged}
         />
@@ -1327,7 +1326,6 @@ export default function SessionsScreen({
   onNewSession,
   onProjectsChanged,
   onOpenInIde,
-  onFocusTerminal,
   pushToast,
   attentionOnly = false,
   onClearAttentionFilter,
@@ -1946,7 +1944,6 @@ export default function SessionsScreen({
                       onProjectsChanged={onProjectsChanged}
                       pushToast={pushToast}
                       onOpenInIde={onOpenInIde}
-                      onFocusTerminal={onFocusTerminal}
                     />
                   ))}
 
@@ -1966,7 +1963,6 @@ export default function SessionsScreen({
                         onAdopt={handleAdopt}
                         onRowChanged={handleSessionRowChanged}
                         onOpenInIde={onOpenInIde}
-                        onFocusTerminal={onFocusTerminal}
                       />
                     </section>
                   )}

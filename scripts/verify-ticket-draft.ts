@@ -9,6 +9,9 @@ import {
   parseTicketDraft,
   sanitiseChoices,
   ticketDraftArgs,
+  buildSessionTitlePrompt,
+  parseSessionTitle,
+  sessionTitleArgs,
   type TicketDraftChoices
 } from '../src/main/exec/ticketDraft'
 
@@ -110,6 +113,38 @@ check(
     args.includes('--strict-mcp-config') &&
     args.includes('--no-session-persistence'),
   args.join(' ')
+)
+
+check(
+  'both runs ask for low effort (thinking was a third of the wait)',
+  after('--effort') === 'low' &&
+    sessionTitleArgs('p')[sessionTitleArgs('p').indexOf('--effort') + 1] === 'low' &&
+    !sessionTitleArgs('p').includes('--json-schema'),
+  sessionTitleArgs('p').join(' ')
+)
+const titlePrompt = buildSessionTitlePrompt({
+  title: 'Old name',
+  projectName: 'example-repo',
+  prompts: ['first ask', 'then this'],
+  lastReply: 'Done it.'
+})
+check(
+  'the title prompt carries the current title, the asks and the latest reply',
+  ['Current title: Old name', 'first ask', 'then this', 'Done it.'].every((x) =>
+    titlePrompt.includes(x)
+  )
+)
+const title = (result: string): string => {
+  const r = parseSessionTitle(JSON.stringify({ is_error: false, result }))
+  return r.ok ? r.value : `error: ${r.error}`
+}
+check(
+  'a title answer is cleaned: quotes, "Title:", a full stop and extra lines go',
+  title('"Fix UTM attribution."') === 'Fix UTM attribution' &&
+    title('Title: Partner dashboards\nbecause…') === 'Partner dashboards' &&
+    title('“Omni topics”') === 'Omni topics' &&
+    title('').startsWith('error'),
+  [title('"Fix UTM attribution."'), title('Title: Partner dashboards\nbecause…')].join(' | ')
 )
 
 if (failures) {

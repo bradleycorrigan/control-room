@@ -264,7 +264,8 @@ const PAGE_SHARDS = [
     'Projects tidy',
     'Skills and rules',
     'Pull requests opened in another repo',
-    'Ship ticks'
+    'Ship ticks',
+    'Rename suggestions'
   ],
   [
     'Switching',
@@ -295,7 +296,7 @@ function shardEnv(fixtureRoot) {
     CR_CLAUDE_PROJECTS_DIR: join(fixtureRoot, 'claude-projects'),
     CR_JIRA_FIXTURE: join(root, 'scripts', 'fixtures', 'jira-issues.json'),
     CR_PR_FIXTURE: 'fixture-rec-ready',
-    CR_TICKET_DRAFT_BIN: join(root, 'scripts', 'fixtures', 'fake-claude-draft.sh')
+    CR_HAIKU_BIN: join(root, 'scripts', 'fixtures', 'fake-claude-haiku.sh')
   }
 }
 

@@ -10,7 +10,6 @@ import {
   openSessionInIde,
   copyWorktreePath,
   copyAttachCommand,
-  focusSessionTerminal,
   acknowledgeSession,
   markSessionUnread,
   hideSession,
@@ -44,10 +43,12 @@ export function readAction(session: LiveSession, onChanged?: () => void): Sessio
   return session.unread
     ? {
         label: 'Mark as read',
+        group: 'organise',
         onClick: () => void acknowledgeSession(session.key).then(() => onChanged?.())
       }
     : {
         label: 'Mark as unread',
+        group: 'organise',
         onClick: () => void markSessionUnread(session.key).then(() => onChanged?.())
       }
 }
@@ -76,14 +77,12 @@ export function useSessionActions({
   const [confirmNode, confirm] = useConfirm()
 
   // Every session gets this menu, in this order, on every screen: Home, the
-  // Sessions list and the session itself. An item that can never apply to a
-  // kind of session is left out; one that can't be used right now stays put,
-  // greyed, saying why.
+  // Sessions list and the session itself. Grouped: work on it, organise it,
+  // copy from it, end it. An item that can never apply to a kind of session is
+  // left out; one that can't be used right now stays put, greyed, saying why.
   const actionsFor = (session: LiveSession): SessionCardAction[] => {
     const record = session.record
-    return record
-      ? [readAction(session, onChanged), ...recordActions(session, record)]
-      : [readAction(session, onChanged), ...elsewhereActions(session)]
+    return record ? recordActions(session, record) : elsewhereActions(session)
   }
 
   /**
@@ -96,6 +95,8 @@ export function useSessionActions({
     const actions: SessionCardAction[] = [
       {
         label: 'Open in IDE',
+        icon: 'FolderOpen',
+        group: 'work',
         disabled: id ? undefined : 'It isn’t working in a folder Control Room can open',
         onClick: () => {
           if (!id) return
@@ -103,18 +104,21 @@ export function useSessionActions({
             if (!result.ok) pushToast?.(result.error ?? 'Could not open in Cursor.')
           })
         }
-      }
+      },
+      readAction(session, onChanged)
     ]
     if (!id && session.backgroundAgentId) {
       const agentId = session.backgroundAgentId
       actions.push({
         label: 'Hide',
+        group: 'organise',
         onClick: () => void dismissBackgroundAgent(agentId).then(() => onChanged())
       })
     }
     if (id) {
       actions.push({
         label: 'Hide',
+        group: 'organise',
         onClick: () => {
           void hideSession(id).then((result) => {
             pushToast?.(
@@ -130,6 +134,7 @@ export function useSessionActions({
     if (session.tmux || session.backgroundAgentId || session.claudePid) {
       actions.push({
         label: 'End session…',
+        group: 'end',
         danger: true,
         onClick: () => void endElsewhere(session)
       })
@@ -188,9 +193,32 @@ export function useSessionActions({
       : session.status === 'stopped' || session.status === 'missing'
         ? 'It has no terminal: Claude isn’t running'
         : 'Its terminal isn’t attached yet'
-    const actions: SessionCardAction[] = [
+    return [
+      // Work on it.
+      {
+        label: 'Open in IDE',
+        icon: 'FolderOpen',
+        group: 'work',
+        onClick: () => {
+          void openSessionInIde(record.id).then((result) => {
+            if (!result.ok) pushToast?.(result.error ?? 'Could not open in Cursor.')
+          })
+        }
+      },
+      // Needs a worktree and branch to build anything from — the same
+      // record every other action here already requires.
+      { label: 'Write hand-off note…', group: 'work', onClick: () => setWritingHandoff(session) },
+      // Organise it.
+      {
+        label: onRename ? 'Rename' : 'Rename…',
+        icon: 'Pencil',
+        group: 'organise',
+        onClick: () => (onRename ? onRename(session) : setRenaming(session))
+      },
       {
         label: record.pinned ? 'Unpin' : 'Pin',
+        icon: record.pinned ? 'PinOff' : 'Pin',
+        group: 'organise',
         onClick: () => {
           void setSessionPinned(record.id, !record.pinned).then((result) => {
             if (result.ok) onChanged()
@@ -198,13 +226,12 @@ export function useSessionActions({
           })
         }
       },
-      {
-        label: onRename ? 'Rename' : 'Rename…',
-        onClick: () => (onRename ? onRename(session) : setRenaming(session))
-      },
+      readAction(session, onChanged),
       record.archivedAt
         ? {
             label: 'Move back to Active',
+            icon: 'RotateCcw',
+            group: 'organise',
             onClick: () => {
               void unarchiveSession(record.id).then((result) => {
                 pushToast?.(
@@ -218,6 +245,8 @@ export function useSessionActions({
           }
         : {
             label: 'Mark as done',
+            icon: 'CircleCheck',
+            group: 'organise',
             onClick: () => {
               void archiveSession(record.id).then((result) => {
                 pushToast?.(
@@ -229,31 +258,10 @@ export function useSessionActions({
               })
             }
           },
-      // Always in the same place. Without a pane it's greyed with why, rather
-      // than missing, which read as the menu changing for no reason.
-      ...(session.backgroundAgentId
-        ? []
-        : [
-            {
-              label: 'Focus terminal',
-              disabled: noTerminal,
-              onClick: (): void => {
-                void focusSessionTerminal(record.id).then((result) => {
-                  if (!result.ok) pushToast?.(result.error ?? 'Could not focus the terminal.')
-                })
-              }
-            }
-          ]),
-      {
-        label: 'Open in IDE',
-        onClick: () => {
-          void openSessionInIde(record.id).then((result) => {
-            if (!result.ok) pushToast?.(result.error ?? 'Could not open in Cursor.')
-          })
-        }
-      },
+      // Copy from it.
       {
         label: 'Copy worktree path',
+        group: 'copy',
         onClick: () => {
           void copyWorktreePath(record.id).then((result) => {
             pushToast?.(
@@ -262,29 +270,33 @@ export function useSessionActions({
           })
         }
       },
-      // Needs a worktree and branch to build anything from — the same
-      // record every other action here already requires.
-      { label: 'Write hand-off note…', onClick: () => setWritingHandoff(session) }
+      ...(session.backgroundAgentId
+        ? []
+        : [
+            {
+              label: 'Copy attach command',
+              group: 'copy',
+              disabled: noTerminal,
+              onClick: (): void => {
+                void copyAttachCommand(record.id).then((result) => {
+                  pushToast?.(
+                    result.ok
+                      ? 'Attach command copied.'
+                      : (result.error ?? 'Failed to copy the attach command.')
+                  )
+                })
+              }
+            }
+          ]),
+      // End it.
+      {
+        label: 'Delete…',
+        icon: 'Trash2',
+        group: 'end',
+        danger: true,
+        onClick: () => setDeleting(session)
+      }
     ]
-
-    if (!session.backgroundAgentId) {
-      actions.push({
-        label: 'Copy attach command',
-        disabled: noTerminal,
-        onClick: () => {
-          void copyAttachCommand(record.id).then((result) => {
-            pushToast?.(
-              result.ok
-                ? 'Attach command copied.'
-                : (result.error ?? 'Failed to copy the attach command.')
-            )
-          })
-        }
-      })
-    }
-
-    actions.push({ label: 'Delete…', onClick: () => setDeleting(session), danger: true })
-    return actions
   }
 
   const node = (

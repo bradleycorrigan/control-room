@@ -10,7 +10,6 @@ export type KeyboardActionId =
   | 'sessions'
   | 'new-session'
   | 'open-ide'
-  | 'focus-terminal'
   | 'grid'
   | 'toggle-sidebar'
   | 'help'
@@ -48,7 +47,6 @@ export const KEYBOARD_MAP: KeyboardMapEntry[] = [
   { id: 'sessions', combo: '⌘⇧2', description: 'Sessions' },
   { id: 'new-session', combo: '⌘N', description: 'New session' },
   { id: 'open-ide', combo: '⌘⇧O', description: 'Open current session in Cursor' },
-  { id: 'focus-terminal', combo: '⌘⇧E', description: 'Focus the tmux window' },
   { id: 'grid', combo: '⌘G', description: 'Grid view toggle' },
   { id: 'toggle-sidebar', combo: '⌘B', description: 'Show or hide the sidebar' },
   { id: 'help', combo: '⌘/', description: 'Keyboard help' },
@@ -146,11 +144,6 @@ export function useKeyboardMap(actions: KeyboardActions): void {
       if (mod && e.shiftKey && key === 'o') {
         e.preventDefault()
         actions['open-ide']?.()
-        return
-      }
-      if (mod && e.shiftKey && key === 'e') {
-        e.preventDefault()
-        actions['focus-terminal']?.()
         return
       }
       if (mod && !e.shiftKey && key === 'b') {

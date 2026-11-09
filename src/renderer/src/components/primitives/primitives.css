@@ -765,6 +765,25 @@
   color: var(--status-error);
 }
 
+/* An icon, or the same space without one, so every label starts on one line. */
+.cr-popover-item-icon {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  color: var(--text-muted);
+}
+
+.cr-popover-item--danger .cr-popover-item-icon {
+  color: inherit;
+}
+
+.cr-popover-separator {
+  flex: none;
+  height: 1px;
+  margin: var(--space-4) calc(-1 * var(--space-4));
+  background: var(--border);
+}
+
 .cr-popover-empty {
   padding: var(--space-8);
   color: var(--text-muted);

@@ -1,19 +1,10 @@
 import { useRef, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
 import { Badge, Icon, IconButton, Popover } from './primitives'
+import { MenuItems, type MenuItem } from './MenuItems'
 import './session-card.css'
 
-export interface SessionCardAction {
-  label: string
-  onClick: () => void
-  danger?: boolean
-  /**
-   * Why it can't be used right now. The item stays where it always is,
-   * greyed, with this as its tooltip: an action that came and went with
-   * conditions you couldn't see read as broken.
-   */
-  disabled?: string
-}
+export type SessionCardAction = MenuItem
 
 export interface SessionCardProps {
   session: LiveSession
@@ -97,24 +88,7 @@ export default function SessionCard({
             className="cr-session-card-menu-list"
             aria-label="Session actions"
           >
-            {actions.map((action) => (
-              <button
-                key={action.label}
-                type="button"
-                role="menuitem"
-                className={
-                  action.danger ? 'cr-popover-item cr-popover-item--danger' : 'cr-popover-item'
-                }
-                disabled={Boolean(action.disabled)}
-                title={action.disabled}
-                onClick={() => {
-                  setOpen(false)
-                  action.onClick()
-                }}
-              >
-                {action.label}
-              </button>
-            ))}
+            <MenuItems items={actions} onPicked={() => setOpen(false)} />
           </Popover>
         </div>
       )}

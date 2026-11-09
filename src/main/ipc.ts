@@ -15,8 +15,6 @@ import {
   listPanes,
   capturePane,
   sendKeys,
-  selectWindow,
-  listClients,
   hasSession,
   newSession,
   newWindow,
@@ -96,7 +94,6 @@ import {
 } from './exec/attachments'
 import { listRules, appendRule, restoreRuleBackup } from './exec/rules'
 import { openInCursor } from './exec/cursor'
-import { run } from './exec/run'
 import { discoverLiveSessions, invalidateAgentsCache, SHELL_COMMANDS } from './engine/discovery'
 import { acknowledgeSession } from './engine/status'
 import { markSeen, markUnread } from './engine/seen'
@@ -508,26 +505,6 @@ export function registerIpcHandlers(): void {
     const workspace = record.workspaceFile
     const target = workspace && existsSync(workspace) ? workspace : record.worktreePath
     return openInCursor(target)
-  })
-
-  ipcMain.handle('session:focusTerminal', async (_evt, id: string) => {
-    const record = getState().sessions.find((s) => s.id === id)
-    if (!record || !record.tmuxWindowId) {
-      return { ok: false, error: 'no tmux window recorded for this session' }
-    }
-
-    await selectWindow(record.tmuxSessionName, record.tmuxWindowId)
-
-    const clients = await listClients(record.tmuxSessionName)
-    if (clients.length === 0) {
-      // Do not try to launch a terminal running attach — that path is
-      // fiddly and terminal-specific. Surface the command instead.
-      return { ok: false, noClients: true, tmuxSessionName: record.tmuxSessionName }
-    }
-
-    const settings = getState().settings
-    await run('open', ['-a', settings.terminalApp])
-    return { ok: true }
   })
 
   ipcMain.handle('session:diff', async (_evt, id: string) => {

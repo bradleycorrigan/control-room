@@ -2463,6 +2463,29 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             Boolean(field) && field!.value === before,
             field ? `field holds "${field.value}", title was "${before}"` : 'no rename field'
           )
+          // Suggest: Haiku (a stand-in here, which wraps its answer in quotes)
+          // started when the field opened; its title lands cleaned up,
+          // selected and focused, so Enter keeps it and Escape still cancels.
+          await click(byText('.session-detail-rename-form button', 'Suggest'))
+          await until(
+            () =>
+              ($<HTMLInputElement>('.session-detail-header input')?.value ?? '').startsWith(
+                'Suggested:'
+              ),
+            6000
+          )
+          await wait(100)
+          {
+            const f = $<HTMLInputElement>('.session-detail-header input')
+            await check(
+              'Suggest fills the rename field with a cleaned-up title, selected',
+              f?.value === `Suggested: ${before}` &&
+                document.activeElement === f &&
+                f.selectionStart === 0 &&
+                f.selectionEnd === f.value.length,
+              `"${f?.value}", focused: ${document.activeElement === f}, selection ${f?.selectionStart}-${f?.selectionEnd}`
+            )
+          }
           await key('Escape')
           await check(
             'Escape leaves the title as it was',
@@ -3649,8 +3672,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         }
 
         // ⌘⇧T reopens the last closed session tab, like a browser (App.tsx). Its
-        // only meaning app-wide now — "Focus terminal" moved to ⌘⇧E in keyboard.ts
-        // so the two shortcuts never collide.
+        // only meaning app-wide.
         {
           await ctx.goTo('sessions')
           await wait(600)
@@ -4537,6 +4559,56 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
                 )}; working card: ${card()?.querySelector('.session-card-bottom')?.outerHTML.slice(0, 300) ?? 'none'}`
         )
         await click($('[aria-label="List view"]'))
+      }
+    },
+    {
+      name: 'Rename suggestions',
+      run: async () => {
+        // A list row renames in place, with the same Suggest as the header.
+        await ctx.goTo('sessions')
+        if ($('[aria-label="List view"]')) await click($('[aria-label="List view"]'))
+        const menu = (): HTMLElement | null => $('[aria-label="Ready session actions"]')
+        await until(() => Boolean(menu()), 6000)
+        await click(menu())
+        await until(() => Boolean(byText('[role="menuitem"]', 'Rename')), 2000)
+        await click(byText('[role="menuitem"]', 'Rename'))
+        const rowField = (): HTMLInputElement | null =>
+          $<HTMLInputElement>('.sessions-row-rename-form input')
+        await until(() => Boolean(rowField()), 3000)
+        const rowBefore = rowField()?.value ?? ''
+        await click(byText('.sessions-row-rename-form button', 'Suggest'))
+        await until(() => (rowField()?.value ?? '').startsWith('Suggested:'), 6000)
+        await check(
+          'a list row suggests a name in place',
+          rowField()?.value === `Suggested: ${rowBefore}` && document.activeElement === rowField(),
+          `"${rowField()?.value}" (was "${rowBefore}")`
+        )
+        await key('Escape')
+        await until(() => !rowField(), 2000)
+
+        // Home's cards have no title to edit in place: the rename dialog.
+        await ctx.goTo('home')
+        const cardMenu = (): HTMLElement | undefined =>
+          $$<HTMLElement>('[aria-label^="Actions for "]').find(
+            (el) => !/fixture-cursor/.test(el.getAttribute('aria-label') ?? '')
+          )
+        await until(() => Boolean(cardMenu()), 4000)
+        await click(cardMenu())
+        await until(() => Boolean(byText('[role="menuitem"]', 'Rename…')), 2000)
+        await click(byText('[role="menuitem"]', 'Rename…'))
+        await until(() => Boolean($('.cr-modal input[aria-label="Session name"]')), 3000)
+        const name = (): HTMLInputElement | null =>
+          $<HTMLInputElement>('.cr-modal input[aria-label="Session name"]')
+        const before = name()?.value ?? ''
+        await click(byText('.cr-modal button', 'Suggest a name'))
+        await until(() => (name()?.value ?? '').startsWith('Suggested:'), 6000)
+        await check(
+          'the rename dialog suggests a name from the session',
+          name()?.value === `Suggested: ${before}` && document.activeElement === name(),
+          `"${name()?.value}" (was "${before}")`
+        )
+        await click(byText('.cr-modal button', 'Cancel'))
+        await until(() => !$('.cr-modal'), 2000)
       }
     },
     {

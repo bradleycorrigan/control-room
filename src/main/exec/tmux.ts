@@ -164,17 +164,6 @@ export async function capturePane(paneId: string, scrollbackLines = 2000): Promi
   return res.code === 0 ? res.stdout : ''
 }
 
-export async function selectWindow(sessionName: string, windowId: string): Promise<boolean> {
-  const res = await runTmux(['select-window', '-t', `=${sessionName}:${windowId}`])
-  return res.code === 0
-}
-
-export async function listClients(sessionName: string): Promise<string[]> {
-  const res = await runTmux(['list-clients', '-t', `=${sessionName}`, '-F', '#{client_tty}'])
-  if (res.code !== 0) return []
-  return res.stdout.split('\n').filter(Boolean)
-}
-
 export async function killWindow(windowId: string): Promise<boolean> {
   const res = await runTmux(['kill-window', '-t', windowId])
   return res.code === 0

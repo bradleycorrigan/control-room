@@ -16,7 +16,11 @@ import {
   parseTicketDraft,
   sanitiseChoices,
   ticketDraftArgs,
-  type TicketDraftResult
+  buildSessionTitlePrompt,
+  sessionTitleArgs,
+  parseSessionTitle,
+  type TicketDraftResult,
+  type SessionTitleResult
 } from './exec/ticketDraft'
 import { tmpdir } from 'node:os'
 import { handoffGitSummary } from './exec/sessionGit'
@@ -112,26 +116,61 @@ export function registerSessionsIpc(): void {
     return out
   })
 
+  // The claude binary for headless Haiku runs. The fixture never calls the
+  // real one; CR_HAIKU_BIN points the gate at a stand-in so these paths still
+  // run there.
+  const haikuBin = async (): Promise<string | null> =>
+    process.env.CR_HAIKU_BIN ?? (process.env.CR_SESSIONS_DIR ? null : await resolveClaudeBinary())
+  const sessionIds = (record: SessionRecord): string[] =>
+    [record.originalClaudeSessionId, record.claudeSessionId].filter(
+      (x, i, all): x is string => typeof x === 'string' && x.length > 0 && all.indexOf(x) === i
+    )
+
+  // Suggest a title: what the session asked and its latest reply, no git or
+  // gh, so it answers in a few seconds.
+  ipcMain.handle('sessions:suggestTitle', async (_evt, id: string): Promise<SessionTitleResult> => {
+    const record = getState().sessions.find((s) => s.id === id)
+    if (!record) return { ok: false, error: 'Session not found.' }
+    const bin = await haikuBin()
+    if (!bin) return { ok: false, error: 'Claude Code was not found.' }
+    const project = getState().projects.find((p) => p.id === record.projectId)
+    const prompt = buildSessionTitlePrompt({
+      title: record.title,
+      projectName: project?.name ?? null,
+      prompts: sessionIds(record).flatMap((sid) => listUserPrompts(sid)),
+      lastReply: lastAssistantMessage(record.claudeSessionId)
+    })
+    const started = Date.now()
+    const res = await run(bin, sessionTitleArgs(prompt), { cwd: tmpdir(), timeoutMs: 60_000 })
+    const result: SessionTitleResult =
+      res.code !== 0 && !res.stdout.trim()
+        ? {
+            ok: false,
+            error: res.stderr.trim().split('\n').pop() || 'Claude stopped without an answer.'
+          }
+        : parseSessionTitle(res.stdout)
+    log[result.ok ? 'info' : 'warn']('title suggestion', {
+      ms: Date.now() - started,
+      promptChars: prompt.length,
+      ...(result.ok ? {} : { error: result.error })
+    })
+    return result
+  })
+
   // Create ticket from a session: Haiku drafts the fields from what the
   // session asked, did and opened. Headless and quiet: no tools, no hooks
-  // (so it never shows up as a session here), nothing saved. The fixture
-  // never calls the real claude; CR_TICKET_DRAFT_BIN points the gate at a
-  // stand-in so this path still runs there.
+  // (so it never shows up as a session here), nothing saved.
   ipcMain.handle(
     'sessions:draftTicket',
     async (_evt, id: string, rawChoices: unknown): Promise<TicketDraftResult> => {
       const record = getState().sessions.find((s) => s.id === id)
       if (!record) return { ok: false, error: 'Session not found.' }
-      const bin =
-        process.env.CR_TICKET_DRAFT_BIN ??
-        (process.env.CR_SESSIONS_DIR ? null : await resolveClaudeBinary())
+      const bin = await haikuBin()
       if (!bin) return { ok: false, error: 'Claude Code was not found.' }
 
       const choices = sanitiseChoices(rawChoices)
       const project = getState().projects.find((p) => p.id === record.projectId)
-      const ids = [record.originalClaudeSessionId, record.claudeSessionId].filter(
-        (x, i, all): x is string => typeof x === 'string' && x.length > 0 && all.indexOf(x) === i
-      )
+      const ids = sessionIds(record)
       const branch = record.investigation ? null : await currentBranch(record)
       const [git, branchPr, linked] = await Promise.all([
         record.investigation

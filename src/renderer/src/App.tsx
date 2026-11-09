@@ -18,7 +18,6 @@ import { useToasts } from './state/useToasts'
 import {
   onNavigate,
   openSessionInIde,
-  focusSessionTerminal,
   installHooks,
   openDataFolder,
   listProjects,
@@ -238,7 +237,7 @@ function App(): React.JSX.Element {
   }, [])
 
   const openSession = sessions.find((s) => s.key === openSessionKey) ?? null
-  // The session that "Open in IDE" / "Focus terminal" act on when reached via
+  // The session that "Open in IDE" acts on when reached via
   // the palette or a keyboard shortcut rather than a button inside the
   // detail screen itself: the one currently open, or failing that the most
   // recently opened one. No session ever selected → these no-op with a toast.
@@ -1792,6 +1791,12 @@ function App(): React.JSX.Element {
       items.find((el) => /remove/i.test(el.textContent ?? ''))?.click()
       await new Promise((resolve) => setTimeout(resolve, 200))
     })
+    registerShotScreen('session-menu', async () => {
+      await landOnProjectDetail(undefined)
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      document.querySelector<HTMLButtonElement>('.cr-session-card-menu button')?.click()
+      await new Promise((resolve) => setTimeout(resolve, 300))
+    })
     registerShotScreen('confirm-dialog', async () => {
       await landOnProjectDetail(undefined)
       await new Promise((resolve) => setTimeout(resolve, 400))
@@ -2027,25 +2032,6 @@ function App(): React.JSX.Element {
     [currentSession, pushToast]
   )
 
-  const handleFocusTerminal = useCallback(
-    async (target?: LiveSession) => {
-      const session = target ?? currentSession
-      if (!session?.record) {
-        pushToast('No session selected to focus.')
-        return
-      }
-      const result = await focusSessionTerminal(session.record.id)
-      if (!result.ok) {
-        pushToast(
-          result.noClients
-            ? `No terminal is attached to tmux. Run: tmux attach -t ${result.tmuxSessionName}`
-            : (result.error ?? 'Failed to focus terminal.')
-        )
-      }
-    },
-    [currentSession, pushToast]
-  )
-
   const handleInstallHooks = useCallback(async () => {
     const result = await installHooks()
     pushToast(result.ok ? 'Hooks installed.' : (result.error ?? 'Failed to install hooks.'))
@@ -2137,7 +2123,6 @@ function App(): React.JSX.Element {
     sessions: () => setView('sessions'),
     'new-session': () => setShowNewSessionForm(true),
     'open-ide': handleOpenInIde,
-    'focus-terminal': handleFocusTerminal,
     grid: () => {
       setView('sessions')
       setOpenSessionKey(null)
@@ -2369,7 +2354,6 @@ function App(): React.JSX.Element {
                         }}
                         onProjectsChanged={refreshProjects}
                         onOpenInIde={handleOpenInIde}
-                        onFocusTerminal={handleFocusTerminal}
                       />
                     )}
                   </div>
@@ -2533,7 +2517,6 @@ function App(): React.JSX.Element {
         onSelectTheme={theme.setTheme}
         onNewSession={() => setShowNewSessionForm(true)}
         onOpenInIde={handleOpenInIde}
-        onFocusTerminal={handleFocusTerminal}
         onInstallHooks={handleInstallHooks}
         onOpenSettings={() => setView('settings')}
         onOpenDataFolder={handleOpenDataFolder}

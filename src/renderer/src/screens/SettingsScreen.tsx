@@ -330,13 +330,6 @@ export default function SettingsScreen({ theme }: SettingsScreenProps): React.JS
                       onChange={(e) => void patchSettings({ terminalGpu: e.target.checked })}
                     />
                   </Item>
-                  <CommandSetting
-                    label="Terminal app"
-                    note="Focus terminal brings this app to the front. Use the name you see in /Applications, like Terminal, iTerm or Ghostty."
-                    value={settings.terminalApp}
-                    fallback="Terminal"
-                    onSave={(v) => void patchSettings({ terminalApp: v })}
-                  />
                 </Card>
               )}
 

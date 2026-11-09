@@ -15,7 +15,6 @@ interface Props {
   onSelectTheme: (themeId: string) => void
   onNewSession: () => void
   onOpenInIde: () => void
-  onFocusTerminal: () => void
   onInstallHooks: () => void
   onOpenSettings: () => void
   onOpenDataFolder: () => void
@@ -88,7 +87,6 @@ export default function CommandPalette({
   onSelectTheme,
   onNewSession,
   onOpenInIde,
-  onFocusTerminal,
   onInstallHooks,
   onOpenSettings,
   onOpenDataFolder,
@@ -323,13 +321,6 @@ export default function CommandPalette({
         run: onOpenInIde
       },
       {
-        id: 'cmd:focus-terminal',
-        kind: 'command',
-        label: 'Focus terminal',
-        searchText: 'focus terminal tmux',
-        run: onFocusTerminal
-      },
-      {
         id: 'cmd:install-hooks',
         kind: 'command',
         label: 'Install hooks',
@@ -379,7 +370,6 @@ export default function CommandPalette({
     onSelectProject,
     onNewSession,
     onOpenInIde,
-    onFocusTerminal,
     onInstallHooks,
     onOpenSettings,
     onOpenDataFolder,
