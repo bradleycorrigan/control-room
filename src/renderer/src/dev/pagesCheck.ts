@@ -2493,10 +2493,10 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           const summary = $<HTMLInputElement>('.cr-modal input[aria-label="Summary"]')?.value ?? ''
           const headerTitle = $('.session-detail-breadcrumb-title')?.textContent ?? ''
           await check(
-            'Create ticket from a session opens the form with its title',
-            // The stand-in draft can answer before this reads the field.
-            summary.length > 0 &&
-              (summary === headerTitle || summary === `Drafted: ${headerTitle}`),
+            'Create ticket from a session opens the form, waiting on the draft rather than prefilled',
+            // Empty while drafting (it started with the menu), so it can
+            // already hold the draft by now.
+            summary === '' || summary === `Drafted: ${headerTitle}`,
             `${summary} vs ${headerTitle}`
           )
           // Then Haiku's draft (a stand-in in the gate) fills the fields from
@@ -2509,7 +2509,16 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
               ? el.value
               : (el?.textContent?.trim() ?? '')
           }
-          await until(() => field('Summary').startsWith('Drafted:'), 6000)
+          await check(
+            'while it drafts, the fields pulse and say so, and Create waits',
+            Boolean($('.cr-modal .backlog-create--drafting')) &&
+              /Drafting/.test(
+                $<HTMLInputElement>('.cr-modal input[aria-label="Summary"]')?.placeholder ?? ''
+              ) &&
+              Boolean(byText('.cr-modal button', 'Drafting…')),
+            `form: ${$('.cr-modal form')?.className}; summary "${field('Summary')}"`
+          )
+          await until(() => field('Summary').startsWith('Drafted:'), 8000)
           await check(
             'the draft fills summary, description, epic, priority and labels from the session',
             field('Summary') === `Drafted: ${headerTitle}` &&

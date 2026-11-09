@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import { log } from './log'
 import { getState } from './store/store'
 import type { SessionRecord } from './store/types'
 import {
@@ -157,16 +158,24 @@ export function registerSessionsIpc(): void {
         },
         choices
       )
+      const started = Date.now()
       const res = await run(bin, ticketDraftArgs(prompt, choices), {
         cwd: tmpdir(),
         timeoutMs: 90_000
       })
-      if (res.code !== 0 && !res.stdout.trim())
-        return {
-          ok: false,
-          error: res.stderr.trim().split('\n').pop() || 'Claude stopped without an answer.'
-        }
-      return parseTicketDraft(res.stdout, choices)
+      const result: TicketDraftResult =
+        res.code !== 0 && !res.stdout.trim()
+          ? {
+              ok: false,
+              error: res.stderr.trim().split('\n').pop() || 'Claude stopped without an answer.'
+            }
+          : parseTicketDraft(res.stdout, choices)
+      log[result.ok ? 'info' : 'warn']('ticket draft', {
+        ms: Date.now() - started,
+        promptChars: prompt.length,
+        ...(result.ok ? {} : { error: result.error })
+      })
+      return result
     }
   )
 

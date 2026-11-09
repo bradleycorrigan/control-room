@@ -3548,3 +3548,20 @@
     display: none;
   }
 }
+
+/* New ticket from a session: while Haiku drafts, the fields it will fill
+   pulse; when it answers, they glow once as the text lands. */
+.backlog-create--drafting .backlog-field--draftable :is(input, textarea, button) {
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.backlog-create--drafted .backlog-field--draftable :is(input, textarea, button) {
+  animation: backlog-changed 1.6s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backlog-create--drafting .backlog-field--draftable :is(input, textarea, button),
+  .backlog-create--drafted .backlog-field--draftable :is(input, textarea, button) {
+    animation: none;
+  }
+}

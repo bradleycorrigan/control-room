@@ -8,5 +8,7 @@ while [ $# -gt 0 ]; do
   if [ "$1" = "-p" ]; then prompt="$2"; fi
   shift
 done
+# Slow enough that the form's waiting state can be checked.
+sleep 2
 title=$(printf '%s\n' "$prompt" | sed -n 's/^Session title: //p' | head -n 1)
 printf '{"type":"result","is_error":false,"structured_output":{"summary":"Drafted: %s","description":"h4. Context\\n* Drafted by the fixture","priority":"High","epicKey":"TEAM-60","labels":["data-ask","not-on-the-board"]}}\n' "$title"

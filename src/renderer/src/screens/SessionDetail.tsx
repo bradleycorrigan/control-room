@@ -34,7 +34,12 @@ import {
   type JiraBoardData,
   type PullRequestInfo
 } from '../api'
-import { getShipInfo, getLinkedPullRequests, draftTicketFromSession } from '../api-sessions'
+import {
+  getShipInfo,
+  getLinkedPullRequests,
+  draftTicketFromSession,
+  type TicketDraftResult
+} from '../api-sessions'
 import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
 import PrChip from '../components/PrChip'
 // Every disabled control below is gated by a condition named after one of
@@ -448,6 +453,22 @@ export default function SessionDetail({
   const [ticketBoard, setTicketBoard] = useState<JiraBoardData | 'loading' | null>(null)
   const [ticketMenu, setTicketMenu] = useState<HTMLElement | null>(null)
   const [creatingTicket, setCreatingTicket] = useState(false)
+  // Haiku's draft for "Create a new ticket", started as soon as the ticket
+  // button is pressed, so most of its ~10s passes while the menu is open.
+  // Kept for a few minutes, so reopening the form doesn't draft again.
+  const ticketDraft = useRef<{ at: number; result: Promise<TicketDraftResult> } | null>(null)
+  const startTicketDraft = (board: JiraBoardData): void => {
+    if (!session.record) return
+    if (ticketDraft.current && Date.now() - ticketDraft.current.at < 5 * 60_000) return
+    ticketDraft.current = {
+      at: Date.now(),
+      result: draftTicketFromSession(session.record.id, {
+        epics: board.epics,
+        labels: board.labels,
+        priorities: board.priorities
+      })
+    }
+  }
   const linkTicket = (key: string): void => {
     if (!session.record) return
     void linkSessionToTicket(session.record.id, key).then(() => {
@@ -503,13 +524,10 @@ export default function SessionDetail({
             board={ticketBoard}
             defaultInCycle
             initialSummary={title}
-            draft={() =>
-              draftTicketFromSession(session.record!.id, {
-                epics: ticketBoard.epics,
-                labels: ticketBoard.labels,
-                priorities: ticketBoard.priorities
-              })
-            }
+            draft={() => {
+              startTicketDraft(ticketBoard)
+              return ticketDraft.current!.result
+            }}
             initialDescription={[
               session.record.lastPrompt ?? '',
               session.record.branch && !session.record.investigation
@@ -617,10 +635,14 @@ export default function SessionDetail({
                 disabled={ticketBoard === 'loading'}
                 onClick={(e) => {
                   const anchor = e.currentTarget
-                  if (ticketBoard && ticketBoard !== 'loading') return setTicketMenu(anchor)
+                  if (ticketBoard && ticketBoard !== 'loading') {
+                    startTicketDraft(ticketBoard)
+                    return setTicketMenu(anchor)
+                  }
                   setTicketBoard('loading')
                   void loadJiraBoard().then((r) => {
                     if (r.ok) {
+                      startTicketDraft(r.value)
                       setTicketBoard(r.value)
                       setTicketMenu(anchor)
                     } else {

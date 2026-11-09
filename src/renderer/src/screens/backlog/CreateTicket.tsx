@@ -47,8 +47,10 @@ export function CreateTicket({
   )
   const [types, setTypes] = useState<JiraIssueType[] | null>(null)
   const [typeId, setTypeId] = useState('')
-  const [summary, setSummary] = useState(initialSummary)
-  const [description, setDescription] = useState(initialDescription)
+  // With a draft coming, the fields start empty and say so; the prefill is
+  // only the fallback if the draft fails.
+  const [summary, setSummary] = useState(draft ? '' : initialSummary)
+  const [description, setDescription] = useState(draft ? '' : initialDescription)
   const [parentKey, setParentKey] = useState('')
   const [priority, setPriority] = useState(
     board.priorities.includes('Medium') ? 'Medium' : (board.priorities[0] ?? '')
@@ -64,6 +66,7 @@ export function CreateTicket({
   const currentProject = projects.includes(project) ? project : (projects[0] ?? '')
 
   const [drafting, setDrafting] = useState(Boolean(draft))
+  const [drafted, setDrafted] = useState(false)
   const [draftError, setDraftError] = useState<string | null>(null)
   const touched = useRef(new Set<string>())
   const touch = (field: string): void => {
@@ -77,11 +80,14 @@ export function CreateTicket({
       .then((r) => {
         if (!live) return
         setDrafting(false)
+        const t = touched.current
         if (!r.ok) {
           setDraftError(r.error)
+          if (!t.has('summary')) setSummary(initialSummary)
+          if (!t.has('description')) setDescription(initialDescription)
           return
         }
-        const t = touched.current
+        setDrafted(true)
         const d = r.value
         if (!t.has('summary')) setSummary(d.summary)
         if (!t.has('description') && d.description) setDescription(d.description)
@@ -149,7 +155,7 @@ export function CreateTicket({
   return (
     <Modal title="New ticket" icon="SquarePen" width={560} onClose={onClose}>
       <form
-        className="backlog-create"
+        className={`backlog-create${drafting ? ' backlog-create--drafting' : ''}${drafted ? ' backlog-create--drafted' : ''}`}
         onSubmit={(e) => {
           e.preventDefault()
           void submit()
@@ -195,19 +201,18 @@ export function CreateTicket({
             </Select>
           </label>
         </div>
-        {(drafting || draftError) && (
+        {draftError && (
           <p className="backlog-note backlog-create-draft" role="status">
-            {drafting
-              ? 'Drafting the fields from this session…'
-              : `Couldn't draft from the session (${draftError}). The title and last prompt are filled in instead.`}
+            Couldn&apos;t draft from the session ({draftError}). The title and last prompt are
+            filled in instead.
           </p>
         )}
-        <label className="backlog-field">
+        <label className="backlog-field backlog-field--draftable">
           <span>Summary</span>
           <Input
             autoFocus
             aria-label="Summary"
-            placeholder="What needs doing"
+            placeholder={drafting ? 'Drafting from this session…' : 'What needs doing'}
             value={summary}
             onChange={(e) => {
               touch('summary')
@@ -215,13 +220,17 @@ export function CreateTicket({
             }}
           />
         </label>
-        <label className="backlog-field">
+        <label className="backlog-field backlog-field--draftable">
           <span>Description</span>
           <Textarea
             aria-label="Description"
             className="backlog-drawer-textarea"
             rows={5}
-            placeholder="Context, links, what done looks like"
+            placeholder={
+              drafting
+                ? 'Reading what the session asked, did and opened…'
+                : 'Context, links, what done looks like'
+            }
             value={description}
             onChange={(e) => {
               touch('description')
@@ -230,7 +239,7 @@ export function CreateTicket({
           />
         </label>
         <div className="backlog-create-row">
-          <label className="backlog-field">
+          <label className="backlog-field backlog-field--draftable">
             <span>Epic</span>
             <Select
               className="backlog-select"
@@ -249,7 +258,7 @@ export function CreateTicket({
               ))}
             </Select>
           </label>
-          <label className="backlog-field">
+          <label className="backlog-field backlog-field--draftable">
             <span>Priority</span>
             <Select
               className="backlog-select"
@@ -269,7 +278,7 @@ export function CreateTicket({
           </label>
         </div>
         <div className="backlog-create-row">
-          <label className="backlog-field">
+          <label className="backlog-field backlog-field--draftable">
             <span>Labels</span>
             <Input
               aria-label="Labels"
@@ -324,7 +333,7 @@ export function CreateTicket({
             Cancel
           </Button>
           <Button variant="filled" type="submit" disabled={busy || !summary.trim() || !typeId}>
-            {busy ? 'Creating…' : 'Create ticket'}
+            {busy ? 'Creating…' : drafting && !summary.trim() ? 'Drafting…' : 'Create ticket'}
           </Button>
         </div>
       </form>
