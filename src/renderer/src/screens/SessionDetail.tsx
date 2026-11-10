@@ -42,6 +42,7 @@ import {
 } from '../api-sessions'
 import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
 import PrChip from '../components/PrChip'
+import type { PrPanelTarget } from '../components/prPanelTarget'
 // Every disabled control below is gated by a condition named after one of
 // these — never a literal true/false or a "not implemented yet" string
 // (CLAUDE.md non-negotiable). NOT_LIVE and TERMINAL_REACHABLE key
@@ -75,6 +76,10 @@ interface Props {
   projectName: string | null
   /** Opens this ticket's panel on Backlog. */
   onOpenTicket?: (key: string) => void
+  /** A pull request panel to open straight away: a PR chip clicked on a list. */
+  openPrPanel?: PrPanelTarget | null
+  /** Called once that panel is open, so it doesn't open again. */
+  onPrPanelOpened?: () => void
 }
 
 // Plan 1.5 — deterministic fallback accent when there's no Cursor theme match
@@ -172,7 +177,9 @@ export default function SessionDetail({
   onSessionUpdated,
   pushToast,
   projectName,
-  onOpenTicket
+  onOpenTicket,
+  openPrPanel,
+  onPrPanelOpened
 }: Props): React.JSX.Element {
   const [maximized, setMaximized] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -180,8 +187,19 @@ export default function SessionDetail({
   // The pull request panel: which PR it's about. `branch` is this session's
   // own branch (its PR, or the form to open one); `linked` is a PR the agent
   // opened elsewhere. Null when closed.
-  type ShipTarget = { kind: 'branch' } | { kind: 'linked'; pr: LinkedPullRequest }
-  const [shipTarget, setShipTarget] = useState<ShipTarget | null>(null)
+  type ShipTarget = PrPanelTarget
+  const [shipTarget, setShipTarget] = useState<ShipTarget | null>(openPrPanel ?? null)
+  // Asked for again while this session is already open: open it on render,
+  // then tell App it's done so it doesn't open again.
+  const [askedPrPanel, setAskedPrPanel] = useState(openPrPanel)
+  if (openPrPanel !== askedPrPanel) {
+    setAskedPrPanel(openPrPanel)
+    if (openPrPanel) setShipTarget(openPrPanel)
+  }
+  useEffect(() => {
+    if (openPrPanel) onPrPanelOpened?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPrPanel])
   // Set when "View diff" is clicked from inside the panel, so closing the
   // diff brings the panel back rather than leaving it dismissed.
   const shipReopenAfterDiff = useRef(false)

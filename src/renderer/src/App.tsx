@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { PrPanelTarget } from './components/prPanelTarget'
 import type { LiveSession } from '../../main/store/types'
 import ProjectRail from './screens/ProjectRail'
 import ProjectsListScreen from './screens/ProjectsListScreen'
@@ -52,6 +53,11 @@ const SIDEBAR_DEFAULT = 260
 function App(): React.JSX.Element {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [openProjectId, setOpenProjectId] = useState<string | null>(null)
+  // A PR chip clicked on a list: open its session with that PR's panel up.
+  const [prPanelRequest, setPrPanelRequest] = useState<{
+    key: string
+    target: PrPanelTarget
+  } | null>(null)
   const [view, setView] = useState<AppView>('home')
   const [openSessionKey, setOpenSessionKey] = useState<string | null>(null)
   const [lastOpenedSessionKey, setLastOpenedSessionKey] = useState<string | null>(null)
@@ -2345,6 +2351,10 @@ function App(): React.JSX.Element {
                         onOpenTicket={openPeek}
                         onAdopted={refreshSessions}
                         onOpenSession={openSessionFrom}
+                        onOpenSessionPr={(key, target) => {
+                          setPrPanelRequest({ key, target })
+                          openSessionByKey(key)
+                        }}
                         onClearFilter={() => {
                           setSelectedProjectId(null)
                         }}
@@ -2383,6 +2393,10 @@ function App(): React.JSX.Element {
                       onOpenTicket={(key) =>
                         peekTicket === key ? setPeekTicket(null) : openPeek(key)
                       }
+                      openPrPanel={
+                        prPanelRequest?.key === openSession.key ? prPanelRequest.target : null
+                      }
+                      onPrPanelOpened={() => setPrPanelRequest(null)}
                     />
                   )}
                 </div>

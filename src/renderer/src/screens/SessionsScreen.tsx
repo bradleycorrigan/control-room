@@ -33,6 +33,7 @@ import {
   listWorktreePullRequests,
   archiveSession,
   unarchiveSession,
+  openExternal,
   type WorktreePullRequest
 } from '../api'
 import { Picker } from './backlog/Picker'
@@ -44,6 +45,7 @@ import './sessions-list.css'
 import { PrChips, type PrChipProps } from '../components/PrChip'
 import { getAllLinkedPullRequests } from '../api-sessions'
 import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
+import type { PrPanelTarget } from '../components/prPanelTarget'
 
 interface Props {
   sessions: LiveSession[]
@@ -51,6 +53,8 @@ interface Props {
   selectedProjectId: string | null
   onAdopted: () => void
   onOpenSession: (liveKey: string, background?: boolean) => void
+  /** Opens a session with one of its pull request panels open: a PR chip's click. */
+  onOpenSessionPr?: (liveKey: string, target: PrPanelTarget) => void
   /** Clears the project filter (the sidebar's own "All" selection). This
    * screen has no direct access to that state — it lives in App, driven by
    * the ProjectsScreen sidebar — so the empty state's "Clear filter" control
@@ -219,6 +223,10 @@ const FINISHED: SessionStatus[] = ['done', 'stopped', 'missing', 'errored']
 // group component.
 type SessionPr = PrChipProps['pr']
 const SessionPrs = createContext<(s: LiveSession) => SessionPr[]>(() => [])
+// Opens a session's PR panel from its chip. Unset, a chip opens GitHub.
+const SessionPrOpen = createContext<((s: LiveSession, pr: SessionPr) => void) | undefined>(
+  undefined
+)
 
 // The Jira ticket a session is for, and how to open it, read by rows and
 // cards the same way.
@@ -331,6 +339,7 @@ function useSessionLinks(
   openPr: (s: LiveSession) => boolean
   prOf: (s: LiveSession) => WorktreePullRequest | null
   prsOf: (s: LiveSession) => SessionPr[]
+  prTarget: (s: LiveSession, pr: SessionPr) => PrPanelTarget | null
   ticketOf: (s: LiveSession) => string | null
 } {
   const [prBranches, setPrBranches] = useState<Map<string, Record<string, WorktreePullRequest>>>(
@@ -384,8 +393,16 @@ function useSessionLinks(
     return own ? [own, ...others] : others
   }
   const ticketOf = (s: LiveSession): string | null => ticketKey(s.record)
+  // The branch's own PR gets the full panel; one the agent opened elsewhere
+  // gets that PR's panel.
+  const prTarget = (s: LiveSession, pr: SessionPr): PrPanelTarget | null => {
+    if (!s.record) return null
+    if (pr.url === prOf(s)?.url) return { kind: 'branch' }
+    const other = (linked[s.record.id] ?? []).find((p) => p.url === pr.url)
+    return other ? { kind: 'linked', pr: other } : null
+  }
 
-  return { openPr, prOf, prsOf, ticketOf }
+  return { openPr, prOf, prsOf, prTarget, ticketOf }
 }
 
 interface ProjectGroup {
@@ -524,6 +541,18 @@ const SessionSelection = createContext<{
  * the run up to it; once anything is picked a plain click picks too, as on
  * the Backlog; ⌘-click still opens it in a background tab.
  */
+// Adopt, in words that say what it does and why you'd want to.
+const ADOPT_LABEL = 'Add to Control Room'
+const ADOPT_HINT =
+  'Control Room didn’t start this session, so it can’t show its ticket, PR or full menu. Add it to track it like the rest.'
+
+// The second line: the branch, or for a session Control Room didn't start,
+// where it came from. Its name alone repeated the title and explained nothing.
+function branchLine(session: LiveSession): string | null {
+  if (!session.record) return session.backgroundAgentId ? null : 'Started outside Control Room'
+  return session.record.investigation ? 'no worktree' : session.record.branch
+}
+
 function usePick(
   session: LiveSession,
   title: string,
@@ -580,6 +609,7 @@ function SessionListRow({
 }: SessionListRowProps): React.JSX.Element {
   const title = sessionTitle(session)
   const prs = useContext(SessionPrs)(session)
+  const openPr = useContext(SessionPrOpen)
   const {
     recordId,
     picked,
@@ -587,9 +617,7 @@ function SessionListRow({
     check,
     onClick: pickClick
   } = usePick(session, title, 'sessions-row-pick')
-  const branch = session.record?.investigation
-    ? 'no worktree'
-    : (session.record?.branch ?? session.agentName ?? null)
+  const branch = branchLine(session)
   // Never `updatedAt`: it is stamped with `now` on every poll.
   const activity = activityLabel(session)
   // Waiting on you: say for how long, in the badge's own words, in place of
@@ -664,7 +692,7 @@ function SessionListRow({
   // and the session screen, for every kind of session. Adopt sits in front of
   // it here, for a session with no record in a project's folder.
   const actions: OverflowAction[] = [
-    ...(onAdopt ? [{ label: 'Adopt', onClick: onAdopt }] : []),
+    ...(onAdopt ? [{ label: ADOPT_LABEL, onClick: onAdopt }] : []),
     ...sessionActions(session)
   ]
 
@@ -764,7 +792,7 @@ function SessionListRow({
           )}
 
           <TicketPill session={session} />
-          <PrChips prs={prs} />
+          <PrChips prs={prs} onOpen={openPr ? (pr) => openPr(session, pr) : undefined} />
 
           {since !== null ? (
             <div
@@ -1171,10 +1199,9 @@ function SessionCard({
   prs
 }: SessionCardProps): React.JSX.Element {
   const title = sessionTitle(session)
-  const branch = session.record?.investigation
-    ? 'no worktree'
-    : (session.record?.branch ?? session.agentName ?? null)
+  const branch = branchLine(session)
   const { recordId, picked, picking, check, onClick } = usePick(session, title, 'session-card-pick')
+  const openPr = useContext(SessionPrOpen)
   return (
     <div
       className={[
@@ -1227,18 +1254,19 @@ function SessionCard({
         {/* Everything else sits on the right, ticket or no ticket, so a PR
             never takes the ticket's place on the left. */}
         <div className="session-card-bottom-end">
-          <PrChips prs={prs ?? []} />
+          <PrChips prs={prs ?? []} onOpen={openPr ? (pr) => openPr(session, pr) : undefined} />
           {projectName && <span className="cr-project-pill">{projectName}</span>}
           {onAdopt && (
             <button
               type="button"
               className="session-card-adopt"
+              title={ADOPT_HINT}
               onClick={(e) => {
                 e.stopPropagation()
                 onAdopt()
               }}
             >
-              Adopt
+              {ADOPT_LABEL}
             </button>
           )}
         </div>
@@ -1321,6 +1349,7 @@ export default function SessionsScreen({
   projects,
   selectedProjectId,
   onAdopted,
+  onOpenSessionPr,
   onOpenSession,
   onClearFilter,
   onNewSession,
@@ -1377,7 +1406,14 @@ export default function SessionsScreen({
   const [hideFinished, setHideFinished] = useStoredState('sessions-hide-finished', false)
   const [prOnly, setPrOnly] = useStoredState('sessions-pr-only', false)
   const [ticketOnly, setTicketOnly] = useStoredState('sessions-ticket-only', false)
-  const { openPr, prOf, prsOf, ticketOf } = useSessionLinks(sessions, projects)
+  const { openPr, prOf, prsOf, prTarget, ticketOf } = useSessionLinks(sessions, projects)
+  const openPrPanel = onOpenSessionPr
+    ? (s: LiveSession, pr: SessionPr): void => {
+        const target = prTarget(s, pr)
+        if (target) onOpenSessionPr(s.key, target)
+        else void openExternal(pr.url)
+      }
+    : undefined
   const filtersOn =
     unreadOnly ||
     statusFilter.length > 0 ||
@@ -1565,8 +1601,8 @@ export default function SessionsScreen({
     }
     handleSessionRowChanged()
   }
-  // X picks the focused row; with anything picked, ⌫ deletes and O opens
-  // them all in tabs. Never while typing in a field.
+  // X picks the focused row; with anything picked, ⌫ deletes, O opens them
+  // all in tabs and D marks them done (or back to Active, if all are done). Never while typing in a field.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.metaKey || e.ctrlKey || e.altKey || deletingPicked || statusAnchor) return
@@ -1582,6 +1618,9 @@ export default function SessionsScreen({
       } else if (picked.size > 0 && (e.key === 'Backspace' || e.key === 'Delete')) {
         e.preventDefault()
         setDeletingPicked(true)
+      } else if (picked.size > 0 && key === 'd') {
+        e.preventDefault()
+        void setPickedStatus(allDone ? 'active' : 'done')
       } else if (picked.size > 0 && key === 'o') {
         e.preventDefault()
         openPicked()
@@ -1616,362 +1655,373 @@ export default function SessionsScreen({
 
   return (
     <SessionPrs.Provider value={prsOf}>
-      <SessionTickets.Provider
-        value={{
-          ticketOf,
-          open: onOpenTicket,
-          // In the order the screen shows them: project by project.
-          list: [
-            ...new Set(
-              [...projectGroups.flatMap((g) => g.sessions), ...otherSessions]
-                .map(ticketOf)
-                .filter((k): k is string => k !== null)
-            )
-          ]
-        }}
-      >
-        <SessionSelection.Provider value={selection}>
-          <div className="sessions-view">
-            {pickedRecords.length > 0 && (
-              <SelectionBar
-                count={pickedRecords.length}
-                label="Selected sessions"
-                onClear={() => setPicked(new Set())}
-              >
-                <SelectionAction shortcut="O" onClick={openPicked}>
-                  Open in tabs
-                </SelectionAction>
-                <SelectionAction shortcut="S" onClick={setStatusAnchor}>
-                  Status
-                </SelectionAction>
-                <SelectionAction shortcut="⌫" onClick={() => setDeletingPicked(true)}>
-                  Delete
-                </SelectionAction>
-              </SelectionBar>
-            )}
-            {statusAnchor && pickedRecords.length > 0 && (
-              <Picker
-                anchor={statusAnchor}
-                title="Set status"
-                options={[
-                  { value: 'active', label: 'Active', checked: noneDone },
-                  { value: 'done', label: 'Done', checked: allDone }
-                ]}
-                onPick={(v) => {
-                  setStatusAnchor(null)
-                  void setPickedStatus(v === 'done' ? 'done' : 'active')
-                }}
-                onClose={() => setStatusAnchor(null)}
-              />
-            )}
-            {deletingPicked && pickedRecords.length > 0 && (
-              <DeleteSessionsDialog
-                records={pickedRecords}
-                onCancel={() => setDeletingPicked(false)}
-                onDone={(failed) => {
-                  setDeletingPicked(false)
-                  setPicked(new Set(failed.map((f) => f.record.id)))
-                  handleSessionRowChanged()
-                  const done = pickedRecords.length - failed.length
-                  if (failed.length === 0) {
-                    pushToast?.(`Deleted ${done} session${done === 1 ? '' : 's'}`)
-                  } else {
-                    pushToast?.(
-                      `Deleted ${done}. Couldn't delete ${failed
-                        .map((f) => `${f.record.title} (${f.error})`)
-                        .join(', ')}`
-                    )
-                  }
-                }}
-              />
-            )}
-            <div className="sessions-main">
-              <div className="sessions-main-header">
-                <div className="sessions-main-heading">
-                  <h1 className="sessions-main-title">Sessions</h1>
-                  {attentionOnly ? (
-                    <p className="sessions-main-caption">
-                      {visibleSessions.length === 0
-                        ? 'Nothing is waiting on you'
-                        : `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'} need${visibleSessions.length === 1 ? 's' : ''} you`}
-                      {' - '}
-                      <button
-                        type="button"
-                        className="sessions-main-caption-clear"
-                        onClick={onClearAttentionFilter}
-                      >
-                        show all sessions
-                      </button>
-                    </p>
+      <SessionPrOpen.Provider value={openPrPanel}>
+        <SessionTickets.Provider
+          value={{
+            ticketOf,
+            open: onOpenTicket,
+            // In the order the screen shows them: project by project.
+            list: [
+              ...new Set(
+                [...projectGroups.flatMap((g) => g.sessions), ...otherSessions]
+                  .map(ticketOf)
+                  .filter((k): k is string => k !== null)
+              )
+            ]
+          }}
+        >
+          <SessionSelection.Provider value={selection}>
+            <div className="sessions-view">
+              {pickedRecords.length > 0 && (
+                <SelectionBar
+                  count={pickedRecords.length}
+                  label="Selected sessions"
+                  onClear={() => setPicked(new Set())}
+                >
+                  <SelectionAction shortcut="O" onClick={openPicked}>
+                    Open in tabs
+                  </SelectionAction>
+                  {allDone ? (
+                    <SelectionAction shortcut="D" onClick={() => void setPickedStatus('active')}>
+                      Move back to Active
+                    </SelectionAction>
                   ) : (
-                    <p className="sessions-main-caption">
-                      {filtersOn ? `${visibleSessions.length} of ` : ''}
-                      {scopedSessions.length} session{scopedSessions.length === 1 ? '' : 's'}
-                      {effectiveProjectId ? ' in this project' : ' across all projects'}
-                    </p>
+                    <SelectionAction shortcut="D" onClick={() => void setPickedStatus('done')}>
+                      Mark as done
+                    </SelectionAction>
                   )}
-                </div>
-                <div className="sessions-main-controls">
-                  {scopedSessions.length > 0 && (
-                    <div className="sessions-sort" ref={sortAnchor}>
-                      <button
-                        type="button"
-                        className="sessions-sort-button"
-                        aria-haspopup="menu"
-                        aria-expanded={sortOpen}
-                        onClick={() => setSortOpen((v) => !v)}
-                      >
-                        <Icon name="ArrowUpDown" size={14} />
-                        {SORT_OPTIONS.find((o) => o.value === sortMode)?.label}
-                        <Icon name="ChevronDown" size={14} />
-                      </button>
-                      <Popover
-                        open={sortOpen}
-                        onClose={() => setSortOpen(false)}
-                        anchorRef={sortAnchor}
-                        placement="bottom-end"
-                        className="sessions-sort-menu"
-                        aria-label="Sort sessions"
-                      >
-                        {SORT_OPTIONS.map((o) => (
-                          <button
-                            key={o.value}
-                            type="button"
-                            role="menuitemradio"
-                            aria-checked={sortMode === o.value}
-                            className="cr-popover-item sessions-sort-item"
-                            onClick={() => {
-                              setSortMode(o.value)
-                              setSortOpen(false)
-                            }}
-                          >
-                            <span>Sort by {o.label.toLowerCase()}</span>
-                            {sortMode === o.value && <Icon name="Check" size={14} />}
-                          </button>
-                        ))}
-                      </Popover>
-                    </div>
-                  )}
-                  <div className="sessions-view-toggle" role="radiogroup" aria-label="View">
-                    {(
-                      [
-                        { value: 'list', icon: 'List', label: 'List view' },
-                        { value: 'grid', icon: 'LayoutGrid', label: 'Grid view' }
-                      ] as const
-                    ).map((o) => (
-                      <Tooltip key={o.value} label={o.label}>
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={view === o.value}
-                          aria-label={o.label}
-                          className={
-                            view === o.value
-                              ? 'sessions-view-option sessions-view-option--selected'
-                              : 'sessions-view-option'
-                          }
-                          onClick={() => setView(o.value)}
-                        >
-                          <Icon name={o.icon} size={16} />
-                        </button>
-                      </Tooltip>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Two quiet rows. Statuses: pick any number, or All. Under them,
-            search and the switches that narrow whatever statuses are on. */}
-              {scopedSessions.length > 0 && (
-                <div className="sessions-filters">
-                  <div
-                    className="sessions-filter-tabs"
-                    role="group"
-                    aria-label="Filter by status: pick any number"
-                  >
-                    <button
-                      type="button"
-                      aria-pressed={statusFilter.length === 0}
-                      className={
-                        statusFilter.length === 0
-                          ? 'sessions-filter-tab sessions-filter-tab--selected'
-                          : 'sessions-filter-tab'
-                      }
-                      title="Show every status"
-                      onClick={() => setStatusFilter([])}
-                    >
-                      All
-                      <span className="sessions-filter-count">{allCount}</span>
-                    </button>
-                    {/* Only statuses something actually has, plus any selected
-                  one, so it can always be switched off again. */}
-                    {STATUS_FILTERS.filter(
-                      (f) => (statusCounts.get(f.id) ?? 0) > 0 || statusFilter.includes(f.id)
-                    ).map((f) => {
-                      const on = statusFilter.includes(f.id)
-                      return (
-                        <button
-                          key={f.id}
-                          type="button"
-                          aria-pressed={on}
-                          data-status-filter={f.id}
-                          className={
-                            on
-                              ? 'sessions-filter-tab sessions-filter-tab--selected'
-                              : 'sessions-filter-tab'
-                          }
-                          title={
-                            on ? 'Stop showing these' : 'Show these too; click others to add them'
-                          }
-                          onClick={() =>
-                            setStatusFilter(
-                              on
-                                ? statusFilter.filter((id) => id !== f.id)
-                                : [...statusFilter, f.id]
-                            )
-                          }
-                        >
-                          <StatusDot status={f.statuses[0]} size={8} />
-                          {sentenceCase(STATUS_WORDS[f.statuses[0]])}
-                          <span className="sessions-filter-count">
-                            {statusCounts.get(f.id) ?? 0}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <div className="sessions-filter-row">
-                    <label className="sessions-search">
-                      <Icon name="Search" size={14} />
-                      <input
-                        ref={searchRef}
-                        type="search"
-                        aria-label="Search sessions"
-                        placeholder="Search sessions"
-                        title="Matches title, branch, project, ticket or PR number"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Escape') {
-                            e.stopPropagation()
-                            setQuery('')
-                            e.currentTarget.blur()
-                          }
-                        }}
-                      />
-                      {!query && <kbd>/</kbd>}
-                    </label>
-                    <SessionsFilterMenu
-                      options={[
-                        {
-                          id: 'unread',
-                          label: 'Unread only',
-                          on: unreadOnly,
-                          set: setUnreadOnly,
-                          count: unreadCount
-                        },
-                        {
-                          id: 'pr',
-                          label: 'Has an open PR',
-                          on: prOnly,
-                          set: setPrOnly,
-                          count: prCount
-                        },
-                        {
-                          id: 'ticket',
-                          label: 'Has a ticket',
-                          on: ticketOnly,
-                          set: setTicketOnly,
-                          count: ticketCount
-                        },
-                        {
-                          id: 'finished',
-                          label: 'Hide finished',
-                          hint: 'Done, stopped, missing and errored',
-                          on: hideFinished,
-                          set: setHideFinished,
-                          count: finishedCount
-                        }
-                      ]}
-                    />
-                    {filtersOn && (
-                      <button
-                        type="button"
-                        className="sessions-filter-clear"
-                        onClick={clearFilters}
-                      >
-                        Clear filters
-                      </button>
-                    )}
-                  </div>
-                </div>
+                  <SelectionAction shortcut="S" onClick={setStatusAnchor}>
+                    Status
+                  </SelectionAction>
+                  <SelectionAction shortcut="⌫" onClick={() => setDeletingPicked(true)}>
+                    Delete
+                  </SelectionAction>
+                </SelectionBar>
               )}
-
-              {filteredToNothing && (
-                <div className="sessions-empty-wrap">
-                  <div className="sessions-empty-box">
-                    <h2 className="sessions-empty-title">No sessions match these filters</h2>
-                    <Button variant="outlined" onClick={clearFilters}>
-                      Clear filters
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {!hasAnySessions && !filteredToNothing && (
-                <SessionsEmptyState
-                  filtered={effectiveProjectId !== null}
-                  attentionOnly={attentionOnly}
-                  projectName={filterProjectName}
-                  onNewSession={onNewSession ? () => onNewSession() : undefined}
-                  onClearFilter={onClearFilter}
-                  onClearAttentionFilter={onClearAttentionFilter}
+              {statusAnchor && pickedRecords.length > 0 && (
+                <Picker
+                  anchor={statusAnchor}
+                  title="Set status"
+                  options={[
+                    { value: 'active', label: 'Active', checked: noneDone },
+                    { value: 'done', label: 'Done', checked: allDone }
+                  ]}
+                  onPick={(v) => {
+                    setStatusAnchor(null)
+                    void setPickedStatus(v === 'done' ? 'done' : 'active')
+                  }}
+                  onClose={() => setStatusAnchor(null)}
                 />
               )}
-
-              {hasAnySessions && (
-                <div className="sessions-groups-list">
-                  {projectGroups.map((group) => (
-                    <ProjectContainer
-                      key={group.project.id}
-                      group={group}
-                      view={view}
-                      forceOpen={filtersOn}
-                      onOpenSession={onOpenSession}
-                      onAdopt={handleAdopt}
-                      onRowChanged={handleSessionRowChanged}
-                      onNewSession={onNewSession}
-                      onProjectsChanged={onProjectsChanged}
-                      pushToast={pushToast}
-                      onOpenInIde={onOpenInIde}
-                    />
-                  ))}
-
-                  {otherSessions.length > 0 && (
-                    <section className="sessions-project sessions-project-other">
-                      <div className="sessions-project-header">
-                        <span className="sessions-project-name">Other sessions</span>
-                        <span className="sessions-project-count">
-                          {otherSessions.length} session{otherSessions.length === 1 ? '' : 's'}
-                        </span>
+              {deletingPicked && pickedRecords.length > 0 && (
+                <DeleteSessionsDialog
+                  records={pickedRecords}
+                  onCancel={() => setDeletingPicked(false)}
+                  onDone={(failed) => {
+                    setDeletingPicked(false)
+                    setPicked(new Set(failed.map((f) => f.record.id)))
+                    handleSessionRowChanged()
+                    const done = pickedRecords.length - failed.length
+                    if (failed.length === 0) {
+                      pushToast?.(`Deleted ${done} session${done === 1 ? '' : 's'}`)
+                    } else {
+                      pushToast?.(
+                        `Deleted ${done}. Couldn't delete ${failed
+                          .map((f) => `${f.record.title} (${f.error})`)
+                          .join(', ')}`
+                      )
+                    }
+                  }}
+                />
+              )}
+              <div className="sessions-main">
+                <div className="sessions-main-header">
+                  <div className="sessions-main-heading">
+                    <h1 className="sessions-main-title">Sessions</h1>
+                    {attentionOnly ? (
+                      <p className="sessions-main-caption">
+                        {visibleSessions.length === 0
+                          ? 'Nothing is waiting on you'
+                          : `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'} need${visibleSessions.length === 1 ? 's' : ''} you`}
+                        {' - '}
+                        <button
+                          type="button"
+                          className="sessions-main-caption-clear"
+                          onClick={onClearAttentionFilter}
+                        >
+                          show all sessions
+                        </button>
+                      </p>
+                    ) : (
+                      <p className="sessions-main-caption">
+                        {filtersOn ? `${visibleSessions.length} of ` : ''}
+                        {scopedSessions.length} session{scopedSessions.length === 1 ? '' : 's'}
+                        {effectiveProjectId ? ' in this project' : ' across all projects'}
+                      </p>
+                    )}
+                  </div>
+                  <div className="sessions-main-controls">
+                    {scopedSessions.length > 0 && (
+                      <div className="sessions-sort" ref={sortAnchor}>
+                        <button
+                          type="button"
+                          className="sessions-sort-button"
+                          aria-haspopup="menu"
+                          aria-expanded={sortOpen}
+                          onClick={() => setSortOpen((v) => !v)}
+                        >
+                          <Icon name="ArrowUpDown" size={14} />
+                          {SORT_OPTIONS.find((o) => o.value === sortMode)?.label}
+                          <Icon name="ChevronDown" size={14} />
+                        </button>
+                        <Popover
+                          open={sortOpen}
+                          onClose={() => setSortOpen(false)}
+                          anchorRef={sortAnchor}
+                          placement="bottom-end"
+                          className="sessions-sort-menu"
+                          aria-label="Sort sessions"
+                        >
+                          {SORT_OPTIONS.map((o) => (
+                            <button
+                              key={o.value}
+                              type="button"
+                              role="menuitemradio"
+                              aria-checked={sortMode === o.value}
+                              className="cr-popover-item sessions-sort-item"
+                              onClick={() => {
+                                setSortMode(o.value)
+                                setSortOpen(false)
+                              }}
+                            >
+                              <span>Sort by {o.label.toLowerCase()}</span>
+                              {sortMode === o.value && <Icon name="Check" size={14} />}
+                            </button>
+                          ))}
+                        </Popover>
                       </div>
-                      <SessionGroupBody
-                        sessions={otherSessions}
+                    )}
+                    <div className="sessions-view-toggle" role="radiogroup" aria-label="View">
+                      {(
+                        [
+                          { value: 'list', icon: 'List', label: 'List view' },
+                          { value: 'grid', icon: 'LayoutGrid', label: 'Grid view' }
+                        ] as const
+                      ).map((o) => (
+                        <Tooltip key={o.value} label={o.label}>
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={view === o.value}
+                            aria-label={o.label}
+                            className={
+                              view === o.value
+                                ? 'sessions-view-option sessions-view-option--selected'
+                                : 'sessions-view-option'
+                            }
+                            onClick={() => setView(o.value)}
+                          >
+                            <Icon name={o.icon} size={16} />
+                          </button>
+                        </Tooltip>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Two quiet rows. Statuses: pick any number, or All. Under them,
+            search and the switches that narrow whatever statuses are on. */}
+                {scopedSessions.length > 0 && (
+                  <div className="sessions-filters">
+                    <div
+                      className="sessions-filter-tabs"
+                      role="group"
+                      aria-label="Filter by status: pick any number"
+                    >
+                      <button
+                        type="button"
+                        aria-pressed={statusFilter.length === 0}
+                        className={
+                          statusFilter.length === 0
+                            ? 'sessions-filter-tab sessions-filter-tab--selected'
+                            : 'sessions-filter-tab'
+                        }
+                        title="Show every status"
+                        onClick={() => setStatusFilter([])}
+                      >
+                        All
+                        <span className="sessions-filter-count">{allCount}</span>
+                      </button>
+                      {/* Only statuses something actually has, plus any selected
+                  one, so it can always be switched off again. */}
+                      {STATUS_FILTERS.filter(
+                        (f) => (statusCounts.get(f.id) ?? 0) > 0 || statusFilter.includes(f.id)
+                      ).map((f) => {
+                        const on = statusFilter.includes(f.id)
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            aria-pressed={on}
+                            data-status-filter={f.id}
+                            className={
+                              on
+                                ? 'sessions-filter-tab sessions-filter-tab--selected'
+                                : 'sessions-filter-tab'
+                            }
+                            title={
+                              on ? 'Stop showing these' : 'Show these too; click others to add them'
+                            }
+                            onClick={() =>
+                              setStatusFilter(
+                                on
+                                  ? statusFilter.filter((id) => id !== f.id)
+                                  : [...statusFilter, f.id]
+                              )
+                            }
+                          >
+                            <StatusDot status={f.statuses[0]} size={8} />
+                            {sentenceCase(STATUS_WORDS[f.statuses[0]])}
+                            <span className="sessions-filter-count">
+                              {statusCounts.get(f.id) ?? 0}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    <div className="sessions-filter-row">
+                      <label className="sessions-search">
+                        <Icon name="Search" size={14} />
+                        <input
+                          ref={searchRef}
+                          type="search"
+                          aria-label="Search sessions"
+                          placeholder="Search sessions"
+                          title="Matches title, branch, project, ticket or PR number"
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              e.stopPropagation()
+                              setQuery('')
+                              e.currentTarget.blur()
+                            }
+                          }}
+                        />
+                        {!query && <kbd>/</kbd>}
+                      </label>
+                      <SessionsFilterMenu
+                        options={[
+                          {
+                            id: 'unread',
+                            label: 'Unread only',
+                            on: unreadOnly,
+                            set: setUnreadOnly,
+                            count: unreadCount
+                          },
+                          {
+                            id: 'pr',
+                            label: 'Has an open PR',
+                            on: prOnly,
+                            set: setPrOnly,
+                            count: prCount
+                          },
+                          {
+                            id: 'ticket',
+                            label: 'Has a ticket',
+                            on: ticketOnly,
+                            set: setTicketOnly,
+                            count: ticketCount
+                          },
+                          {
+                            id: 'finished',
+                            label: 'Hide finished',
+                            hint: 'Done, stopped, missing and errored',
+                            on: hideFinished,
+                            set: setHideFinished,
+                            count: finishedCount
+                          }
+                        ]}
+                      />
+                      {filtersOn && (
+                        <button
+                          type="button"
+                          className="sessions-filter-clear"
+                          onClick={clearFilters}
+                        >
+                          Clear filters
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {filteredToNothing && (
+                  <div className="sessions-empty-wrap">
+                    <div className="sessions-empty-box">
+                      <h2 className="sessions-empty-title">No sessions match these filters</h2>
+                      <Button variant="outlined" onClick={clearFilters}>
+                        Clear filters
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {!hasAnySessions && !filteredToNothing && (
+                  <SessionsEmptyState
+                    filtered={effectiveProjectId !== null}
+                    attentionOnly={attentionOnly}
+                    projectName={filterProjectName}
+                    onNewSession={onNewSession ? () => onNewSession() : undefined}
+                    onClearFilter={onClearFilter}
+                    onClearAttentionFilter={onClearAttentionFilter}
+                  />
+                )}
+
+                {hasAnySessions && (
+                  <div className="sessions-groups-list">
+                    {projectGroups.map((group) => (
+                      <ProjectContainer
+                        key={group.project.id}
+                        group={group}
                         view={view}
-                        adoptTo={(session) => projectForCwd(session.cwd, projects)?.id ?? null}
+                        forceOpen={filtersOn}
                         onOpenSession={onOpenSession}
                         onAdopt={handleAdopt}
                         onRowChanged={handleSessionRowChanged}
+                        onNewSession={onNewSession}
+                        onProjectsChanged={onProjectsChanged}
+                        pushToast={pushToast}
                         onOpenInIde={onOpenInIde}
                       />
-                    </section>
-                  )}
-                </div>
-              )}
+                    ))}
+
+                    {otherSessions.length > 0 && (
+                      <section className="sessions-project sessions-project-other">
+                        <div className="sessions-project-header">
+                          <span className="sessions-project-name">Other sessions</span>
+                          <span className="sessions-project-count">
+                            {otherSessions.length} session{otherSessions.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                        <SessionGroupBody
+                          sessions={otherSessions}
+                          view={view}
+                          adoptTo={(session) => projectForCwd(session.cwd, projects)?.id ?? null}
+                          onOpenSession={onOpenSession}
+                          onAdopt={handleAdopt}
+                          onRowChanged={handleSessionRowChanged}
+                          onOpenInIde={onOpenInIde}
+                        />
+                      </section>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </SessionSelection.Provider>
-      </SessionTickets.Provider>
+          </SessionSelection.Provider>
+        </SessionTickets.Provider>
+      </SessionPrOpen.Provider>
     </SessionPrs.Provider>
   )
 }

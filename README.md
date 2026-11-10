@@ -103,7 +103,7 @@ listed down the left. These are the ones worth a look first:
 - **Setup command** (a project's page → Worktree settings): runs in a new worktree's terminal before
   the agent starts, like `npm install`. Empty by default.
 - **`~/.zsh/wt-setup.sh`** (optional): if this file exists, the workspace file Control Room writes
-  for each worktree asks the editor to run it when you open the worktree. If you don't have one,
+  for each worktree asks the editor to run it, with the worktree path as its argument, when you open the worktree. If you don't have one,
   nothing happens.
 
 ## Dev containers

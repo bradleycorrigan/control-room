@@ -3248,6 +3248,16 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
               !/fixture-elsewhere/.test(document.body.textContent ?? ''),
             'in project shown, outside every project hidden'
           )
+          {
+            const row = $('[aria-label="fixture-cursor actions"]')?.closest('.sessions-row')
+            await check(
+              'a session Control Room didn’t start says so, in place of repeating its name',
+              /Started outside Control Room/.test(
+                row?.querySelector('.sessions-row-branch')?.textContent ?? ''
+              ),
+              row?.querySelector('.sessions-row-line2')?.textContent ?? 'no fixture-cursor row'
+            )
+          }
           const menuLabels = async (button: Element | null | undefined): Promise<string[]> => {
             await click(button)
             await until(() => $$('[role="menuitem"]').length > 0, 2000)
@@ -3256,7 +3266,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             await wait(200)
             // Read or unread is the same item either way; compare the menus, not the state.
             return labels
-              .filter((l) => l !== 'Adopt')
+              .filter((l) => l !== 'Add to Control Room')
               .map((l) => (l === 'Mark as read' ? 'Mark as unread' : l))
           }
           const rowLabels = await menuLabels($('[aria-label="fixture-cursor actions"]'))
@@ -3405,7 +3415,10 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           const doneOption = (): HTMLElement | null => $('.backlog-picker [data-value="done"]')
           await until(() => Boolean(doneOption()), 3000)
           await check('S opens a status picker for the picked sessions', Boolean(doneOption()))
-          await click(doneOption())
+          await key('Escape')
+          await wait(200)
+          // Mark as done has its own button on the bar, as well as in Status.
+          await click(byText('.cr-selection-bar button', 'Mark as done'))
           // Marked done with nothing running, a session leaves the live list.
           type Listed = { record: { id: string } | null }
           const stillListed = async (): Promise<string[]> =>
@@ -3418,7 +3431,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             left = await stillListed()
           }
           await check(
-            'choosing Done marks every picked session done, and the selection clears',
+            "the bar's Mark as done marks every picked session done, and the selection clears",
             left.length === 0 && !bar(),
             bar()?.textContent ?? `still active: ${left.join(', ')}`
           )
@@ -4558,6 +4571,25 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
                   ','
                 )}; working card: ${card()?.querySelector('.session-card-bottom')?.outerHTML.slice(0, 300) ?? 'none'}`
         )
+        // A chip opens its session with that PR's panel, every option in it,
+        // not GitHub.
+        await click(card()?.querySelector('.cr-pr-chip'))
+        await check(
+          "a PR chip on a card opens the session with that PR's panel",
+          await until(
+            () =>
+              Boolean($('.ship-panel')) &&
+              /Working session/.test($('.session-detail-breadcrumb-title')?.textContent ?? ''),
+            4000
+          ),
+          `panel: ${Boolean($('.ship-panel'))}; open: ${$('.session-detail-breadcrumb-title')?.textContent ?? 'no session'}`
+        )
+        await key('Escape')
+        await until(() => !$('.ship-panel'), 2000)
+        await click($('[aria-label="Close tab (⌘W)"]'))
+        await wait(300)
+        await ctx.goTo('sessions')
+        await wait(300)
         await click($('[aria-label="List view"]'))
       }
     },

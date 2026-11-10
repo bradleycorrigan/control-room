@@ -248,8 +248,9 @@ function writeWorkspaceFile(
     }
 
     // An optional personal hook: if ~/.zsh/wt-setup.sh exists, the editor
-    // runs it when it opens the worktree (README, "Per-worktree setup").
-    // Machines without it get a workspace file with no tasks.
+    // runs it when it opens the worktree (README, "Per-worktree setup"),
+    // with the worktree path as its one argument. Machines without it get a
+    // workspace file with no tasks.
     const wtSetup = join(homedir(), '.zsh', 'wt-setup.sh')
     if (existsSync(wtSetup)) {
       workspace.tasks = {
@@ -259,6 +260,7 @@ function writeWorkspaceFile(
             label: 'wt-setup',
             type: 'shell',
             command: wtSetup,
+            args: [target],
             runOptions: { runOn: 'folderOpen' }
           }
         ]

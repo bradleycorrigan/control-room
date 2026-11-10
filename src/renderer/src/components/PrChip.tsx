@@ -25,17 +25,20 @@ export interface PrChipProps {
  */
 export function PrChips({
   prs,
-  size = 22
+  size = 22,
+  onOpen
 }: {
   prs: PrChipProps['pr'][]
   size?: 20 | 22
+  /** Replaces opening GitHub: opens that PR's panel instead. */
+  onOpen?: (pr: PrChipProps['pr']) => void
 }): React.JSX.Element | null {
   if (prs.length === 0) return null
   const first = prs.find((p) => p.state === 'OPEN') ?? prs[0]
   const rest = prs.filter((p) => p !== first)
   return (
     <>
-      <PrChip pr={first} size={size} />
+      <PrChip pr={first} size={size} onOpen={onOpen ? () => onOpen(first) : undefined} />
       {rest.length > 0 && (
         <span
           className={`cr-pr-chip-more${size === 20 ? ' cr-pr-chip-more--20' : ''}`}
