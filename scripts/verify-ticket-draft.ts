@@ -70,7 +70,8 @@ const parsed = parseTicketDraft(
     description: 'h4. Context',
     priority: 'Urgent',
     epicKey: 'NOPE-1',
-    labels: ['data-ask', 'invented', 'data-ask']
+    labels: ['data-ask', 'invented', 'data-ask'],
+    estimate: '3 weeks'
   }),
   choices
 )
@@ -80,16 +81,27 @@ check(
     parsed.value.summary === 'Fix UTMs' &&
     parsed.value.priority === null &&
     parsed.value.epicKey === null &&
-    parsed.value.labels.join() === 'data-ask',
+    parsed.value.labels.join() === 'data-ask' &&
+    parsed.value.estimate === null,
   JSON.stringify(parsed)
 )
 const good = parseTicketDraft(
-  answer({ summary: 'A', description: '', priority: 'High', epicKey: 'TEAM-60', labels: [] }),
+  answer({
+    summary: 'A',
+    description: '',
+    priority: 'High',
+    epicKey: 'TEAM-60',
+    labels: [],
+    estimate: '2d'
+  }),
   choices
 )
 check(
-  'a valid priority and epic come through',
-  good.ok && good.value.priority === 'High' && good.value.epicKey === 'TEAM-60',
+  'a valid priority, epic and estimate come through',
+  good.ok &&
+    good.value.priority === 'High' &&
+    good.value.epicKey === 'TEAM-60' &&
+    good.value.estimate === '2d',
   JSON.stringify(good)
 )
 check(

@@ -270,6 +270,52 @@
   gap: var(--space-8);
 }
 
+/* The ⋯ for the rarer actions sits right after Open in GitHub. */
+.ship-panel-pr-more {
+  display: inline-flex;
+}
+
+/* Merge or close, asked once, in place of the buttons. */
+.ship-panel-pr-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+  padding: var(--space-8) var(--space-8) var(--space-8) var(--space-12);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  align-self: stretch;
+}
+
+.ship-panel-pr-confirm-text {
+  color: var(--text);
+}
+
+.ship-panel-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.ship-panel-pr-confirm-buttons {
+  display: flex;
+  gap: var(--space-8);
+  margin-left: auto;
+}
+
+.ship-panel-danger {
+  color: var(--status-error);
+}
+
+.ship-panel-pr-confirm .ship-panel-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .ship-panel-pr-actions .ship-panel-error {
   flex-basis: 100%;
   margin: 0;

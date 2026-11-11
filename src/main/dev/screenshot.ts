@@ -115,6 +115,10 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
     if (action === 'minimize') win.minimize()
     else {
       win.restore()
+      // win.focus() alone can't take focus from another app on macOS (a
+      // shard window still closing, or whatever the person is using), and the
+      // tooltip check then saw "window focused: no". Dev-only.
+      if (process.platform === 'darwin') app.focus({ steal: true })
       win.focus()
     }
   })

@@ -1,13 +1,16 @@
 import { GitHubGlyph } from '../screens/backlogGlyphs'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
 import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
 import {
   getShipInfo,
-  shipPullRequest,
-  getSessionHandoffNote,
   pushSessionBranch,
   markPullRequestReady,
+  getPullRequestStatus,
+  convertPullRequestToDraft,
+  closePullRequest,
+  mergePullRequest,
+  type MergeMethod,
   type ShipInfo
 } from '../api-sessions'
 import {
@@ -21,7 +24,8 @@ import {
   type JiraBoardData,
   type JiraIssue
 } from '../api'
-import { Button, Textarea, Input, SegmentedControl, Icon } from './primitives'
+import { Button, Icon, IconButton, Popover } from './primitives'
+import { MenuItems } from './MenuItems'
 import { useDismissible } from '../keyboard'
 import './ship-panel.css'
 
@@ -84,7 +88,6 @@ export default function ShipPanel({
 }: Props): React.JSX.Element {
   useDismissible(true, 'modal', onClose)
   const recordId = session.record!.id
-  const sessionTitle = session.record?.title ?? session.agentName ?? session.cwd
 
   // A linked PR's panel starts with everything it will ever load; the panel
   // is keyed on the PR, so a different one mounts a fresh panel.
@@ -100,7 +103,6 @@ export default function ShipPanel({
         }
       : undefined
   )
-  const [handoffNote, setHandoffNote] = useState<string | null | undefined>(undefined)
   const [board, setBoard] = useState<JiraBoardData | null>(null)
   // The header's own ticketKey (useTicketKey in SessionDetail) only refetches
   // on recordId/title/branch/ticketRefresh — linking a ticket while the panel
@@ -138,16 +140,6 @@ export default function ShipPanel({
   }, [recordId, linkedPr])
 
   useEffect(() => {
-    let cancelled = false
-    void getSessionHandoffNote(recordId).then((r) => {
-      if (!cancelled) setHandoffNote(r?.note ?? null)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [recordId])
-
-  useEffect(() => {
     if (!ticketKey || !jiraReady) return
     let cancelled = false
     void loadJiraBoard().then((r) => {
@@ -162,49 +154,11 @@ export default function ShipPanel({
     ? (board?.issues.find((i) => i.key === ticketKey) ?? null)
     : null
 
-  // Title/body default from whatever's loaded so far, and track only the
-  // person's own edit as state — that way the default can still catch up
-  // once the ticket summary or hand-off note arrives, but a real edit is
-  // never clobbered by data that shows up a moment later.
-  const defaultTitle = ticketKey && issue ? `${ticketKey}: ${issue.summary}` : sessionTitle
-  const defaultBody = [handoffNote ?? '', ticketKey && issue ? `Jira: ${issue.url}` : '']
-    .filter(Boolean)
-    .join('\n\n')
-  const [titleOverride, setTitleOverride] = useState<string | null>(null)
-  const [bodyOverride, setBodyOverride] = useState<string | null>(null)
-  const title = titleOverride ?? defaultTitle
-  const body = bodyOverride ?? defaultBody
-
-  const [draft, setDraft] = useState(false)
-  const [shipping, setShipping] = useState(false)
-  const [shipError, setShipError] = useState<string | null>(null)
-
-  const handleShip = async (): Promise<void> => {
-    setShipping(true)
-    setShipError(null)
-    const result = await shipPullRequest(recordId, title, body, draft)
-    setShipping(false)
-    if (!result.ok || !result.pr) {
-      // GitHub already has one for this branch: show that one, and what you
-      // can do with it, rather than an error.
-      if (/already exists/i.test(result.error ?? '')) {
-        const found = await getSessionPullRequest(recordId)
-        if (found) {
-          setExistingPr(found)
-          pushToast?.('This branch already has a pull request.')
-          return
-        }
-      }
-      setShipError(result.error ?? 'Could not open the pull request.')
-      return
-    }
-    setExistingPr(result.pr)
-    pushToast?.('Pull request opened.')
-  }
-
   // With a pull request already open: push new commits to it, take it out
   // of draft.
-  const [prAction, setPrAction] = useState<'push' | 'ready' | null>(null)
+  const [prAction, setPrAction] = useState<'push' | 'ready' | 'draft' | 'merge' | 'close' | null>(
+    null
+  )
   const [prActionError, setPrActionError] = useState<string | null>(null)
   const pushToPr = async (): Promise<void> => {
     setPrAction('push')
@@ -227,6 +181,65 @@ export default function ShipPanel({
     if (!result.ok) return setPrActionError(result.error ?? 'Could not mark it ready.')
     setExistingPr({ ...existingPr, isDraft: false })
     pushToast?.('Marked ready for review.')
+  }
+
+  // Merge, close, back to draft. Merge shows only when GitHub would take it;
+  // otherwise the line beside the buttons says why not.
+  const prRef = existingPr ? (linkedPr ? existingPr.url : existingPr.number) : null
+  const [mergeStatus, setMergeStatus] = useState<{
+    method: MergeMethod | null
+    blocked: string | null
+  } | null>(null)
+  const openNow = existingPr?.state === 'OPEN'
+  useEffect(() => {
+    if (prRef === null || !openNow) return
+    let cancelled = false
+    void getPullRequestStatus(recordId, prRef).then((r) => {
+      if (!cancelled) setMergeStatus(r.ok ? r.value : null)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [recordId, prRef, openNow, existingPr?.isDraft, info?.unpushed])
+  const [confirming, setConfirming] = useState<'merge' | 'close' | null>(null)
+  const [deleteBranch, setDeleteBranch] = useState(true)
+  const [prMenuOpen, setPrMenuOpen] = useState(false)
+  const prMenuAnchor = useRef<HTMLDivElement>(null)
+  const mergeVerb: Record<MergeMethod, string> = {
+    squash: 'Squash and merge',
+    merge: 'Merge',
+    rebase: 'Rebase and merge'
+  }
+  const toDraft = async (): Promise<void> => {
+    if (!existingPr || prRef === null) return
+    setPrAction('draft')
+    setPrActionError(null)
+    const result = await convertPullRequestToDraft(recordId, prRef)
+    setPrAction(null)
+    if (!result.ok) return setPrActionError(result.error ?? 'Could not convert it to a draft.')
+    setExistingPr({ ...existingPr, isDraft: true })
+    pushToast?.('Back to draft.')
+  }
+  const finish = async (kind: 'merge' | 'close'): Promise<void> => {
+    if (!existingPr || prRef === null) return
+    if (kind === 'merge' && !mergeStatus?.method) return
+    setPrAction(kind)
+    setPrActionError(null)
+    const result =
+      kind === 'merge'
+        ? await mergePullRequest(recordId, prRef, mergeStatus!.method!, deleteBranch)
+        : await closePullRequest(recordId, prRef, deleteBranch)
+    setPrAction(null)
+    if (!result.ok)
+      return setPrActionError(
+        result.error ?? (kind === 'merge' ? 'Could not merge it.' : 'Could not close it.')
+      )
+    setConfirming(null)
+    setExistingPr({ ...existingPr, state: kind === 'merge' ? 'MERGED' : 'CLOSED' })
+    const what = `${kind === 'merge' ? 'Merged' : 'Closed'} #${existingPr.number}`
+    pushToast?.(
+      result.branchError ?? (deleteBranch ? `${what} and deleted its branch.` : `${what}.`)
+    )
   }
 
   const projectKey = ticketKey?.split('-')[0] ?? null
@@ -427,7 +440,50 @@ export default function ShipPanel({
                     </span>
                   </div>
                 )}
-                {openPr && (
+                {openPr && confirming && (
+                  <div className="ship-panel-pr-confirm" role="group" aria-label="Confirm">
+                    <span className="ship-panel-pr-confirm-text">
+                      {confirming === 'merge'
+                        ? `${mergeVerb[mergeStatus?.method ?? 'merge']} #${openPr.number}?`
+                        : `Close #${openPr.number} without merging?`}
+                    </span>
+                    <label className="ship-panel-check">
+                      <input
+                        type="checkbox"
+                        checked={deleteBranch}
+                        onChange={(e) => setDeleteBranch(e.target.checked)}
+                      />
+                      Delete branch
+                    </label>
+                    <span className="ship-panel-pr-confirm-buttons">
+                      <Button
+                        variant="ghost"
+                        size="compact"
+                        onClick={() => setConfirming(null)}
+                        disabled={prAction !== null}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant={confirming === 'merge' ? 'filled' : 'outlined'}
+                        size="compact"
+                        className={confirming === 'close' ? 'ship-panel-danger' : undefined}
+                        onClick={() => void finish(confirming)}
+                        disabled={prAction !== null}
+                      >
+                        {prAction === 'merge'
+                          ? 'Merging…'
+                          : prAction === 'close'
+                            ? 'Closing…'
+                            : confirming === 'merge'
+                              ? mergeVerb[mergeStatus?.method ?? 'merge']
+                              : 'Close pull request'}
+                      </Button>
+                    </span>
+                    {prActionError && <p className="ship-panel-error">{prActionError}</p>}
+                  </div>
+                )}
+                {openPr && !confirming && (
                   <div className="ship-panel-pr-actions">
                     {!linkedPr && (info?.unpushed ?? 0) > 0 && (
                       <Button
@@ -450,6 +506,24 @@ export default function ShipPanel({
                         {prAction === 'ready' ? 'Marking ready…' : 'Mark ready for review'}
                       </Button>
                     )}
+                    {/* Never with commits still to push: they'd be left out. */}
+                    {!openPr.isDraft &&
+                      mergeStatus?.method &&
+                      !mergeStatus.blocked &&
+                      (linkedPr || (info !== undefined && (info?.unpushed ?? 0) === 0)) && (
+                        <Button
+                          variant="filled"
+                          size="compact"
+                          onClick={() => {
+                            setPrActionError(null)
+                            setConfirming('merge')
+                          }}
+                          disabled={prAction !== null}
+                        >
+                          <Icon name="GitMerge" size={13} />
+                          Merge
+                        </Button>
+                      )}
                     <Button
                       variant="outlined"
                       size="compact"
@@ -458,8 +532,60 @@ export default function ShipPanel({
                       <GitHubGlyph size={13} />
                       Open in GitHub
                     </Button>
-                    {!linkedPr && info?.unpushed === 0 && !openPr.isDraft && (
-                      <span className="ship-panel-muted">Up to date with your latest commit.</span>
+                    <div className="ship-panel-pr-more" ref={prMenuAnchor}>
+                      <IconButton
+                        icon="MoreHorizontal"
+                        label="More pull request actions"
+                        size={28}
+                        variant="ghost"
+                        onClick={() => setPrMenuOpen((v) => !v)}
+                      />
+                      <Popover
+                        open={prMenuOpen}
+                        onClose={() => setPrMenuOpen(false)}
+                        anchorRef={prMenuAnchor}
+                        placement="bottom-end"
+                        aria-label="Pull request actions"
+                      >
+                        <MenuItems
+                          onPicked={() => setPrMenuOpen(false)}
+                          items={[
+                            ...(openPr.isDraft
+                              ? []
+                              : [
+                                  {
+                                    label: 'Convert to draft',
+                                    icon: 'FilePen' as const,
+                                    onClick: () => void toDraft()
+                                  }
+                                ]),
+                            {
+                              label: 'Close pull request…',
+                              icon: 'CircleX' as const,
+                              danger: true,
+                              group: 'end',
+                              onClick: () => {
+                                setPrActionError(null)
+                                setConfirming('close')
+                              }
+                            }
+                          ]}
+                        />
+                      </Popover>
+                    </div>
+                    {prAction === 'draft' ? (
+                      <span className="ship-panel-muted">Converting to draft…</span>
+                    ) : !openPr.isDraft && mergeStatus?.blocked ? (
+                      <span className="ship-panel-muted">{mergeStatus.blocked}</span>
+                    ) : (
+                      !linkedPr &&
+                      info?.unpushed === 0 &&
+                      !openPr.isDraft &&
+                      !mergeStatus?.method && (
+                        <span className="ship-panel-muted">
+                          Up to date with your latest commit.
+                        </span>
+                      )
                     )}
                     {prActionError && <p className="ship-panel-error">{prActionError}</p>}
                   </div>
@@ -476,39 +602,10 @@ export default function ShipPanel({
                     </Button>
                   </div>
                 )}
-                {!openPr && !linkedPr && (
-                  <div className="ship-panel-pr-form">
-                    <label className="ship-panel-field">
-                      <span>Title</span>
-                      <Input value={title} onChange={(e) => setTitleOverride(e.target.value)} />
-                    </label>
-                    <label className="ship-panel-field">
-                      <span>Description</span>
-                      <Textarea
-                        value={body}
-                        onChange={(e) => setBodyOverride(e.target.value)}
-                        rows={8}
-                      />
-                    </label>
-                    <div className="ship-panel-pr-row">
-                      <SegmentedControl
-                        aria-label="Draft or ready for review"
-                        value={draft ? 'draft' : 'ready'}
-                        onChange={(v) => setDraft(v === 'draft')}
-                        options={[
-                          { value: 'ready', label: 'Ready for review' },
-                          { value: 'draft', label: 'Draft' }
-                        ]}
-                      />
-                      <Button
-                        onClick={() => void handleShip()}
-                        disabled={shipping || !title.trim()}
-                      >
-                        {shipping ? 'Pushing…' : 'Push and open PR'}
-                      </Button>
-                    </div>
-                    {shipError && <p className="ship-panel-error">{shipError}</p>}
-                  </div>
+                {!existingPr && (
+                  <p className="ship-panel-muted">
+                    No pull request for this branch yet. Ask Claude to open one.
+                  </p>
                 )}
               </>
             )}

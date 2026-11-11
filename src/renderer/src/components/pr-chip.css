@@ -62,3 +62,65 @@
 .cr-pr-chip-more--20 {
   height: 20px;
 }
+
+/* A page the session published: the same pill, its title cut to fit. */
+.cr-artifact-chip-wrap {
+  display: inline-flex;
+  min-width: 0;
+}
+
+.cr-artifact-chip {
+  max-width: 220px;
+  color: var(--text-muted);
+}
+
+.cr-artifact-chip:hover,
+.cr-artifact-chip[aria-expanded='true'] {
+  color: var(--text);
+}
+
+.cr-artifact-chip-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* "N artifacts", "N pull requests": several pills folded into one. */
+.cr-pill-folder {
+  color: var(--text);
+}
+
+.cr-pill-folder-list {
+  min-width: 260px;
+  max-width: 420px;
+}
+
+/* A row: the thing itself, then its other actions as icons. */
+.cr-pill-folder-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.cr-pill-folder-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.cr-pill-folder-meta {
+  margin-left: auto;
+  padding-left: var(--space-8);
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+}
+
+.cr-pr-chip-dot--open {
+  background: var(--status-done);
+}
+
+.cr-pr-chip-dot--merged {
+  background: var(--accent);
+}
+
+.cr-pill-folder-main .cr-pr-chip-dot {
+  flex: none;
+}

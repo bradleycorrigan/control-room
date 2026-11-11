@@ -37,11 +37,15 @@ import {
 import {
   getShipInfo,
   getLinkedPullRequests,
+  getSessionArtifacts,
+  type TranscriptArtifact,
   draftTicketFromSession,
   type TicketDraftResult
 } from '../api-sessions'
 import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
 import PrChip from '../components/PrChip'
+import { ArtifactPills } from '../components/ArtifactChip'
+import { PillFolder } from '../components/PillFolder'
 import type { PrPanelTarget } from '../components/prPanelTarget'
 // Every disabled control below is gated by a condition named after one of
 // these — never a literal true/false or a "not implemented yet" string
@@ -333,6 +337,19 @@ export default function SessionDetail({
     }
   }, [recordId, session.status, session.activityAt, shipCheck])
 
+  // Pages the agent published with the Artifact tool: a pill each, after the PRs.
+  const [artifacts, setArtifacts] = useState<TranscriptArtifact[]>([])
+  useEffect(() => {
+    if (!recordId) return
+    let cancelled = false
+    void getSessionArtifacts(recordId).then((list) => {
+      if (!cancelled) setArtifacts(list ?? [])
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [recordId, session.status, session.activityAt])
+
   const hasCommitsAhead =
     !!session.record && !session.record.investigation && rawCommitsAhead === true
 
@@ -352,6 +369,39 @@ export default function SessionDetail({
   // Every pill: the branch's PR first, then the ones the agent opened
   // elsewhere. The branch's PR can be in both lists; it keeps its own pill.
   const otherPrs = linkedPrs.filter((pr) => pr.url !== branchPr?.url)
+  // Every PR the header shows, branch's first, each with the panel it opens
+  // and its state in one word.
+  const allPrs = [
+    ...(branchPr && hasCommitsAhead
+      ? [
+          {
+            pr: {
+              ...branchPr,
+              state: ['OPEN', 'MERGED', 'CLOSED'].includes(branchPr.state)
+                ? (branchPr.state as 'OPEN' | 'MERGED' | 'CLOSED')
+                : null
+            },
+            isDraft: branchPr.isDraft,
+            repository: '',
+            target: { kind: 'branch' } as PrPanelTarget
+          }
+        ]
+      : []),
+    ...otherPrs.map((pr) => ({
+      pr,
+      isDraft: pr.isDraft,
+      repository: pr.repository,
+      target: { kind: 'linked', pr } as PrPanelTarget
+    }))
+  ].map((p) => {
+    const repoName = p.repository.split('/').pop() || projectName || ''
+    return {
+      ...p,
+      repoName,
+      repo: repoName && repoName !== projectName ? repoName : undefined,
+      word: p.isDraft ? 'draft' : (p.pr.state ?? 'unknown').toLowerCase()
+    }
+  })
 
   // Opening a session marks it read (and decays M5's 'done'). Again whenever
   // its status changes while it is open: a turn that finishes in front of you
@@ -700,41 +750,49 @@ export default function SessionDetail({
                 {ticketBoard === 'loading' ? 'Opening…' : 'Create or link ticket'}
               </button>
             )}
-            {branchPr && hasCommitsAhead && (
+            {/* One PR: its pill. More: one "N PRs" dropdown, a row each with
+                number, repo and state. Either opens that PR's panel. */}
+            {allPrs.length === 1 ? (
               <PrChip
-                pr={{
-                  ...branchPr,
-                  state: ['OPEN', 'MERGED', 'CLOSED'].includes(branchPr.state)
-                    ? (branchPr.state as 'OPEN' | 'MERGED' | 'CLOSED')
-                    : null
-                }}
+                pr={allPrs[0].pr}
                 size={20}
-                onOpen={() => setShipTarget({ kind: 'branch' })}
+                repo={allPrs[0].repo}
+                onOpen={() => setShipTarget(allPrs[0].target)}
               />
-            )}
-            {otherPrs.map((pr) => {
-              const repoName = pr.repository.split('/').pop() ?? ''
-              return (
-                <PrChip
-                  key={pr.url}
-                  pr={pr}
-                  size={20}
-                  repo={repoName && repoName !== projectName ? repoName : undefined}
-                  onOpen={() => setShipTarget({ kind: 'linked', pr })}
-                />
+            ) : (
+              allPrs.length > 1 && (
+                <PillFolder
+                  icon="GitPullRequest"
+                  label={`${allPrs.length} PRs`}
+                  menuLabel="Pull requests"
+                >
+                  {(close) =>
+                    allPrs.map(({ pr, repoName, target, word }) => (
+                      <button
+                        key={pr.url}
+                        type="button"
+                        role="menuitem"
+                        className="cr-popover-item cr-pill-folder-main"
+                        title={pr.url}
+                        onClick={() => {
+                          close()
+                          setShipTarget(target)
+                        }}
+                      >
+                        <span
+                          className={`cr-pr-chip-dot cr-pr-chip-dot--${word}`}
+                          aria-hidden="true"
+                        />
+                        <span className="cr-pill-folder-number">#{pr.number}</span>
+                        <span className="cr-artifact-chip-title">{repoName}</span>
+                        <span className="cr-pill-folder-meta">{word}</span>
+                      </button>
+                    ))
+                  }
+                </PillFolder>
               )
-            })}
-            {hasCommitsAhead && branchPr?.state !== 'OPEN' && (
-              <button
-                type="button"
-                className="session-detail-ticket session-detail-ticket--create session-detail-pr-create"
-                title="Review this branch's commits and open a pull request"
-                onClick={() => setShipTarget({ kind: 'branch' })}
-              >
-                <Icon name="Plus" size={12} />
-                Open pull request
-              </button>
             )}
+            <ArtifactPills artifacts={artifacts} ticketKey={ticketKey} pushToast={pushToast} />
           </div>
           {renameError && <p className="session-detail-inline-error">{renameError}</p>}
         </div>

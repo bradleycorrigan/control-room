@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { ESTIMATES } from '../../../../main/exec/ticketDraft'
 import { Button, Input, Modal, Textarea } from '../../components/primitives'
 import {
   createJiraIssue,
@@ -56,6 +57,7 @@ export function CreateTicket({
     board.priorities.includes('Medium') ? 'Medium' : (board.priorities[0] ?? '')
   )
   const [labels, setLabels] = useState('')
+  const [estimate, setEstimate] = useState('')
   const activeSprint = board.sprints.find((s) => s.state === 'active') ?? null
   const [sprintId, setSprintId] = useState<number | null>(
     defaultInCycle && activeSprint ? activeSprint.id : null
@@ -94,6 +96,7 @@ export function CreateTicket({
         if (!t.has('priority') && d.priority) setPriority(d.priority)
         if (!t.has('epic') && d.epicKey) setParentKey(d.epicKey)
         if (!t.has('labels') && d.labels.length > 0) setLabels(d.labels.join(', '))
+        if (!t.has('estimate') && d.estimate) setEstimate(d.estimate)
       })
     return () => {
       live = false
@@ -140,7 +143,8 @@ export function CreateTicket({
         .map((l) => l.trim())
         .filter(Boolean),
       sprintId,
-      assignToMe
+      assignToMe,
+      estimate: estimate || null
     })
     setBusy(false)
     if (!r.ok) {
@@ -279,22 +283,23 @@ export function CreateTicket({
         </div>
         <div className="backlog-create-row">
           <label className="backlog-field backlog-field--draftable">
-            <span>Labels</span>
-            <Input
-              aria-label="Labels"
-              placeholder={board.labels.slice(0, 3).join(', ') || 'data-ask'}
-              list="backlog-create-labels"
-              value={labels}
+            <span>Estimate</span>
+            <Select
+              className="backlog-select"
+              aria-label="Estimate"
+              value={estimate}
               onChange={(e) => {
-                touch('labels')
-                setLabels(e.target.value)
+                touch('estimate')
+                setEstimate(e.target.value)
               }}
-            />
-            <datalist id="backlog-create-labels">
-              {board.labels.map((l) => (
-                <option key={l} value={l} />
+            >
+              <option value="">No estimate</option>
+              {ESTIMATES.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
               ))}
-            </datalist>
+            </Select>
           </label>
           {board.sprints.length > 0 && (
             <label className="backlog-field">
@@ -314,6 +319,26 @@ export function CreateTicket({
               </Select>
             </label>
           )}
+        </div>
+        <div className="backlog-create-row">
+          <label className="backlog-field backlog-field--draftable">
+            <span>Labels</span>
+            <Input
+              aria-label="Labels"
+              placeholder={board.labels.slice(0, 3).join(', ') || 'data-ask'}
+              list="backlog-create-labels"
+              value={labels}
+              onChange={(e) => {
+                touch('labels')
+                setLabels(e.target.value)
+              }}
+            />
+            <datalist id="backlog-create-labels">
+              {board.labels.map((l) => (
+                <option key={l} value={l} />
+              ))}
+            </datalist>
+          </label>
         </div>
         <div className="backlog-create-checks">
           <label className="backlog-check">

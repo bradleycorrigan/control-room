@@ -85,6 +85,7 @@ import { CreateTicket } from './backlog/CreateTicket'
 import { CycleStrip, PlanningBar } from './backlog/CyclePlanning'
 import { CompleteCycle } from './backlog/CompleteCycle'
 import { hoursToDays, parseEstimateHours } from './backlog/cyclePlan'
+import { ESTIMATES } from '../../../main/exec/ticketDraft'
 import { Picker, type PickerOption } from './backlog/Picker'
 import {
   branchFor,
@@ -1511,7 +1512,7 @@ export default function BacklogScreen({
           title: `Estimate${n}`,
           anchor,
           options: [
-            ...['30m', '1h', '2h', '4h', '1d', '2d', '3d', '1w'].map((v) => ({
+            ...ESTIMATES.map((v) => ({
               value: v,
               label: v,
               checked: issues.every((i) => i.estimate === v)

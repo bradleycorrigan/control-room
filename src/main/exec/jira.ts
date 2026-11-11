@@ -1842,6 +1842,8 @@ export interface JiraCreateInput {
   labels: string[]
   sprintId: number | null
   assignToMe: boolean
+  /** Original estimate in Jira's shorthand ("4h", "2d"), or null for none. */
+  estimate?: string | null
 }
 
 /**
@@ -1885,7 +1887,7 @@ export async function createIssue(
       created: now,
       labels: input.labels,
       requestType: null,
-      estimate: null,
+      estimate: input.estimate ?? null,
       why: null,
       pullRequests: null
     }
@@ -1928,6 +1930,8 @@ export async function createIssue(
     if (input.priority) await put('priority', { priority: { name: input.priority } })
     if (input.parentKey) await put('epic', { parent: { key: input.parentKey } })
     if (input.labels.length) await put('labels', { labels: input.labels })
+    if (input.estimate && ESTIMATE_RE.test(input.estimate))
+      await put('estimate', { timetracking: { originalEstimate: input.estimate } })
     if (input.assignToMe) {
       try {
         await callJson(conn, `/rest/api/3/issue/${encodeURIComponent(key)}/assignee`, {

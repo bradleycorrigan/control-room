@@ -1421,6 +1421,11 @@
   gap: var(--space-12);
 }
 
+/* A field alone on its row (Labels) takes the whole row. */
+.backlog-create-row > :only-child {
+  grid-column: 1 / -1;
+}
+
 .backlog-create-checks {
   display: flex;
   flex-wrap: wrap;

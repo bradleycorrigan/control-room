@@ -398,6 +398,18 @@ export interface TranscriptPrLink {
 // many-MB file is read once and only its new tail after that.
 const prLinkScans = new Map<string, { offset: number; links: Map<string, TranscriptPrLink> }>()
 const PR_LINK_MARKER = Buffer.from('"type":"pr-link"')
+// A PR opened some other way than `gh pr create` (Omni's git sync opens its
+// own): Claude Code writes no pr-link line, but the command's output names
+// it, as "pr_url": "https://github.com/…/pull/30".
+const PR_URL_MARKER = Buffer.from('pull/')
+const PR_URL_IN_OUTPUT =
+  /\\?"?pr_?url\\?"?\s*[:=]\s*\\?"?(https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+))/i
+
+/** The PR a command's output says it opened, if any. */
+export function prOpenedInOutput(output: string): TranscriptPrLink | null {
+  const m = PR_URL_IN_OUTPUT.exec(output)
+  return m ? { url: m[1], repository: m[2], number: Number(m[3]) } : null
+}
 
 /**
  * Every pull request a session's transcript says it opened, oldest first.
@@ -435,7 +447,26 @@ export function listTranscriptPrLinks(sessionId: string): TranscriptPrLink[] {
         const nl = buf.indexOf(0x0a, start)
         const line = buf.subarray(start, nl)
         start = nl + 1
-        if (line.indexOf(PR_LINK_MARKER) === -1) continue
+        if (line.indexOf(PR_LINK_MARKER) === -1) {
+          // Only tool results can say a PR was opened; cheap check first.
+          if (line.indexOf(PR_URL_MARKER) === -1) continue
+          try {
+            const parsed = JSON.parse(line.toString('utf8')) as {
+              type?: string
+              message?: { content?: unknown }
+            }
+            const blocks = parsed.message?.content
+            if (parsed.type !== 'user' || !Array.isArray(blocks)) continue
+            for (const b of blocks as Record<string, unknown>[]) {
+              if (b?.type !== 'tool_result' || b.is_error === true) continue
+              const link = prOpenedInOutput(JSON.stringify(b.content ?? ''))
+              if (link && !scan.links.has(link.url)) scan.links.set(link.url, link)
+            }
+          } catch {
+            // A malformed line is skipped, never fatal.
+          }
+          continue
+        }
         try {
           const parsed = JSON.parse(line.toString('utf8')) as {
             prNumber?: unknown
@@ -465,6 +496,120 @@ export function listTranscriptPrLinks(sessionId: string): TranscriptPrLink[] {
     closeSync(fd)
   }
   return [...scan.links.values()]
+}
+
+/** A page the session published with Claude's Artifact tool. */
+export interface TranscriptArtifact {
+  url: string
+  title: string
+}
+
+// The same incremental scan as the PR links: per transcript, how far it has
+// been read, what was found, and Artifact calls still waiting on their result.
+const artifactScans = new Map<
+  string,
+  { offset: number; found: Map<string, TranscriptArtifact>; pending: Map<string, string> }
+>()
+const ARTIFACT_MARKER = Buffer.from('rtifact')
+const ARTIFACT_URL = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]{8,}/
+
+/** The page's own <title>, else the file's name: what the artifact is called. */
+function artifactTitle(input: Record<string, unknown>): string {
+  const path = typeof input.file_path === 'string' ? input.file_path : ''
+  if (path) {
+    try {
+      const fd = openSync(path, 'r')
+      try {
+        const buf = Buffer.alloc(8192)
+        const n = readSync(fd, buf, 0, buf.length, 0)
+        const m = /<title>([^<]{1,120})<\/title>/i.exec(buf.subarray(0, n).toString('utf8'))
+        if (m) return m[1].trim()
+      } finally {
+        closeSync(fd)
+      }
+    } catch {
+      // Gone or unreadable: the name will do.
+    }
+  }
+  if (typeof input.title === 'string' && input.title.trim()) return input.title.trim()
+  const base = path
+    .split('/')
+    .pop()
+    ?.replace(/\.[a-z]+$/i, '')
+  return base || 'Artifact'
+}
+
+/**
+ * Every page a session published with the Artifact tool, oldest first, by its
+ * claude.ai link. Only publishes of a page: asset uploads, reads and lists
+ * are left out. Republishing the same page keeps one entry.
+ */
+export function listTranscriptArtifacts(sessionId: string): TranscriptArtifact[] {
+  const jsonlPath = findSessionTranscriptPath(sessionId)
+  if (!jsonlPath) return []
+  let scan = artifactScans.get(jsonlPath)
+  if (!scan) {
+    scan = { offset: 0, found: new Map(), pending: new Map() }
+    artifactScans.set(jsonlPath, scan)
+  }
+  let fd: number
+  try {
+    fd = openSync(jsonlPath, 'r')
+  } catch {
+    return [...scan.found.values()]
+  }
+  try {
+    const size = fstatSync(fd).size
+    if (size < scan.offset) {
+      scan.offset = 0
+      scan.found.clear()
+      scan.pending.clear()
+    }
+    if (size > scan.offset) {
+      const buf = Buffer.alloc(size - scan.offset)
+      readSync(fd, buf, 0, buf.length, scan.offset)
+      const end = buf.lastIndexOf(0x0a) + 1
+      let start = 0
+      while (start < end) {
+        const nl = buf.indexOf(0x0a, start)
+        const line = buf.subarray(start, nl)
+        start = nl + 1
+        if (line.indexOf(ARTIFACT_MARKER) === -1) continue
+        try {
+          const parsed = JSON.parse(line.toString('utf8')) as {
+            message?: { content?: unknown }
+          }
+          const blocks = parsed.message?.content
+          if (!Array.isArray(blocks)) continue
+          for (const b of blocks as Record<string, unknown>[]) {
+            if (b?.type === 'tool_use' && b.name === 'Artifact' && typeof b.id === 'string') {
+              const input = (b.input ?? {}) as Record<string, unknown>
+              const action = input.action ?? 'publish'
+              if (action === 'publish' && input.asset !== true && !input.type_url)
+                scan.pending.set(b.id, artifactTitle(input))
+            } else if (b?.type === 'tool_result' && typeof b.tool_use_id === 'string') {
+              const title = scan.pending.get(b.tool_use_id)
+              if (title === undefined) continue
+              scan.pending.delete(b.tool_use_id)
+              if (b.is_error === true) continue
+              const url = ARTIFACT_URL.exec(JSON.stringify(b.content ?? ''))?.[0]
+              if (!url) continue
+              scan.found.delete(url)
+              scan.found.set(url, { url, title })
+            }
+          }
+        } catch {
+          // A malformed line is skipped, never fatal.
+        }
+      }
+      scan.offset += end
+    }
+  } catch {
+    // Unreadable right now: report what was found so far.
+  } finally {
+    closeSync(fd)
+  }
+  return [...scan.found.values()]
 }
 
 /**

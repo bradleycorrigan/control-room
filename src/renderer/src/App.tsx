@@ -1046,10 +1046,49 @@ function App(): React.JSX.Element {
       await new Promise((r) => setTimeout(r, 2500))
     }
     registerShotScreen('session-ticket-before', openTicketSession)
-    registerShotScreen('ship-panel', async () => {
+    // The branch's PR panel: its pill in the header opens it.
+    const openShipPanel = async (): Promise<void> => {
       await openTicketSession()
-      document.querySelector<HTMLElement>('.session-detail-header [aria-label="Ship"]')?.click()
+      for (
+        let i = 0;
+        i < 60 && !document.querySelector('.session-detail-status-row .cr-pr-chip');
+        i++
+      ) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      document.querySelector<HTMLElement>('.session-detail-status-row .cr-pr-chip')?.click()
       await new Promise((r) => setTimeout(r, 2500))
+    }
+    registerShotScreen('ship-panel', openShipPanel)
+    // The Working session's header: its PRs, then the artifact it published,
+    // with the artifact's menu open.
+    registerShotScreen('session-artifact-menu', async () => {
+      setPaletteOpen(false)
+      const list = await listSessions()
+      const working = list.find((s) => s.record?.id === 'fixture-rec-working')
+      setView('sessions')
+      setOpenSessionKey(working?.key ?? null)
+      const prs = (): HTMLElement | undefined =>
+        [...document.querySelectorAll<HTMLElement>('.cr-pill-folder')].find((el) =>
+          /PRs/.test(el.textContent ?? '')
+        )
+      for (let i = 0; i < 60 && !prs(); i++) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      prs()?.click()
+      await new Promise((r) => setTimeout(r, 400))
+    })
+    registerShotScreen('ship-panel-merge', async () => {
+      await openShipPanel()
+      ;[...document.querySelectorAll<HTMLElement>('.ship-panel-pr-actions button')]
+        .find((b) => b.textContent?.trim() === 'Merge')
+        ?.click()
+      await new Promise((r) => setTimeout(r, 400))
+    })
+    registerShotScreen('ship-panel-menu', async () => {
+      await openShipPanel()
+      document.querySelector<HTMLElement>('[aria-label="More pull request actions"]')?.click()
+      await new Promise((r) => setTimeout(r, 400))
     })
     registerShotScreen('session-ticket-panel', async () => {
       await openTicketSession()

@@ -30,7 +30,12 @@ export interface TicketDraft {
   priority: string | null
   epicKey: string | null
   labels: string[]
+  /** One of ESTIMATES, or null when the record gives nothing to go on. */
+  estimate: string | null
 }
+
+/** The estimates offered wherever one is picked, in Jira's shorthand. */
+export const ESTIMATES = ['30m', '1h', '2h', '4h', '1d', '2d', '3d', '1w'] as const
 
 export type TicketDraftResult = { ok: true; value: TicketDraft } | { ok: false; error: string }
 
@@ -90,7 +95,8 @@ export function buildTicketDraftPrompt(
     ...(choices.epics.length > 0
       ? choices.epics.map((e) => `  ${e.key}: ${e.summary}`)
       : ['  (no epics)']),
-    `- labels: up to 3, only from: ${choices.labels.join(', ') || '(none, so leave it empty)'}.`
+    `- labels: up to 3, only from: ${choices.labels.join(', ') || '(none, so leave it empty)'}.`,
+    `- estimate: how long the whole job takes one person, done or not, as one of ${ESTIMATES.join(', ')}. Judge from the size of the asks, commits and changes. "" only when the record gives nothing to go on.`
   )
   return lines.join('\n')
 }
@@ -108,9 +114,10 @@ export function ticketDraftSchema(choices: TicketDraftChoices): string {
         type: 'array',
         items: choices.labels.length > 0 ? { enum: choices.labels } : { type: 'string' },
         maxItems: 3
-      }
+      },
+      estimate: { enum: ['', ...ESTIMATES] }
     },
-    required: ['summary', 'description', 'priority', 'epicKey', 'labels']
+    required: ['summary', 'description', 'priority', 'epicKey', 'labels', 'estimate']
   })
 }
 
@@ -150,7 +157,11 @@ export function parseTicketDraft(stdout: string, choices: TicketDraftChoices): T
       description: typeof raw.description === 'string' ? raw.description.trim() : '',
       priority,
       epicKey,
-      labels
+      labels,
+      estimate:
+        typeof raw.estimate === 'string' && (ESTIMATES as readonly string[]).includes(raw.estimate)
+          ? raw.estimate
+          : null
     }
   }
 }

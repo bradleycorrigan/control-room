@@ -2543,14 +2543,15 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           )
           await until(() => field('Summary').startsWith('Drafted:'), 8000)
           await check(
-            'the draft fills summary, description, epic, priority and labels from the session',
+            'the draft fills summary, description, epic, priority, labels and estimate from the session',
             field('Summary') === `Drafted: ${headerTitle}` &&
               /Drafted by the fixture/.test(field('Description')) &&
               field('Epic').includes('TEAM-60') &&
               field('Priority') === 'High' &&
               field('Labels') === 'data-ask' &&
+              field('Estimate') === '2d' &&
               !$('.backlog-create-draft'),
-            ['Summary', 'Description', 'Epic', 'Priority', 'Labels']
+            ['Summary', 'Description', 'Epic', 'Priority', 'Labels', 'Estimate']
               .map((l) => `${l}=${field(l)}`)
               .join(' | ') + ` | note: ${$('.backlog-create-draft')?.textContent ?? 'none'}`
           )
@@ -3578,83 +3579,83 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
               !$('.ship-panel-pr-form'),
             $('.ship-panel')?.textContent?.slice(0, 200) ?? 'no Ship panel'
           )
+          // An open PR GitHub would merge: Merge, asked once in place, with
+          // its branch deleted by default. The rarer actions sit behind the menu.
+          const mergeButton = (): HTMLElement | undefined =>
+            byText('.ship-panel-pr-actions button', 'Merge')
+          await until(() => Boolean(mergeButton()), 4000)
+          await click(mergeButton())
+          const confirm = (): HTMLElement | null => $('.ship-panel-pr-confirm')
+          await check(
+            'Merge asks once, naming the method, with Delete branch ticked',
+            /Squash and merge #42\?/.test(confirm()?.textContent ?? '') &&
+              Boolean(
+                $<HTMLInputElement>('.ship-panel-pr-confirm input[type="checkbox"]')?.checked
+              ) &&
+              !$('.ship-panel-pr-actions'),
+            confirm()?.textContent ??
+              `no confirm; actions: ${$('.ship-panel-pr-actions')?.textContent}`
+          )
+          await click(byText('.ship-panel-pr-confirm button', 'Cancel'))
+          await click($('[aria-label="More pull request actions"]'))
+          await until(() => $$('[role="menuitem"]').length > 0, 2000)
+          const items = $$('[role="menuitem"]').map((m) => m.textContent?.trim() ?? '')
+          await check(
+            'the menu holds Convert to draft and Close pull request',
+            items.join('|') === 'Convert to draft|Close pull request…',
+            items.join(' | ')
+          )
+          await click(byText('[role="menuitem"]', 'Close pull request…'))
+          await until(() => Boolean(confirm()), 2000)
+          await click(byText('.ship-panel-pr-confirm button', 'Close pull request'))
+          await check(
+            'closing it shows it closed, with no actions left to take',
+            await until(
+              () => /Closed/.test($('.ship-panel-pr-state')?.textContent ?? '') && !confirm(),
+              4000
+            ),
+            $('.ship-panel-pr-existing')?.textContent ?? 'no PR line'
+          )
           await click(byText('.ship-panel button', 'Close'))
           await until(() => !$('.ship-panel'), 2000)
         }
 
-        // Ship panel (plan 7 step 3). No CR_SHIP_FIXTURE from the gate's
-        // shot:fixture env, so this only drives what works without the network:
-        // the panel opens, shows real commits, defaults the PR title, and the
-        // Jira/Slack sections render and work against the Jira fixture. It never
-        // clicks "Push and open PR" — that would really try to push and call gh.
-        // Only 'fixture-rec-working' (branch fixture/working) has commits, so this
-        // opens it by name rather than "the first session" — the fixture doesn't
-        // promise those are the same one.
+        // The PR panel, from the Ready session's own PR pill: its branch's real
+        // commits, then Jira and Slack once there's a ticket. There is no form
+        // to open a PR from here: that's done through Claude or the terminal.
         {
-          const SHIP_RECORD = 'fixture-rec-working'
+          const SHIP_RECORD = 'fixture-rec-ready'
           await api.invoke('jira:link', SHIP_RECORD, null)
-          await openSessionByTitle('Working session')
-
-          const createPill = (): HTMLElement | undefined =>
-            byText('.session-detail-status-row button', 'Open pull request')
-          await until(() => Boolean(createPill()), 6000)
-          await click(createPill())
-          await until(() => Boolean($('.ship-panel')), 3000)
+          await openSessionByTitle('Ready session')
+          const prPill = (): HTMLElement | undefined =>
+            $$<HTMLElement>('.session-detail-status-row .cr-pr-chip').find((el) =>
+              (el.textContent ?? '').includes('PR #42')
+            )
+          await until(() => Boolean(prPill()), 6000)
+          await click(prPill())
+          await until(() => $$('.ship-panel-commit').length > 0, 4000)
           await check(
-            '"Open pull request" opens the panel from the header, on a branch with commits',
-            Boolean($('.ship-panel')),
-            $('.session-detail-header')?.textContent ?? 'no header'
-          )
-
-          await until(() => $$('.ship-panel-commit').length > 0, 3000)
-          await check(
-            "it lists the branch's real commits",
-            $$('.ship-panel-commit').some((el) =>
-              (el.textContent ?? '').includes('Work in progress on the working branch')
-            ),
+            "the PR panel lists the branch's real commits, and has no form to open a PR",
+            $$('.ship-panel-commit').length > 0 &&
+              !$('.ship-panel-pr-form') &&
+              !byText('.session-detail-status-row button', 'Open pull request'),
             $$('.ship-panel-commit')
               .map((el) => el.textContent)
-              .join(' | ')
-          )
-
-          const sessionTitle = $('.session-detail-breadcrumb-title')?.textContent?.trim() ?? ''
-          await until(
-            () => ($('.ship-panel-pr-form input') as HTMLInputElement | null)?.value !== '',
-            3000
-          )
-          const titleField = $<HTMLInputElement>('.ship-panel-pr-form input')
-          await check(
-            'an unlinked session defaults the PR title to the session title',
-            Boolean(sessionTitle) && titleField?.value === sessionTitle,
-            `wanted "${sessionTitle}", got "${titleField?.value}"`
+              .join(' | ') || 'no commits'
           )
           await check(
             'there is no Jira section for an unlinked session',
-            !$('.session-detail .ship-panel-jira-row') ||
-              $$('.ship-panel-section-title').filter((el) => el.textContent?.includes('Jira'))
-                .length === 0
+            $$('.ship-panel-section-title').filter((el) => el.textContent?.includes('Jira'))
+              .length === 0
           )
-
           await key('Escape')
           await until(() => !$('.ship-panel'), 2000)
 
-          // Link to a Jira ticket with a Slack link, and re-open: PR title takes
-          // "KEY: summary", Jira and Slack sections both appear.
+          // Linked to a ticket with a Slack link: Jira and Slack sections appear.
           await api.invoke('jira:link', SHIP_RECORD, 'PROJ-101')
-          await click(createPill())
+          await click(prPill())
           await until(() => Boolean($('.ship-panel')), 3000)
-          await until(
-            () =>
-              ($('.ship-panel-pr-form input') as HTMLInputElement | null)?.value.startsWith(
-                'PROJ-101:'
-              ) ?? false,
-            3000
-          )
-          await check(
-            'a linked session defaults the PR title to "KEY: summary"',
-            ($<HTMLInputElement>('.ship-panel-pr-form input')?.value ?? '').startsWith('PROJ-101:'),
-            $<HTMLInputElement>('.ship-panel-pr-form input')?.value ?? 'empty'
-          )
+          await until(() => Boolean(byText('.ship-panel-section-title', '3Jira')), 4000)
 
           const jiraHeading = byText('.ship-panel-section-title', '3Jira')
           await check('the Jira section appears once linked', Boolean(jiraHeading))
@@ -4470,39 +4471,75 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         // that PR can show: as a chip naming the other repo, opening on click.
         await openSessionByTitle('Working session')
         await until(() => Boolean($('.session-detail-header')), 6000)
-        const chip = (): HTMLElement | null =>
-          $('.session-detail-status-row .cr-pr-chip') as HTMLElement | null
-        await until(() => Boolean(chip()), 6000)
-        const text = chip()?.textContent ?? ''
-        await check(
-          'the header shows a PR the agent opened in another repo, naming that repo',
-          text.includes('other-repo') && text.includes('PR #7'),
-          chip()?.outerHTML.slice(0, 200) ?? 'no PR chip in the header'
+        // Two PRs: one "2 PRs" dropdown, a row each with number, repo and a
+        // one-word state; with no word from GitHub that word says so.
+        const prFolder = (): HTMLElement | undefined =>
+          $$<HTMLElement>('.session-detail-status-row .cr-pill-folder').find((el) =>
+            /PRs/.test(el.textContent ?? '')
+          )
+        await until(() => Boolean(prFolder()), 6000)
+        await click(prFolder())
+        await until(() => $$('[role="menuitem"]').length > 0, 2000)
+        const prRows = $$<HTMLElement>('[role="menuitem"]').map((el) =>
+          (el.textContent ?? '').replace(/\s+/g, ' ').trim()
         )
         await check(
-          'with no word from GitHub, the chip says no state rather than guessing one',
-          Boolean(chip()?.classList.contains('cr-pr-chip--unknown')) &&
-            !/open|merged|closed/.test(text.replace('other-repo', '')),
-          text
+          'two PRs fold into one "2 PRs" dropdown: number, repo and one-word state',
+          prFolder()?.textContent?.trim() === '2 PRs' &&
+            prRows.join('|') === '#7other-repounknown|#8other-repounknown',
+          `${prFolder()?.textContent} → ${prRows.join(' | ')}`
         )
-        // Clicking it opens that PR's own panel rather than GitHub: no commits
-        // to review (they're in the other repo's checkout) and no form to open
-        // a new one, just what can be done with this PR.
-        await click(chip())
+        // A row opens that PR's own panel: no commits to review (they're in
+        // the other repo's checkout), just what can be done with this PR.
+        await click($$<HTMLElement>('[role="menuitem"]')[0])
         await until(() => Boolean($('.ship-panel')), 3000)
         const panel = $('.ship-panel')
         await check(
-          "the other repo's PR pill opens a panel about that PR",
+          'a row opens a panel about that PR',
           (panel?.getAttribute('aria-label') ?? '').includes('other-repo PR #7') &&
             !$$('.ship-panel-section-title').some((el) =>
               (el.textContent ?? '').includes('Review')
             ) &&
-            !$('.ship-panel-pr-form') &&
             Boolean(byText('.ship-panel-pr-actions button', 'Open in GitHub')),
           panel?.textContent?.slice(0, 200) ?? 'no panel'
         )
         await key('Escape')
         await until(() => !$('.ship-panel'), 2000)
+        // Pages the agent published with the Artifact tool sit after the PRs;
+        // an asset it uploaded doesn't count. Past two they fold into one
+        // "N artifacts" pill, newest first, each row opening its page with
+        // its other actions as icons.
+        {
+          const folder = (): HTMLElement | undefined =>
+            $$<HTMLElement>('.session-detail-status-row .cr-pill-folder').find((el) =>
+              /artifacts/.test(el.textContent ?? '')
+            )
+          await until(() => Boolean(folder()), 4000)
+          await check(
+            'three artifacts fold into one pill, and the asset is not one of them',
+            folder()?.textContent?.trim() === '3 artifacts' &&
+              !$('.session-detail-status-row .cr-artifact-chip:not(.cr-pill-folder)'),
+            $$<HTMLElement>('.session-detail-status-row .cr-artifact-chip')
+              .map((el) => el.textContent)
+              .join(' | ') || 'no artifact pill'
+          )
+          await click(folder())
+          await until(() => $$('.cr-pill-folder-row').length > 0, 2000)
+          const rows = $$<HTMLElement>('.cr-pill-folder-row')
+          await check(
+            'the list is newest first, each row with Copy link',
+            rows
+              .map((r) => r.querySelector('.cr-pill-folder-main')?.textContent?.trim())
+              .join('|') === 'Gap report|Churn plan|Funnel report' &&
+              rows.every((r) => Boolean(r.querySelector('[aria-label="Copy link"]'))),
+            rows.map((r) => r.textContent).join(' | ')
+          )
+          await click(rows[0].querySelector('[aria-label="Copy link"]'))
+          await check(
+            'a row copies its link',
+            await until(() => /Link copied/.test(document.body.textContent ?? ''), 3000)
+          )
+        }
         // Squeezed, the status row wraps to a second line: no pill runs past
         // the column into the header's buttons, and none wraps its own text.
         {
@@ -4855,8 +4892,12 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         // alone isn't focused yet.
         // It also waits until the window really has focus: a freshly started
         // app can be asked to focus and still not be the key window for a moment.
-        await api.invoke('dev:window', 'restore')
-        await until(() => document.hasFocus(), 3000)
+        // Asked again if the first ask didn't take: another window can still
+        // hold focus for a moment while it closes.
+        for (let i = 0; i < 3 && !document.hasFocus(); i++) {
+          await api.invoke('dev:window', 'restore')
+          await until(() => document.hasFocus(), 2000)
+        }
         await ctx.goTo('home')
         await input({ type: 'mouseMove', x: 5, y: Math.round(window.innerHeight / 2) })
         await wait(300)

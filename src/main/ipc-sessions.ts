@@ -8,7 +8,7 @@ import {
   isPullRequestUrl,
   forgetPullRequestDetails
 } from './exec/pullRequests'
-import { listTranscriptPrLinks, listUserPrompts } from './exec/transcripts'
+import { listTranscriptPrLinks, listTranscriptArtifacts, listUserPrompts } from './exec/transcripts'
 import { resolveClaudeBinary } from './exec/claude'
 import { run } from './exec/run'
 import {
@@ -33,6 +33,13 @@ import {
   unpushedCount
 } from './exec/ship'
 import { resolveProjectPath } from './exec/files'
+import {
+  closePullRequest,
+  convertToDraft,
+  mergePullRequest,
+  pullRequestStatus,
+  type MergeMethod
+} from './exec/prActions'
 import { currentBranch } from './engine/sessionBranch'
 
 /**
@@ -99,6 +106,18 @@ export function registerSessionsIpc(): void {
     for (const sid of ids) for (const l of listTranscriptPrLinks(sid)) byUrl.set(l.url, l)
     return [...byUrl.values()]
   }
+  // Pages the session published with the Artifact tool, across every
+  // Claude session it has had.
+  ipcMain.handle('sessions:artifacts', async (_evt, id: string) => {
+    const record = getState().sessions.find((s) => s.id === id)
+    if (!record) return []
+    const ids = [record.originalClaudeSessionId, record.claudeSessionId].filter(
+      (x): x is string => typeof x === 'string' && x.length > 0
+    )
+    const byUrl = new Map<string, ReturnType<typeof listTranscriptArtifacts>[number]>()
+    for (const sid of ids) for (const a of listTranscriptArtifacts(sid)) byUrl.set(a.url, a)
+    return [...byUrl.values()]
+  })
   ipcMain.handle('sessions:linkedPrs', async (_evt, id: string) => {
     const record = getState().sessions.find((s) => s.id === id)
     if (!record) return []
@@ -261,6 +280,57 @@ export function registerSessionsIpc(): void {
     if (result.ok && typeof pr === 'string') forgetPullRequestDetails(pr)
     return result
   })
+
+  // The rest of what the PR panel does to an open pull request. Same target
+  // rules as prReady: this branch's own by number, any other by its address.
+  const prTarget = (
+    id: string,
+    pr: unknown
+  ): { cwd: string; pr: number | string } | { error: string } => {
+    const record = getState().sessions.find((s) => s.id === id)
+    if (!record) return { error: 'Session not found.' }
+    const byNumber = typeof pr === 'number' && Number.isInteger(pr) && pr > 0
+    if (!byNumber && !isPullRequestUrl(pr)) return { error: 'No pull request.' }
+    return { cwd: record.worktreePath, pr: pr as number | string }
+  }
+  ipcMain.handle('sessions:prStatus', async (_evt, id: string, pr: unknown) => {
+    const t = prTarget(id, pr)
+    return 'error' in t ? { ok: false, error: t.error } : pullRequestStatus(t.cwd, t.pr)
+  })
+  ipcMain.handle('sessions:prDraft', async (_evt, id: string, pr: unknown) => {
+    const t = prTarget(id, pr)
+    if ('error' in t) return { ok: false, error: t.error }
+    const result = await convertToDraft(t.cwd, t.pr)
+    if (result.ok && typeof t.pr === 'string') forgetPullRequestDetails(t.pr)
+    return result
+  })
+  ipcMain.handle(
+    'sessions:prClose',
+    async (_evt, id: string, pr: unknown, deleteBranch: boolean) => {
+      const t = prTarget(id, pr)
+      if ('error' in t) return { ok: false, error: t.error }
+      const result = await closePullRequest(t.cwd, t.pr, deleteBranch === true)
+      if (result.ok && typeof t.pr === 'string') forgetPullRequestDetails(t.pr)
+      return result
+    }
+  )
+  ipcMain.handle(
+    'sessions:prMerge',
+    async (_evt, id: string, pr: unknown, method: unknown, deleteBranch: boolean) => {
+      const t = prTarget(id, pr)
+      if ('error' in t) return { ok: false, error: t.error }
+      if (method !== 'squash' && method !== 'merge' && method !== 'rebase')
+        return { ok: false, error: 'No merge method.' }
+      const result = await mergePullRequest(
+        t.cwd,
+        t.pr,
+        method as MergeMethod,
+        deleteBranch === true
+      )
+      if (result.ok && typeof t.pr === 'string') forgetPullRequestDetails(t.pr)
+      return result
+    }
+  )
 
   // Ship flow, step 2 — push the branch and open the pull request. Title and
   // body are built in the renderer (it already has the hand-off note and the

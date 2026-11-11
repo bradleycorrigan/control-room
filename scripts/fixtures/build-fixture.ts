@@ -654,6 +654,68 @@ cliTranscript('fixture-working', [
     prUrl: 'https://github.com/example/other-repo/pull/8',
     prRepository: 'example/other-repo',
     timestamp: new Date(now - 9 * 60_000).toISOString()
+  },
+  // A page the agent published with the Artifact tool, and its result: the
+  // session header shows it beside the PRs. An asset upload is left out.
+  {
+    type: 'assistant',
+    timestamp: new Date(now - 8 * 60_000).toISOString(),
+    message: {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'toolu_fixture_artifact',
+          name: 'Artifact',
+          input: { file_path: '/nonexistent/fixture/funnel-report.html', title: 'Funnel report' }
+        },
+        {
+          type: 'tool_use',
+          id: 'toolu_fixture_artifact_2',
+          name: 'Artifact',
+          input: { file_path: '/nonexistent/fixture/churn-plan.html', title: 'Churn plan' }
+        },
+        {
+          type: 'tool_use',
+          id: 'toolu_fixture_artifact_3',
+          name: 'Artifact',
+          input: { file_path: '/nonexistent/fixture/gap-report.html', title: 'Gap report' }
+        },
+        {
+          type: 'tool_use',
+          id: 'toolu_fixture_asset',
+          name: 'Artifact',
+          input: { file_path: '/nonexistent/logo.png', asset: true, url: 'x' }
+        }
+      ]
+    }
+  },
+  {
+    type: 'user',
+    timestamp: new Date(now - 8 * 60_000).toISOString(),
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_fixture_artifact',
+          content: 'Published: https://claude.ai/code/artifact/0f1e2d3c-fixture-artifact'
+        },
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_fixture_artifact_2',
+          content: 'Published: https://claude.ai/code/artifact/0f1e2d3c-fixture-churn'
+        },
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_fixture_artifact_3',
+          content: 'Published: https://claude.ai/code/artifact/0f1e2d3c-fixture-gap'
+        },
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_fixture_asset',
+          content: 'Uploaded: https://claude.ai/code/artifact/0f1e2d3c-fixture-asset'
+        }
+      ]
+    }
   }
 ])
 
