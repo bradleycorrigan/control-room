@@ -81,7 +81,19 @@ export function buildOurHooksConfig(url: string): HooksConfig {
     // the only prompt way to hear about that.
     UserPromptSubmit: [{ matcher: '', hooks: ourHook }],
     SessionStart: [{ matcher: '', hooks: ourHook }],
-    SessionEnd: [{ matcher: '', hooks: ourHook }]
+    SessionEnd: [{ matcher: '', hooks: ourHook }],
+    // Claude's prompts: a tool to allow, a plan to approve, a question. Held
+    // open until you answer in the app (or the terminal), so it gets ten
+    // minutes, Claude Code's own ceiling for a hook.
+    PermissionRequest: [
+      {
+        matcher: '',
+        hooks: [
+          { type: 'http' as const, url: `${url}/ask`, timeout: 600 },
+          { type: 'command' as const, command: CONTAINER_HOOK_COMMAND, timeout: 10 }
+        ]
+      }
+    ]
   }
 }
 

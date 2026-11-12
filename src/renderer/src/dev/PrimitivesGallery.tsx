@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Illustration from '../components/Illustration'
 import {
   Card,
   Section,
@@ -212,6 +213,14 @@ export default function PrimitivesGallery(): React.JSX.Element {
             body="Create a new session to get started"
             action={<Button variant="filled">Create session</Button>}
           />
+        </Section>
+
+        <Section heading="Illustrations">
+          <Row gap={24}>
+            <Illustration name="all-clear" />
+            <Illustration name="no-match" />
+            <Illustration name="first-session" />
+          </Row>
         </Section>
 
         <Section heading="Modal">

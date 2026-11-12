@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, BrowserWindow } from 'electron'
 import { log } from './log'
 import { getState } from './store/store'
 import type { SessionRecord } from './store/types'
@@ -41,6 +41,24 @@ import {
   type MergeMethod
 } from './exec/prActions'
 import { currentBranch } from './engine/sessionBranch'
+import { deliverPrompt, interruptPane } from './exec/tmux'
+import { readChat } from './exec/chatTranscript'
+import {
+  answerPrompt,
+  listPrompts,
+  setPromptsListener,
+  sweepAnsweredPrompts,
+  type PromptAnswer
+} from './engine/prompts'
+
+/**
+ * The things Control Room can ask Claude to do in a running session, in its
+ * own words. The renderer names one; it never sends text of its own.
+ */
+const ASKS: Record<string, string> = {
+  'open-pr':
+    'Open a pull request for this branch: push it if it needs pushing, write a clear title and description from the changes, and give me the link.'
+}
 
 /**
  * IPC handlers added in the sessions round. Registered from registerIpcHandlers
@@ -293,6 +311,64 @@ export function registerSessionsIpc(): void {
     if (!byNumber && !isPullRequestUrl(pr)) return { error: 'No pull request.' }
     return { cwd: record.worktreePath, pr: pr as number | string }
   }
+  // ---- Chat view -----------------------------------------------------------
+  // The conversation from the transcript, Claude's open prompts (held by the
+  // hook server, engine/prompts.ts), and a message box that types into the
+  // session's pane like the terminal would.
+  const PANE_ID = /^%\d{1,6}$/
+  const CLAUDE_ID = /^[A-Za-z0-9-]{8,64}$/
+  ipcMain.handle('chat:transcript', (_evt, claudeSessionId: unknown) =>
+    typeof claudeSessionId === 'string' && CLAUDE_ID.test(claudeSessionId)
+      ? readChat(claudeSessionId)
+      : null
+  )
+  ipcMain.handle('chat:send', async (_evt, paneId: unknown, text: unknown) => {
+    if (typeof paneId !== 'string' || !PANE_ID.test(paneId))
+      return { ok: false, error: 'No terminal.' }
+    if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'Nothing to send.' }
+    return deliverPrompt(paneId, text.slice(0, 100_000))
+  })
+  ipcMain.handle('chat:interrupt', async (_evt, paneId: unknown) =>
+    typeof paneId === 'string' && PANE_ID.test(paneId)
+      ? interruptPane(paneId)
+      : { ok: false, error: 'No terminal.' }
+  )
+  ipcMain.handle('prompts:list', () => listPrompts())
+  ipcMain.handle('prompts:answer', (_evt, id: unknown, answer: unknown) => {
+    const a = (answer ?? {}) as Record<string, unknown>
+    if (typeof id !== 'string') return { ok: false, error: 'No prompt.' }
+    let parsed: PromptAnswer | null = null
+    if (a.kind === 'allow' || a.kind === 'allowAlways') parsed = { kind: a.kind }
+    else if (a.kind === 'deny')
+      parsed = {
+        kind: 'deny',
+        message: typeof a.message === 'string' ? a.message.slice(0, 2000) : undefined
+      }
+    else if (a.kind === 'approvePlan')
+      parsed = { kind: 'approvePlan', mode: a.mode === 'acceptEdits' ? 'acceptEdits' : 'default' }
+    else if (a.kind === 'answers' && a.answers && typeof a.answers === 'object')
+      parsed = { kind: 'answers', answers: a.answers as Record<string, string> }
+    if (!parsed) return { ok: false, error: 'Unknown answer.' }
+    return answerPrompt(id, parsed)
+  })
+  setPromptsListener(() => {
+    const prompts = listPrompts()
+    for (const win of BrowserWindow.getAllWindows())
+      win.webContents.send('prompts:changed', prompts)
+  })
+  setInterval(() => {
+    if (listPrompts().length) sweepAnsweredPrompts()
+  }, 1000).unref()
+
+  // Types one of ASKS into the session's terminal, as if you had.
+  ipcMain.handle('sessions:askClaude', async (_evt, id: string, ask: unknown) => {
+    const prompt = typeof ask === 'string' ? ASKS[ask] : undefined
+    if (!prompt) return { ok: false, error: 'nothing to ask' }
+    const record = getState().sessions.find((s) => s.id === id)
+    if (!record?.tmuxPaneId) return { ok: false, error: 'Claude isn’t running in this session' }
+    return deliverPrompt(record.tmuxPaneId, prompt)
+  })
+
   ipcMain.handle('sessions:prStatus', async (_evt, id: string, pr: unknown) => {
     const t = prTarget(id, pr)
     return 'error' in t ? { ok: false, error: t.error } : pullRequestStatus(t.cwd, t.pr)

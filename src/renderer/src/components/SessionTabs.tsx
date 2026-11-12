@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
-import { Icon, Popover, StatusDot, Tooltip } from './primitives'
+import { Count, Icon, Popover, StatusDot, Tooltip } from './primitives'
 import { readAction } from './useSessionActions'
 import { renameSession } from '../api'
 import HandoffNoteDialog from './HandoffNoteDialog'
@@ -13,6 +13,8 @@ export interface SessionTabsProps {
   /** Unread sessions anywhere — the pinned tab's badge. */
   homeUnread: number
   onHome: () => void
+  /** The badge: Sessions filtered to the unread ones, so you can see which. */
+  onShowUnread?: () => void
   onSelect: (key: string) => void
   onClose: (key: string) => void
   onCloseOthers: (key: string) => void
@@ -45,6 +47,7 @@ export default function SessionTabs({
   activeKey,
   homeUnread,
   onHome,
+  onShowUnread,
   onSelect,
   onClose,
   onCloseOthers,
@@ -170,11 +173,21 @@ export default function SessionTabs({
     >
       {/* Pinned: the full Sessions list, with every filter and sort. It can't
           be closed or moved — it's where tabs come from. */}
-      <Tooltip label="All sessions · ⌘0">
+      <Tooltip
+        label={
+          homeUnread > 0
+            ? `All sessions · ${homeUnread} finished since you last looked: click the number to see ${homeUnread === 1 ? 'it' : 'them'} · ⌘0`
+            : 'All sessions · ⌘0'
+        }
+      >
         <div
           role="tab"
           aria-selected={activeKey === null}
-          aria-label={homeUnread > 0 ? `All sessions, ${homeUnread} unread` : 'All sessions'}
+          aria-label={
+            homeUnread > 0
+              ? `All sessions, ${homeUnread} finished since you last looked`
+              : 'All sessions'
+          }
           tabIndex={activeKey === null ? 0 : -1}
           className={
             activeKey === null ? 'cr-tab cr-tab--home cr-tab--active' : 'cr-tab cr-tab--home'
@@ -188,7 +201,19 @@ export default function SessionTabs({
           }}
         >
           <Icon name="House" size={16} />
-          {homeUnread > 0 && <span className="cr-tab-home-badge">{homeUnread}</span>}
+          {homeUnread > 0 && (
+            <span
+              className="cr-tab-home-badge"
+              data-home-unread
+              onClick={(e) => {
+                if (!onShowUnread) return
+                e.stopPropagation()
+                onShowUnread()
+              }}
+            >
+              <Count value={homeUnread} />
+            </span>
+          )}
         </div>
       </Tooltip>
       {tabs.map((session, index) => {

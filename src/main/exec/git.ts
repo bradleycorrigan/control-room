@@ -519,6 +519,26 @@ export async function forceDeleteBranch(repoPath: string, branch: string): Promi
   return { ok: false, error: res.stderr.trim() || `git branch -D exited ${res.code}` }
 }
 
+/**
+ * Delete a branch whose work is on the default branch: `git branch -d` when
+ * git can see the merge, else, for a squash or rebase merge git can't see,
+ * `-D` only when its pull request merged and the branch still points at the
+ * exact commit GitHub merged. Anything newer stays.
+ */
+export async function deleteMergedBranch(
+  repoPath: string,
+  branch: string,
+  pr: BranchPullRequest | undefined
+): Promise<GitOpResult> {
+  const plain = await deleteLocalBranch(repoPath, branch)
+  if (plain.ok) return plain
+  if (pr?.state !== 'MERGED' || !pr.headRefOid) return plain
+  const tip = await branchTip(repoPath, branch)
+  if (tip !== pr.headRefOid)
+    return { ok: false, error: `${branch} has commits that are not in its merged pull request` }
+  return forceDeleteBranch(repoPath, branch)
+}
+
 /** Plan 4 §7.2's `worktreeSparseDirectories` — applied right after worktree creation. */
 export async function setSparseCheckout(worktreePath: string, dirs: string[]): Promise<boolean> {
   if (dirs.length === 0) return true

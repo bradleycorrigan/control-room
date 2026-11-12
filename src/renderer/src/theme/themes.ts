@@ -10,7 +10,30 @@
 // same anchors with `mix()` so it always stays in the theme's own family
 // rather than introducing an invented hex. Blend ratios were tuned against
 // contrast-check.ts until every theme passes with zero failures.
-import { mix, withAlpha, nudgeForContrast } from './color'
+import { mix, withAlpha, nudgeForContrast, oklch } from './color'
+
+/**
+ * The status colours: one family for every theme, not each editor theme's
+ * own cyan, yellow, green and red, which never looked like a set. Fixed hues
+ * (calm blue for working, amber for a question, green for your turn, a soft
+ * red for an error) at one lightness and chroma for dark themes and another
+ * for light ones, so they sit together on any background. Idle stays each
+ * theme's own muted colour. build() still nudges each for contrast.
+ */
+const STATUS_FAMILY: Record<'dark' | 'light', Omit<StatusColors, 'idle'>> = {
+  dark: {
+    working: oklch(0.76, 0.11, 252),
+    attention: oklch(0.82, 0.13, 78),
+    done: oklch(0.78, 0.14, 152),
+    error: oklch(0.72, 0.15, 22)
+  },
+  light: {
+    working: oklch(0.56, 0.15, 258),
+    attention: oklch(0.64, 0.15, 62),
+    done: oklch(0.57, 0.14, 150),
+    error: oklch(0.56, 0.18, 25)
+  }
+}
 
 export interface StatusColors {
   working: string
@@ -160,10 +183,10 @@ function build(seed: ThemeSeed): Theme {
   )
 
   const status = Object.fromEntries(
-    Object.entries(seed.status).map(([key, hex]) => [
-      key,
-      nudgeForContrast(hex, [surface], DOT_MIN, lightnessDirection)
-    ])
+    Object.entries({
+      ...seed.status,
+      ...STATUS_FAMILY[isDark ? 'dark' : 'light']
+    }).map(([key, hex]) => [key, nudgeForContrast(hex, [surface], DOT_MIN, lightnessDirection)])
   ) as unknown as StatusColors
 
   const accent = nudgeForContrast(seed.accent, [bg], DOT_MIN, lightnessDirection)

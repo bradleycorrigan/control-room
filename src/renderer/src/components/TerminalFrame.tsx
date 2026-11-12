@@ -6,7 +6,9 @@ import {
   splitTerminalPane,
   focusTerminalPane,
   closeTerminalPane,
-  listTerminalWindowPanes
+  listTerminalWindowPanes,
+  showBothTerminalPanes,
+  selectTerminalPane
 } from '../api'
 import './terminal-frame.css'
 
@@ -64,6 +66,8 @@ export default function TerminalFrame({
   const [atBottom, setAtBottom] = useState(true)
   const [secondPaneId, setSecondPaneId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<PaneTab>('agent')
+  // Both panes on screen at once (tmux unzoomed) rather than one per tab.
+  const [sideBySide, setSideBySide] = useState(false)
   const [paneBusy, setPaneBusy] = useState(false)
   const [paneError, setPaneError] = useState<string | null>(null)
   const termRef = useRef<TerminalHandle>(null)
@@ -109,9 +113,11 @@ export default function TerminalFrame({
         if (!other) {
           setSecondPaneId(null)
           setActiveTab('agent')
+          setSideBySide(false)
           return
         }
         setSecondPaneId(other.paneId)
+        setSideBySide(!other.zoomed)
         setActiveTab(panes.find((p) => p.active)?.paneId === other.paneId ? 'shell' : 'agent')
       })
     }
@@ -149,7 +155,8 @@ export default function TerminalFrame({
       paneBusyRef.current = true
       setPaneBusy(true)
       try {
-        const ok = await focusTerminalPane(target)
+        // Side by side, a tab only moves where typing goes.
+        const ok = sideBySide ? await selectTerminalPane(target) : await focusTerminalPane(target)
         if (ok) setActiveTab(tab)
         else flashPaneError("Couldn't switch terminals.")
       } finally {
@@ -157,8 +164,21 @@ export default function TerminalFrame({
         setPaneBusy(false)
       }
     },
-    [activeTab, paneId, secondPaneId, flashPaneError]
+    [activeTab, paneId, secondPaneId, sideBySide, flashPaneError]
   )
+
+  const handleSideBySide = useCallback(async (): Promise<void> => {
+    paneBusyRef.current = true
+    setPaneBusy(true)
+    try {
+      const next = !sideBySide
+      if (await showBothTerminalPanes(paneId, next)) setSideBySide(next)
+      else flashPaneError(next ? "Couldn't show both." : "Couldn't go back to one.")
+    } finally {
+      paneBusyRef.current = false
+      setPaneBusy(false)
+    }
+  }, [paneId, sideBySide, flashPaneError])
 
   const handleClosePane = useCallback(async (): Promise<void> => {
     if (!secondPaneId) return
@@ -169,6 +189,7 @@ export default function TerminalFrame({
       if (ok) {
         setSecondPaneId(null)
         setActiveTab('agent')
+        setSideBySide(false)
       } else {
         flashPaneError("Couldn't close that terminal.")
       }
@@ -230,6 +251,16 @@ export default function TerminalFrame({
                   options={PANE_TAB_OPTIONS}
                   value={activeTab}
                   onChange={(tab) => void handleTabChange(tab)}
+                />
+                <IconButton
+                  icon={sideBySide ? 'PanelRightClose' : 'Columns2'}
+                  label={sideBySide ? 'Show one at a time' : 'Show both side by side'}
+                  size={28}
+                  variant="ghost"
+                  aria-pressed={sideBySide}
+                  data-side-by-side={sideBySide ? 'on' : 'off'}
+                  onClick={() => void handleSideBySide()}
+                  disabled={paneBusy}
                 />
                 <IconButton
                   icon="X"

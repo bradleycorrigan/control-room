@@ -7,9 +7,9 @@
      media query — see App.tsx). */
   flex: 0 0 260px;
   flex-direction: column;
-  /* Inset, so the rail floats in the window rather than sitting welded to
-     its left edge. The rounded, raised chrome is the shared floating card
-     (Card level="floating", primitives.css) the ticket panel uses too. */
+  /* Floats just inside the window, as the ticket panel does on the other
+     side: the same floating card (Card level="floating", primitives.css),
+     the same 8px inset, the same corners, ring and shadow. */
   margin: var(--space-8) 0 var(--space-8) var(--space-8);
   overflow: hidden;
 }
@@ -41,7 +41,8 @@
      them; 88px is the floor (plan 5), so the draggable region never swallows
      the Projects | Sessions control sitting right after it. */
   padding-left: 88px;
-  background: var(--surface);
+  /* The page's own colour: one surface, split by the hairline below. */
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
 }
@@ -117,8 +118,8 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  /* No edge line: the rail sits in a floating card, whose ring is its edge. */
+  /* The sidebar's own background shows through; its hairline is its edge. */
+  background: transparent;
   padding: 0;
   overflow-y: auto;
 }

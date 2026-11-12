@@ -17,6 +17,7 @@ import { stopAllPtys } from './exec/tmux-pty'
 import { stopAllControlSessions } from './exec/tmux-control'
 import { log } from './log'
 import { isScreenshotMode, runScreenshotFlow } from './dev/screenshot'
+import { wireUiZoom } from './uiZoom'
 
 // Must run before app is ready — pins the data dir to the name in the plan
 // regardless of packaging metadata (productName, appId, etc).
@@ -98,6 +99,9 @@ function createWindow(): BrowserWindow {
       }
     }
   })
+
+  // Checks and screenshots keep a fresh profile's size unless a check sets one.
+  wireUiZoom(mainWindow, !isScreenshotMode)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()

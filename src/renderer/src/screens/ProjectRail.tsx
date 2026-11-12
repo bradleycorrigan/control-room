@@ -1,4 +1,4 @@
-import { wantsYou, type Project, type LiveSession } from '../../../main/store/types'
+import { attentionRank, wantsYou, type Project, type LiveSession } from '../../../main/store/types'
 import { addProject } from '../api'
 import Icon from '../components/primitives/Icon'
 import StatusDot from '../components/primitives/StatusDot'
@@ -18,7 +18,12 @@ interface Props {
   onOpenSession?: (liveKey: string, background?: boolean) => void
   /** The session on screen now, highlighted under its project. */
   openSessionKey?: string | null
+  /** Sessions filtered to the ones waiting on you. */
+  onShowNeedsYou?: () => void
 }
+
+/** How many of the sessions waiting on you the sidebar names. */
+const NEEDS_YOU_SHOWN = 3
 
 export default function ProjectRail({
   projects,
@@ -28,7 +33,8 @@ export default function ProjectRail({
   onProjectsChanged,
   onNewSession,
   onOpenSession,
-  openSessionKey = null
+  openSessionKey = null,
+  onShowNeedsYou
 }: Props): React.JSX.Element {
   // Projects opened to show their sessions, remembered between launches.
   const [expanded, setExpanded] = useStoredState<string[]>('rail-expanded-projects', [])
@@ -179,6 +185,7 @@ export default function ProjectRail({
           )
         })}
       </div>
+      <NeedsYou sessions={sessions} onOpenSession={onOpenSession} onShowAll={onShowNeedsYou} />
       {onNewSession && (
         <div className="projects-rail-footer">
           <button
@@ -191,5 +198,56 @@ export default function ProjectRail({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * The bottom of the sidebar: what's waiting on you, wherever you are in the
+ * list. A question first, then finished turns, most recent first; the rest
+ * are one click away. Not shown when nothing is waiting.
+ */
+function NeedsYou({
+  sessions,
+  onOpenSession,
+  onShowAll
+}: {
+  sessions: LiveSession[]
+  onOpenSession?: (liveKey: string, background?: boolean) => void
+  onShowAll?: () => void
+}): React.JSX.Element | null {
+  const waiting = sessions
+    .filter((s) => wantsYou(s.status))
+    .sort(
+      (a, b) =>
+        attentionRank(a.status) - attentionRank(b.status) ||
+        (b.activityAt ?? 0) - (a.activityAt ?? 0)
+    )
+  if (waiting.length === 0) return null
+  return (
+    <section className="projects-rail-needs-you" aria-label="Waiting on you" data-needs-you>
+      <h3 className="projects-rail-needs-you-title">
+        {waiting.length === 1 ? '1 session needs you' : `${waiting.length} sessions need you`}
+      </h3>
+      <div className="projects-rail-needs-you-list">
+        {waiting.slice(0, NEEDS_YOU_SHOWN).map((session) => (
+          <button
+            key={session.key}
+            type="button"
+            className="projects-rail-needs-you-item"
+            title={session.lastSaid ?? sessionTitle(session)}
+            onClick={(e) => onOpenSession?.(session.key, e.metaKey || e.ctrlKey)}
+          >
+            <StatusDot status={session.status} size={8} />
+            <span className="projects-rail-needs-you-name">{sessionTitle(session)}</span>
+            <span className="projects-rail-needs-you-status">{STATUS_WORDS[session.status]}</span>
+          </button>
+        ))}
+      </div>
+      {onShowAll && waiting.length > NEEDS_YOU_SHOWN && (
+        <button type="button" className="projects-rail-needs-you-all" onClick={onShowAll}>
+          Show all {waiting.length}
+        </button>
+      )}
+    </section>
   )
 }

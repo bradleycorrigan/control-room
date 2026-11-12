@@ -109,6 +109,16 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
   })
   // Which page-check sections to run (the gate's --grep), from CR_PAGES_SECTIONS.
   // Empty means all of them.
+  // The chat view's prompt card, without a live Claude: a held prompt with no
+  // hook behind it, and the reply it would have sent, for the check to read.
+  ipcMain.handle('dev:seed-prompt', async (_evt, raw: unknown) => {
+    const { seedPrompt } = await import('../engine/prompts')
+    return seedPrompt(raw)
+  })
+  ipcMain.handle('dev:last-prompt-reply', async () => {
+    const { lastSeededReply } = await import('../engine/prompts')
+    return lastSeededReply()
+  })
   ipcMain.handle('dev:pages-sections', () => process.env.CR_PAGES_SECTIONS ?? '')
   // Minimise/restore, for checks of what a window looks like coming back.
   ipcMain.handle('dev:window', async (_evt, action: 'minimize' | 'restore') => {

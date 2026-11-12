@@ -255,7 +255,7 @@ results.push(...(await Promise.all(staticRuns)))
 // shard: they close the fixture's current cycle.
 const PAGE_SHARDS = [
   ['Backlog'],
-  ['Session: header', 'Scrolling a full-screen agent'],
+  ['Session: header', 'Scrolling a full-screen agent', 'Chat view'],
   [
     'Dropping',
     'Sessions',
@@ -378,7 +378,16 @@ async function runPagesSharded() {
     const times = got.find((l) => l.startsWith('SECTIONS times: '))
     if (times) console.log(`gate: ${r.label}: ${times.replace(/^SECTIONS /, 'section ')}`)
     lines.push(...got.filter((l) => l.startsWith('FAIL ')).map((l) => `${r.label}: ${l}`))
-    if (!summary) lines.push(`${r.label}: no SUMMARY line — the check did not finish`)
+    // A run that never reports is otherwise silent: show how its output ended.
+    if (!summary)
+      lines.push(
+        `${r.label}: no SUMMARY line — the check did not finish. Its output ended:\n${r.output
+          .trim()
+          .split('\n')
+          .slice(-15)
+          .map((l) => `      ${l}`)
+          .join('\n')}`
+      )
   }
   const ok = runs.every((r) => checkLines(r.output).some((l) => /^SUMMARY .* 0 failed/.test(l)))
   lines.push(`SUMMARY ${passed} passed, ${failed} failed`)

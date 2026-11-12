@@ -81,6 +81,12 @@ export interface SessionRecord {
    * under Ended, never Done, so it never offers a Resume that cannot work.
    */
   deletedAt?: number | null
+  /**
+   * Set when the worktree was removed to clean up, with the session kept as
+   * done. Its branch stays, so Resume rebuilds the worktree at the same path
+   * and carries on the same conversation. Cleared when it's rebuilt.
+   */
+  worktreeRemovedAt?: number | null
   lastPrompt: string | null
   // Resuming can mint Claude Code a new session id while the old transcript
   // stays filed under the first one — this keeps that first id so the
@@ -139,6 +145,10 @@ export interface AppSettings {
   // The terminal's own text size. It was hardcoded at 13px in Terminal.tsx,
   // which is a reasonable default and a bad answer to "I can't read this".
   terminalFontSize: number // default 13
+  // The whole window's size, as a zoom factor: one of UI_SIZES. Absent until
+  // the first launch with it, which adopts the zoom the window already had
+  // (uiZoom.ts), so nobody's size changes under them.
+  uiZoom?: number
   // Draw the terminal with WebGL. Crisper block characters, but on some Macs
   // Chromium's GPU process crashes (a CHECK on its main thread), and every
   // crash showed a sad face where the terminal was. Off by default.
@@ -271,6 +281,12 @@ export interface LiveSession {
   // last finished a turn, asked something or failed. null when we can't
   // tell. What "active 5m ago" and the last-active sort read.
   activityAt: number | null
+  // The last thing Claude said, one line, from its transcript (see
+  // handoffNote.ts lastAssistantLine). What the rows and cards show under
+  // the title, so you can tell what a session is up to without opening it.
+  // Filled in after the rest of the list is built; absent or null when
+  // there's no transcript or no reply yet.
+  lastSaid?: string | null
 }
 
 export interface LiveSubagentSummary {
@@ -287,3 +303,6 @@ export interface LiveSubagentSummary {
   // "can't tell" — there is no separate error state to show for this.
   active: boolean
 }
+
+/** The interface sizes on offer (Settings › Appearance, and ⌘+ / ⌘−). */
+export const UI_SIZES = [0.9, 1, 1.1, 1.25, 1.5]

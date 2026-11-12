@@ -146,6 +146,16 @@ export async function sendKeysResult(
   return { ok: true, error: null }
 }
 
+/** Esc in the pane: stops Claude mid-turn, as pressing it in the terminal does. */
+export async function interruptPane(
+  paneId: string
+): Promise<{ ok: boolean; error: string | null }> {
+  const res = await runTmux(['send-keys', '-t', paneId, 'Escape'])
+  return res.code === 0
+    ? { ok: true, error: null }
+    : { ok: false, error: res.stderr.trim() || `tmux send-keys Escape exited ${res.code}` }
+}
+
 export async function sendKeys(paneId: string, text: string): Promise<boolean> {
   return (await sendKeysResult(paneId, text)).ok
 }
@@ -192,6 +202,8 @@ export async function killWindow(windowId: string): Promise<boolean> {
 export interface TmuxWindowPane {
   paneId: string
   active: boolean
+  /** The window shows one pane full size (zoomed), not both. */
+  zoomed: boolean
 }
 
 /**
@@ -205,15 +217,42 @@ export interface TmuxWindowPane {
  * `-t` (see focusPane below), so this can trust a non-zero exit here.
  */
 export async function listWindowPanes(paneId: string): Promise<TmuxWindowPane[]> {
-  const res = await runTmux(['list-panes', '-t', paneId, '-F', `#{pane_id}${FS}#{pane_active}`])
+  const res = await runTmux([
+    'list-panes',
+    '-t',
+    paneId,
+    '-F',
+    `#{pane_id}${FS}#{pane_active}${FS}#{window_zoomed_flag}`
+  ])
   if (res.code !== 0) return []
   return res.stdout
     .split('\n')
     .filter(Boolean)
     .map((line) => {
-      const [id, active] = line.split(FS)
-      return { paneId: id, active: active === '1' }
+      const [id, active, zoomed] = line.split(FS)
+      return { paneId: id, active: active === '1', zoomed: zoomed === '1' }
     })
+}
+
+/**
+ * Both of the window's panes side by side, or back to one at a time: tmux's
+ * own zoom toggle (prefix z), `resize-pane -Z`, applied only when the window
+ * isn't already that way, since -Z toggles. One at a time shows whichever
+ * pane is active.
+ */
+export async function showBothPanes(paneId: string, both: boolean): Promise<boolean> {
+  const now = await runTmux(['display-message', '-p', '-t', paneId, '#{window_zoomed_flag}'])
+  if (now.code !== 0) return false
+  const zoomed = now.stdout.trim() === '1'
+  if (both !== zoomed) return true
+  const active = await runTmux(['display-message', '-p', '-t', paneId, '#{pane_id}'])
+  const target = active.code === 0 && active.stdout.trim() ? active.stdout.trim() : paneId
+  return (await runTmux(['resize-pane', '-Z', '-t', target])).code === 0
+}
+
+/** Moves typing to `paneId` without changing what's on screen (side by side). */
+export async function selectPaneOnly(paneId: string): Promise<boolean> {
+  return (await runTmux(['select-pane', '-t', paneId])).code === 0
 }
 
 export interface SplitResult {

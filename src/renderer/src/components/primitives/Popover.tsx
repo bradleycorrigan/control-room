@@ -62,7 +62,12 @@ export default function Popover({
   children
 }: PopoverProps): React.JSX.Element | null {
   const panelRef = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null)
+  const [pos, setPos] = useState<{
+    top: number
+    left: number
+    maxHeight: number
+    side: 'top' | 'bottom'
+  } | null>(null)
   // Where focus was when the menu opened, so Escape or a pick can hand it
   // back. Without this, closing leaves focus on <body> and the next Tab
   // starts from the top of the window.
@@ -95,7 +100,10 @@ export default function Popover({
     // Measure the panel at its natural size — a max-height left over from the
     // last placement would otherwise make it look like it fits.
     panel.style.maxHeight = ''
-    const { width, height } = panel.getBoundingClientRect()
+    // Layout size, not the on-screen rect: the opening animation scales the
+    // panel, and a scaled measurement would place it a few pixels off.
+    const width = panel.offsetWidth
+    const height = panel.offsetHeight
     naturalHeight.current = height
     const r = anchor.getBoundingClientRect()
 
@@ -118,7 +126,8 @@ export default function Popover({
     setPos({
       top: onBottom ? r.bottom + gap : r.top - gap - shown,
       left: maxLeft > EDGE_MARGIN ? Math.min(Math.max(left, EDGE_MARGIN), maxLeft) : EDGE_MARGIN,
-      maxHeight
+      maxHeight,
+      side: onBottom ? 'bottom' : 'top'
     })
   }, [anchorRef, gap, placement])
 
@@ -228,6 +237,8 @@ export default function Popover({
       role={role}
       aria-label={ariaLabel}
       className={className ? `cr-popover ${className}` : 'cr-popover'}
+      // Which side of the trigger it opened on: it grows out from that edge.
+      data-side={pos?.side}
       style={{
         top: pos?.top ?? 0,
         left: pos?.left ?? 0,

@@ -12,10 +12,13 @@ import DeleteSessionsDialog from '../components/DeleteSessionsDialog'
 import { useDismissible } from '../keyboard'
 import { PickCheck, SelectionAction, SelectionBar } from '../components/selection'
 import { useSessionActions } from '../components/useSessionActions'
+import { useFold } from '../components/useFold'
+import Illustration from '../components/Illustration'
 import { useTitleSuggestion } from '../components/useTitleSuggestion'
 import { MenuItems, type MenuItem } from '../components/MenuItems'
 import {
   Button,
+  Count,
   Badge,
   Icon,
   Popover,
@@ -766,7 +769,7 @@ function SessionListRow({
               </button>
             </form>
           ) : (
-            <span className="sessions-row-title" title={title}>
+            <span className="sessions-row-title" title={branch ? `${title}\n${branch}` : title}>
               {title}
             </span>
           )}
@@ -775,68 +778,70 @@ function SessionListRow({
               <Icon name="Pin" size={12} />
             </span>
           )}
+
+          {/* The details, on the right and quiet: ticket, PRs, sub-agents,
+              how long, the menu. */}
+          <div className="sessions-row-meta">
+            <TicketPill session={session} />
+            <PrChips prs={prs} onOpen={openPr ? (pr) => openPr(session, pr) : undefined} />
+            {activeSubagentCount > 0 && (
+              <button
+                type="button"
+                className="sessions-row-subagents-toggle"
+                aria-expanded={subagentsExpanded}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSubagentsExpanded((v) => !v)
+                }}
+              >
+                <Icon name="Bot" size={14} />
+                <span>
+                  {activeSubagentCount} agent{activeSubagentCount === 1 ? '' : 's'} working
+                </span>
+                <Icon name={subagentsExpanded ? 'ChevronDown' : 'ChevronRight'} size={14} />
+              </button>
+            )}
+            {since !== null ? (
+              <span
+                className={
+                  longWait
+                    ? 'sessions-row-time-cell sessions-row-waiting sessions-row-waiting--long'
+                    : 'sessions-row-time-cell sessions-row-waiting'
+                }
+              >
+                <span className="sessions-row-elapsed">waiting {formatElapsed(since)}</span>
+              </span>
+            ) : (
+              activity && (
+                <span className="sessions-row-time-cell">
+                  <span className="sessions-row-elapsed">{activity}</span>
+                </span>
+              )
+            )}
+            <OverflowMenu
+              actions={actions}
+              label={`${title} actions`}
+              className="sessions-row-overflow"
+            />
+          </div>
         </div>
 
-        {/* Line 2: [status chip] [branch] [elapsed] ["N agents working", only when a sub-agent is active] [⋯] */}
+        {/* Line 2: the status in a word, then what Claude last said; the
+            branch (or where the session came from) when it hasn't said
+            anything yet. The branch is otherwise in the title's tooltip. */}
         <div className="sessions-row-line2">
           <div className="sessions-row-badge">
-            <Badge status={session.status} />
+            <Badge status={session.status} variant="bare" />
           </div>
-          {branch && (
-            <div className="sessions-row-branch-cell">
-              <Icon name="GitBranch" size={14} />
+          {session.lastSaid ? (
+            <LastSaid session={session} className="sessions-row-said" />
+          ) : (
+            branch && (
               <span className="sessions-row-branch" title={branch}>
                 {branch}
               </span>
-            </div>
-          )}
-
-          <TicketPill session={session} />
-          <PrChips prs={prs} onOpen={openPr ? (pr) => openPr(session, pr) : undefined} />
-
-          {since !== null ? (
-            <div
-              className={
-                longWait
-                  ? 'sessions-row-time-cell sessions-row-waiting sessions-row-waiting--long'
-                  : 'sessions-row-time-cell sessions-row-waiting'
-              }
-            >
-              <Icon name="Clock" size={14} />
-              <span className="sessions-row-elapsed">waiting {formatElapsed(since)}</span>
-            </div>
-          ) : (
-            activity && (
-              <div className="sessions-row-time-cell">
-                <Icon name="Clock" size={14} />
-                <span className="sessions-row-elapsed">{activity}</span>
-              </div>
             )
           )}
-
-          {activeSubagentCount > 0 && (
-            <button
-              type="button"
-              className="sessions-row-subagents-toggle"
-              aria-expanded={subagentsExpanded}
-              onClick={(e) => {
-                e.stopPropagation()
-                setSubagentsExpanded((v) => !v)
-              }}
-            >
-              <Icon name="Bot" size={14} />
-              <span>
-                {activeSubagentCount} agent{activeSubagentCount === 1 ? '' : 's'} working
-              </span>
-              <Icon name={subagentsExpanded ? 'ChevronDown' : 'ChevronRight'} size={14} />
-            </button>
-          )}
-
-          <OverflowMenu
-            actions={actions}
-            label={`${title} actions`}
-            className="sessions-row-overflow"
-          />
         </div>
       </div>
 
@@ -1155,6 +1160,7 @@ function SessionGroupBody({
             prs={prsOf(session)}
             onOpen={(background) => onOpenSession(session.key, background)}
             onAdopt={adoptFor(session)}
+            onChanged={onRowChanged}
           />
         ))}
       </div>
@@ -1180,6 +1186,8 @@ function SessionGroupBody({
 interface SessionCardProps {
   session: LiveSession
   projectName: string | null
+  /** After an action from its menu changed something, so the list refreshes. */
+  onChanged?: () => void
   /** `background`: ⌘- or middle-click — open it in a tab without switching. */
   onOpen: (background?: boolean) => void
   onAdopt?: () => void
@@ -1196,12 +1204,18 @@ function SessionCard({
   projectName,
   onOpen,
   onAdopt,
-  prs
+  prs,
+  onChanged
 }: SessionCardProps): React.JSX.Element {
   const title = sessionTitle(session)
   const branch = branchLine(session)
   const { recordId, picked, picking, check, onClick } = usePick(session, title, 'session-card-pick')
   const openPr = useContext(SessionPrOpen)
+  // The same menu as a list row, and its most-used action on its own: on
+  // hover, in place of the time, so the card needn't be opened to do it.
+  const [sessionActionNode, sessionActions] = useSessionActions({ onChanged: () => onChanged?.() })
+  const actions: OverflowAction[] = sessionActions(session)
+  const quick = actions.find((a) => a.label === 'Mark as done' && !a.disabled)
   return (
     <div
       className={[
@@ -1235,6 +1249,23 @@ function SessionCard({
         {activityLabel(session) && (
           <span className="session-card-time">{activityLabel(session)}</span>
         )}
+        {actions.length > 0 && (
+          <span className="session-card-actions" onClick={(e) => e.stopPropagation()}>
+            {quick && (
+              <Tooltip label="Mark as done">
+                <button
+                  type="button"
+                  className="overflow-menu-button"
+                  aria-label={`Mark ${title} as done`}
+                  onClick={quick.onClick}
+                >
+                  <Icon name="CircleCheck" size={16} />
+                </button>
+              </Tooltip>
+            )}
+            <OverflowMenu actions={actions} label={`${title} actions`} />
+          </span>
+        )}
       </div>
       <div className="session-card-title" title={title}>
         {title}
@@ -1249,6 +1280,7 @@ function SessionCard({
           {branch}
         </div>
       )}
+      <LastSaid session={session} className="session-card-said" />
       <div className="session-card-bottom">
         <TicketPill session={session} />
         {/* Everything else sits on the right, ticket or no ticket, so a PR
@@ -1270,6 +1302,185 @@ function SessionCard({
             </button>
           )}
         </div>
+      </div>
+      {sessionActionNode}
+    </div>
+  )
+}
+
+/** The colour of a quote's rule: what the session is waiting for. */
+function saidTone(status: LiveSession['status']): string {
+  if (status === 'needs_attention') return 'attention'
+  if (status === 'errored') return 'error'
+  if (status === 'working') return 'working'
+  if (status === 'ready' || status === 'idle' || status === 'done') return 'done'
+  return 'quiet'
+}
+
+/**
+ * What Claude last said in the session, set as a quote: a rule down its left
+ * edge in the session's status colour, the words in full colour. For a
+ * session waiting on you it's usually the question itself, which is the
+ * reason to open it.
+ */
+function LastSaid({
+  session,
+  className
+}: {
+  session: LiveSession
+  className: string
+}): React.JSX.Element | null {
+  if (!session.lastSaid) return null
+  return (
+    <p
+      className={`cr-said ${className}`}
+      data-tone={saidTone(session.status)}
+      title={session.lastSaid}
+      data-last-said
+    >
+      <span className="cr-said-text">{session.lastSaid}</span>
+    </p>
+  )
+}
+
+/**
+ * The status tabs: All, then each status something has. On one line; the
+ * ones that don't fit fold behind "+N more", and a selected one never folds.
+ * A click switches to that status alone, as the Tickets views do; clicking
+ * the only one again goes back to All. ⌘- or ⇧-click adds or drops one.
+ */
+function StatusTabs({
+  statusFilter,
+  setStatusFilter,
+  allCount,
+  statusCounts
+}: {
+  statusFilter: StatusFilterId[]
+  setStatusFilter: (next: StatusFilterId[]) => void
+  allCount: number
+  statusCounts: Map<StatusFilterId, number>
+}): React.JSX.Element {
+  // Only statuses something actually has, plus any selected one, so it can
+  // always be switched off again.
+  const shown = STATUS_FILTERS.filter(
+    (f) => (statusCounts.get(f.id) ?? 0) > 0 || statusFilter.includes(f.id)
+  )
+  // All counts toward the width and never folds.
+  const { containerRef, measureRef, folded } = useFold(
+    ['all', ...shown.map((f) => f.id)],
+    new Set<string>(['all', ...statusFilter])
+  )
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLButtonElement>(null)
+
+  const pick = (id: StatusFilterId, e: React.MouseEvent): void => {
+    const on = statusFilter.includes(id)
+    if (e.metaKey || e.ctrlKey || e.shiftKey) {
+      setStatusFilter(on ? statusFilter.filter((x) => x !== id) : [...statusFilter, id])
+    } else {
+      setStatusFilter(on && statusFilter.length === 1 ? [] : [id])
+    }
+  }
+
+  const label = (f: (typeof STATUS_FILTERS)[number]): React.ReactNode => (
+    <>
+      <StatusDot status={f.statuses[0]} size={8} />
+      {sentenceCase(STATUS_WORDS[f.statuses[0]])}
+      <Count className="sessions-filter-count" value={statusCounts.get(f.id) ?? 0} />
+    </>
+  )
+  const tabClass = (on: boolean): string =>
+    on ? 'sessions-filter-tab sessions-filter-tab--selected' : 'sessions-filter-tab'
+  const foldedTabs = shown.filter((f) => folded.includes(f.id))
+
+  return (
+    <div
+      ref={containerRef}
+      className="sessions-filter-tabs"
+      role="group"
+      aria-label="Filter by status: click one, or ⌘-click to add more"
+    >
+      <button
+        type="button"
+        aria-pressed={statusFilter.length === 0}
+        className={tabClass(statusFilter.length === 0)}
+        title="Show every status"
+        onClick={() => setStatusFilter([])}
+      >
+        All
+        <Count className="sessions-filter-count" value={allCount} />
+      </button>
+      {shown
+        .filter((f) => !folded.includes(f.id))
+        .map((f) => {
+          const on = statusFilter.includes(f.id)
+          return (
+            <button
+              key={f.id}
+              type="button"
+              aria-pressed={on}
+              data-status-filter={f.id}
+              className={tabClass(on)}
+              title={on ? '⌘-click to drop this one' : 'Show only these · ⌘-click to add'}
+              onClick={(e) => pick(f.id, e)}
+            >
+              {label(f)}
+            </button>
+          )
+        })}
+      {foldedTabs.length > 0 && (
+        <>
+          <button
+            ref={moreRef}
+            type="button"
+            className="sessions-filter-tab"
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            data-status-more
+            title={foldedTabs.map((f) => sentenceCase(STATUS_WORDS[f.statuses[0]])).join(', ')}
+            onClick={() => setMoreOpen((v) => !v)}
+          >
+            +{foldedTabs.length} more
+            <Icon name="ChevronDown" size={14} />
+          </button>
+          <Popover
+            open={moreOpen}
+            onClose={() => setMoreOpen(false)}
+            anchorRef={moreRef}
+            aria-label="More statuses"
+          >
+            {foldedTabs.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                className="cr-popover-item sessions-filter-more-item"
+                data-status-filter={f.id}
+                onClick={(e) => {
+                  pick(f.id, e)
+                  setMoreOpen(false)
+                }}
+              >
+                {label(f)}
+              </button>
+            ))}
+          </Popover>
+        </>
+      )}
+      {/* Every tab, unseen, so the fold knows each one's width. */}
+      <div ref={measureRef} className="sessions-filter-measure" aria-hidden="true">
+        <span data-fold-id="all" className={tabClass(statusFilter.length === 0)}>
+          All
+          <Count className="sessions-filter-count" value={allCount} />
+        </span>
+        {shown.map((f) => (
+          <span key={f.id} data-fold-id={f.id} className={tabClass(statusFilter.includes(f.id))}>
+            {label(f)}
+          </span>
+        ))}
+        <span data-fold-id="more" className="sessions-filter-tab">
+          +{shown.length} more
+          <Icon name="ChevronDown" size={14} />
+        </span>
       </div>
     </div>
   )
@@ -1306,6 +1517,7 @@ function SessionsEmptyState({
       <div className="sessions-empty-box">
         {attentionOnly ? (
           <>
+            <Illustration name="all-clear" />
             <h2 className="sessions-empty-title">Nothing is waiting on you</h2>
             <p className="sessions-empty-caption">
               Every session is either working on its own or already done. This list updates as that
@@ -1317,6 +1529,7 @@ function SessionsEmptyState({
           </>
         ) : filtered ? (
           <>
+            <Illustration name="no-match" />
             <h2 className="sessions-empty-title">No sessions match this filter</h2>
             <p className="sessions-empty-caption">
               {projectName
@@ -1329,6 +1542,7 @@ function SessionsEmptyState({
           </>
         ) : (
           <>
+            <Illustration name="first-session" />
             <h2 className="sessions-empty-title">No sessions yet</h2>
             <p className="sessions-empty-caption">
               A session is a worktree, a branch, and a Claude Code agent running in a tmux window.
@@ -1753,11 +1967,14 @@ export default function SessionsScreen({
                         </button>
                       </p>
                     ) : (
-                      <p className="sessions-main-caption">
-                        {filtersOn ? `${visibleSessions.length} of ` : ''}
-                        {scopedSessions.length} session{scopedSessions.length === 1 ? '' : 's'}
-                        {effectiveProjectId ? ' in this project' : ' across all projects'}
-                      </p>
+                      // Only when filters hide some: the plain count is
+                      // already on the All tab and in the sidebar.
+                      filtersOn && (
+                        <p className="sessions-main-caption">
+                          {visibleSessions.length} of {scopedSessions.length} session
+                          {scopedSessions.length === 1 ? '' : 's'}
+                        </p>
+                      )
                     )}
                   </div>
                   <div className="sessions-main-controls">
@@ -1833,62 +2050,12 @@ export default function SessionsScreen({
             search and the switches that narrow whatever statuses are on. */}
                 {scopedSessions.length > 0 && (
                   <div className="sessions-filters">
-                    <div
-                      className="sessions-filter-tabs"
-                      role="group"
-                      aria-label="Filter by status: pick any number"
-                    >
-                      <button
-                        type="button"
-                        aria-pressed={statusFilter.length === 0}
-                        className={
-                          statusFilter.length === 0
-                            ? 'sessions-filter-tab sessions-filter-tab--selected'
-                            : 'sessions-filter-tab'
-                        }
-                        title="Show every status"
-                        onClick={() => setStatusFilter([])}
-                      >
-                        All
-                        <span className="sessions-filter-count">{allCount}</span>
-                      </button>
-                      {/* Only statuses something actually has, plus any selected
-                  one, so it can always be switched off again. */}
-                      {STATUS_FILTERS.filter(
-                        (f) => (statusCounts.get(f.id) ?? 0) > 0 || statusFilter.includes(f.id)
-                      ).map((f) => {
-                        const on = statusFilter.includes(f.id)
-                        return (
-                          <button
-                            key={f.id}
-                            type="button"
-                            aria-pressed={on}
-                            data-status-filter={f.id}
-                            className={
-                              on
-                                ? 'sessions-filter-tab sessions-filter-tab--selected'
-                                : 'sessions-filter-tab'
-                            }
-                            title={
-                              on ? 'Stop showing these' : 'Show these too; click others to add them'
-                            }
-                            onClick={() =>
-                              setStatusFilter(
-                                on
-                                  ? statusFilter.filter((id) => id !== f.id)
-                                  : [...statusFilter, f.id]
-                              )
-                            }
-                          >
-                            <StatusDot status={f.statuses[0]} size={8} />
-                            {sentenceCase(STATUS_WORDS[f.statuses[0]])}
-                            <span className="sessions-filter-count">
-                              {statusCounts.get(f.id) ?? 0}
-                            </span>
-                          </button>
-                        )
-                      })}
-                    </div>
+                    <StatusTabs
+                      statusFilter={statusFilter}
+                      setStatusFilter={setStatusFilter}
+                      allCount={allCount}
+                      statusCounts={statusCounts}
+                    />
                     <div className="sessions-filter-row">
                       <label className="sessions-search">
                         <Icon name="Search" size={14} />

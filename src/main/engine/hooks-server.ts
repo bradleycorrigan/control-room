@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { getState, updateSettings, appendEvent } from '../store/store'
 import { mergeHooksIntoSettings, CLAUDE_SETTINGS_PATH } from './hooks-settings'
 import { log } from '../log'
+import { holdPrompt, dropPrompt } from './prompts'
 
 export interface NormalizedEvent {
   type: string // Notification | Stop | StopFailure
@@ -230,6 +231,33 @@ function startHookServer(port: number): Promise<{ server: Server; port: number }
         body += chunk
         if (body.length > 1_000_000) req.destroy()
       })
+      // A prompt (permission, plan, question): held open until it's answered
+      // in the app, answered in the terminal, or Claude Code gives up on it.
+      // Every other hook is answered at once.
+      if (!container && /^\/hook\/ask(?:\?|$)/.test(req.url)) {
+        req.on('end', () => {
+          let raw: unknown
+          try {
+            raw = JSON.parse(body)
+          } catch {
+            res.writeHead(200, { 'content-type': 'application/json' }).end('{}')
+            return
+          }
+          let done = false
+          const id = holdPrompt(raw, (reply) => {
+            if (done) return
+            done = true
+            res.writeHead(200, { 'content-type': 'application/json' }).end(reply)
+          })
+          res.on('close', () => {
+            if (!done) {
+              done = true
+              dropPrompt(id)
+            }
+          })
+        })
+        return
+      }
       req.on('end', () => {
         // Claude Code blocks on this response — answer before processing, always.
         res.writeHead(200, { 'content-type': 'application/json' }).end('{}')

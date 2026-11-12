@@ -396,13 +396,22 @@
   background: var(--bg);
 }
 
+/* Departure Mono (SIL Open Font License; assets/fonts/departure-mono-LICENSE.txt). */
+@font-face {
+  font-family: 'Departure Mono';
+  src: url('../../assets/fonts/departure-mono.woff2') format('woff2');
+  font-display: block;
+}
+
 .status-badge-word {
-  font-size: var(--text-meta-size, 11px);
+  /* 11px exactly: the face is drawn on an 11px pixel grid. */
+  font-size: 11px;
   line-height: var(--text-meta-line, 16px);
   font-weight: var(--text-meta-weight, 400);
   color: var(--text-muted);
   white-space: nowrap;
-  font-family: var(--font-mono);
+  font-family: var(--font-pixel);
+  letter-spacing: 0;
 }
 
 /* ---- Modal (plan 7, A2) ----------------------------------------------------- */
@@ -411,6 +420,7 @@
   inset: 0;
   background: rgba(0, 0, 0, 0.4);
   z-index: var(--layer-modal-backdrop);
+  animation: cr-fade-in var(--motion-enter) var(--motion-easing);
 }
 
 .cr-modal {
@@ -428,6 +438,31 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  animation: cr-modal-in var(--motion-enter) var(--motion-easing);
+}
+
+/* A dialog fades in and settles from just under full size, in place: it
+   never slides, so a click aimed at a button as it opens still lands. Its
+   centring transform is part of
+   every frame, so the animation can't drop it. */
+@keyframes cr-modal-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes cr-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .cr-modal-header {
@@ -539,6 +574,7 @@
 }
 
 .cr-empty-state-title {
+  font-family: var(--font-display);
   margin: 0;
   font-size: var(--text-title-size);
   line-height: var(--text-title-line);
@@ -577,10 +613,19 @@
 }
 
 /* ---- Skeleton (plan 7, A2) --------------------------------------------------- */
+/* A sheen sweeping across, not a blink: it reads as "on its way". */
 .cr-skeleton {
-  background: color-mix(in srgb, var(--surface) 50%, transparent);
+  background-color: color-mix(in srgb, var(--surface) 50%, transparent);
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    color-mix(in srgb, var(--text) 6%, transparent) 50%,
+    transparent 70%
+  );
+  background-size: 250% 100%;
+  background-repeat: no-repeat;
   border-radius: var(--radius-lg);
-  animation: skeleton-pulse 2s ease-in-out infinite;
+  animation: skeleton-shimmer 1.6s var(--motion-easing) infinite;
 }
 
 .cr-skeleton--row {
@@ -591,6 +636,7 @@
   border-radius: var(--radius-lg);
 }
 
+/* Still the new-ticket form's "Haiku is filling this in" beat (backlog.css). */
 @keyframes skeleton-pulse {
   0%,
   100% {
@@ -598,6 +644,15 @@
   }
   50% {
     opacity: 0.5;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
   }
 }
 
@@ -709,6 +764,36 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-popover);
   padding: var(--space-4);
+  transform-origin: top center;
+  animation: cr-popover-in var(--motion-enter) var(--motion-easing);
+}
+
+/* Opened above its trigger: it grows upward, out of the trigger. */
+.cr-popover[data-side='top'] {
+  transform-origin: bottom center;
+  animation-name: cr-popover-in-up;
+}
+
+@keyframes cr-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes cr-popover-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 /* Arrowing through a menu is only usable if you can see where you are. This
@@ -904,4 +989,111 @@
   border-radius: 50%;
   background: var(--accent);
   vertical-align: middle;
+}
+
+/* ---- Count ------------------------------------------------------------------ */
+/* A number rolling to its new value: in from below when it grows, from above
+   when it shrinks. */
+.cr-count {
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+}
+
+.cr-count--up {
+  animation: cr-count-up var(--motion-medium) var(--motion-easing);
+}
+
+.cr-count--down {
+  animation: cr-count-down var(--motion-medium) var(--motion-easing);
+}
+
+@keyframes cr-count-up {
+  from {
+    opacity: 0;
+    transform: translateY(40%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes cr-count-down {
+  from {
+    opacity: 0;
+    transform: translateY(-40%);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---- Steps ------------------------------------------------------------------ */
+/* Numbered setup: what a step is for on the left, what you do on the right,
+   a hairline between steps. Stacks when there isn't room for both. */
+.cr-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.cr-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: var(--space-12) var(--space-16);
+  align-items: start;
+  padding: var(--space-16) var(--space-24);
+}
+
+.cr-step + .cr-step {
+  border-top: 1px solid var(--border);
+}
+
+.cr-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-caption-size);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.cr-step-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--text-card-size);
+  line-height: var(--text-card-line);
+  font-weight: var(--text-label-weight);
+  color: var(--text);
+}
+
+.cr-step-note {
+  margin: var(--space-4) 0 0;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  color: var(--text-muted);
+}
+
+.cr-step-action {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+@container (max-width: 560px) {
+  .cr-step {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .cr-step-action {
+    grid-column: 2;
+  }
 }

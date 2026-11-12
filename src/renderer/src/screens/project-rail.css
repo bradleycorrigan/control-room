@@ -6,7 +6,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
+  background: transparent;
   padding: 0;
   overflow-y: auto;
 }
@@ -280,3 +280,107 @@
    padding rule used to live here and could shadow it depending on CSS load
    order. The descendant selectors below are unused legacy rules (no current
    component renders a bare .session-row) and are left as-is. */
+
+/* Waiting on you: a quiet card above New session. */
+.projects-rail-needs-you {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: var(--space-8) var(--space-12);
+  padding: var(--space-12);
+  border-radius: var(--radius-lg);
+  /* Inset in the page colour, as the ticket panel's property cells are. */
+  background: var(--bg);
+}
+
+.projects-rail-needs-you-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  font-weight: var(--text-label-weight);
+  color: var(--text-muted);
+}
+
+.projects-rail-needs-you-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.projects-rail-needs-you-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  padding: var(--space-4) var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  line-height: var(--text-label-line);
+  text-align: left;
+  cursor: pointer;
+}
+
+.projects-rail-needs-you-item:hover {
+  background: var(--surface-raised);
+}
+
+.projects-rail-needs-you-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projects-rail-needs-you-status {
+  flex: none;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.projects-rail-needs-you-all {
+  align-self: flex-start;
+  margin-top: var(--space-4);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-family: var(--font-ui);
+  font-size: var(--text-caption-size);
+  cursor: pointer;
+}
+
+.projects-rail-needs-you-all:hover {
+  text-decoration: underline;
+}
+
+/* ---- Sidebar type scale (Sessions, Tickets and Settings share these) ----
+   Items at the label size in 30px rows, section titles a step smaller but
+   semibold, counts quiet. Items used to be body-size in 32px rows under a
+   12px caption, so the sections read as an afterthought and each row
+   spent height on nothing. */
+.projects-rail-header {
+  padding: var(--space-16) var(--space-16) var(--space-4) 20px;
+}
+
+.projects-rail-title {
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+}
+
+.projects-rail-item {
+  height: 30px;
+  font-size: var(--text-label-size);
+}
+
+.projects-rail-count {
+  font-size: var(--text-caption-size);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}

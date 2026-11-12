@@ -1,7 +1,10 @@
 import Icon, { type IconName } from './Icon'
+import Illustration, { type IllustrationName } from '../Illustration'
 
 export interface EmptyStateProps {
   icon: IconName
+  /** A drawing in place of the icon, for a screen that is simply empty. */
+  art?: IllustrationName
   title: string
   body: string
   /** Spins the icon — for a state that is waiting on something, not empty. */
@@ -19,6 +22,7 @@ export interface EmptyStateProps {
  */
 export default function EmptyState({
   icon,
+  art,
   title,
   body,
   iconSpins = false,
@@ -27,9 +31,13 @@ export default function EmptyState({
 }: EmptyStateProps): React.JSX.Element {
   return (
     <div className={`cr-empty-state ${className}`}>
-      <div className={`cr-empty-state-icon${iconSpins ? ' cr-empty-state-icon--spins' : ''}`}>
-        <Icon name={icon} size={40} />
-      </div>
+      {art ? (
+        <Illustration name={art} />
+      ) : (
+        <div className={`cr-empty-state-icon${iconSpins ? ' cr-empty-state-icon--spins' : ''}`}>
+          <Icon name={icon} size={40} />
+        </div>
+      )}
       <h2 className="cr-empty-state-title">{title}</h2>
       <p className="cr-empty-state-body">{body}</p>
       {action && <div className="cr-empty-state-action">{action}</div>}

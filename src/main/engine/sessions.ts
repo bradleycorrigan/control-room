@@ -912,6 +912,69 @@ export interface DeleteSessionResult {
  * History shows it under Ended), and close any tmux window it left behind.
  * Only for a worktree already checked to have no live session.
  */
+/**
+ * Removing a worktree to clean up, keeping its sessions: each one's Claude is
+ * stopped (its tmux window closed) and it's kept as done, marked as having no
+ * worktree. Resume rebuilds the worktree from the branch (restoreWorktree).
+ */
+export async function shelveSessionsInWorktree(worktreePath: string): Promise<void> {
+  const target = worktreePath.replace(/\/+$/, '')
+  const records = getState().sessions.filter(
+    (s) => s.worktreePath.replace(/\/+$/, '') === target && !s.deletedAt && !s.investigation
+  )
+  if (records.length === 0) return
+  for (const r of records) if (r.tmuxWindowId) await killWindow(r.tmuxWindowId)
+  const ids = new Set(records.map((r) => r.id))
+  const now = Date.now()
+  mutate((draft) => {
+    for (const s of draft.sessions) {
+      if (!ids.has(s.id)) continue
+      s.archivedAt ??= now
+      s.worktreeRemovedAt = now
+      s.tmuxWindowId = null
+      s.tmuxPaneId = null
+    }
+  })
+}
+
+/**
+ * A kept session whose worktree was removed: put the worktree back at the
+ * same path from its branch (local, else origin's), so Claude's conversation,
+ * filed under that path, resumes as it was. Nothing to do when it's there.
+ */
+export async function restoreWorktree(recordId: string): Promise<GitOpResult> {
+  const record = getState().sessions.find((s) => s.id === recordId)
+  if (!record) return { ok: false, error: 'session not found' }
+  if (existsSync(record.worktreePath)) return { ok: true }
+  if (record.deletedAt) return { ok: false, error: 'this session was deleted' }
+  const project = getState().projects.find((p) => p.id === record.projectId)
+  if (!project) return { ok: false, error: 'its project is no longer registered' }
+  const branch = record.branch
+  if (!branch || record.investigation)
+    return { ok: false, error: 'it has no branch to rebuild its worktree from' }
+  await pruneWorktrees(project.repoPath)
+  let result: GitOpResult
+  if (await localBranchExists(project.repoPath, branch)) {
+    result = await addWorktreeExistingLocalBranchResult(
+      project.repoPath,
+      record.worktreePath,
+      branch
+    )
+  } else {
+    await fetchOriginResult(project.repoPath)
+    result = (await remoteBranchExists(project.repoPath, branch))
+      ? await addWorktreeExistingRemoteBranchResult(project.repoPath, record.worktreePath, branch)
+      : { ok: false, error: `its branch ${branch} no longer exists` }
+  }
+  if (!result.ok) return result
+  carryClaudeLocalSettings(project.repoPath, record.worktreePath)
+  mutate((draft) => {
+    const target = draft.sessions.find((s) => s.id === recordId)
+    if (target) target.worktreeRemovedAt = null
+  })
+  return { ok: true }
+}
+
 export async function retireSessionsInWorktree(worktreePath: string): Promise<void> {
   const target = worktreePath.replace(/\/+$/, '')
   const records = getState().sessions.filter(

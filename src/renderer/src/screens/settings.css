@@ -44,6 +44,7 @@
 }
 
 .settings-page-title {
+  font-family: var(--font-display);
   margin: 0;
   font-size: var(--text-title-size);
   line-height: var(--text-title-line);
@@ -207,48 +208,6 @@ label.settings-item .settings-item-control {
   border-radius: var(--radius-pill);
 }
 
-.theme-swatch-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: var(--space-8);
-}
-
-.theme-swatch-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  min-width: 0;
-  padding: var(--space-8) var(--space-12);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  text-align: left;
-  font-family: var(--font-ui);
-  font-size: var(--text-label-size);
-}
-
-.theme-swatch-row:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.theme-swatch-row:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
-
-.theme-swatch-chip {
-  width: 12px;
-  height: 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid color-mix(in srgb, var(--text-muted) 40%, transparent);
-  flex: none;
-}
-
-.theme-swatch-chip-text {
-  border-radius: var(--radius-pill);
-}
-
 .theme-swatch-dots {
   display: flex;
   gap: 3px;
@@ -262,8 +221,123 @@ label.settings-item .settings-item-control {
   flex: none;
 }
 
-.theme-swatch-name {
-  margin-left: var(--space-4);
+/* ---- Theme cards: a sketch of the app in each theme's own colours ------- */
+.theme-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.theme-card-group-title {
+  margin: 0 0 var(--space-8);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  font-weight: var(--text-label-weight);
+  color: var(--text-muted);
+}
+
+.theme-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: var(--space-12);
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-width: 0;
+  padding: var(--space-8);
+  border: 1px solid;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  transition: transform var(--motion-fast) var(--motion-easing);
+}
+
+.theme-card:not(:disabled):hover {
+  transform: translateY(-1px);
+}
+
+.theme-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.theme-card:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.theme-card-preview {
+  display: flex;
+  height: 72px;
+  border: 1px solid;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.theme-card-side {
+  flex: 0 0 28%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 6px;
+  border-right: 1px solid;
+}
+
+.theme-card-main {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+}
+
+.theme-card-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 12px;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.theme-card-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+}
+
+.theme-card-line {
+  display: block;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  opacity: 0.85;
+}
+
+.theme-card-button {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  width: 22px;
+  height: 7px;
+  border-radius: var(--radius-pill);
+}
+
+.theme-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.theme-card-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

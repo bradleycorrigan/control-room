@@ -2009,6 +2009,95 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           Boolean($('.sessions-filter-tab') && $('.sessions-sort-button'))
         )
 
+        // The sidebar's foot names what's waiting on you, a question first,
+        // and opens it.
+        {
+          await until(() => Boolean($('[data-needs-you]')), 3000)
+          const names = $$('.projects-rail-needs-you-name').map((n) => n.textContent ?? '')
+          await check(
+            'the sidebar lists the sessions waiting on you, a question first',
+            names[0] === 'Waiting session' && names.includes('Ready session'),
+            names.join(' | ') || 'no card'
+          )
+          await click(byText('.projects-rail-needs-you-item', 'Waiting session'))
+          await until(() => Boolean($('.cr-session-body > .session-detail')), 3000)
+          await check(
+            'clicking one opens it',
+            /Waiting session/.test($('.session-detail-breadcrumb-title')?.textContent ?? ''),
+            $('.session-detail-breadcrumb-title')?.textContent ?? 'no session open'
+          )
+          await ctx.goTo('sessions')
+          await wait(300)
+        }
+
+        // Status tabs stay on one line: squeezed, the rest fold behind
+        // "+N more", and picking one there filters like the tab would.
+        {
+          const tabs = $('.sessions-filter-tabs')
+          if (tabs) tabs.style.maxWidth = '360px'
+          // The window may already fold one; wait for the squeezed fold.
+          const lastRight = (): number =>
+            $$('.sessions-filter-tabs > .sessions-filter-tab').at(-1)?.getBoundingClientRect()
+              .right ?? Infinity
+          await until(() => lastRight() <= (tabs?.getBoundingClientRect().right ?? 0) + 1, 2000)
+          await wait(200)
+          const more = $('[data-status-more]')
+          const oneLine =
+            tabs !== null &&
+            new Set($$('.sessions-filter-tabs > .sessions-filter-tab').map((t) => t.offsetTop))
+              .size === 1
+          await click(more)
+          await until(() => Boolean($('.cr-popover [data-status-filter]')), 1500)
+          const item = $('.cr-popover [data-status-filter]')
+          const id = item?.dataset.statusFilter ?? ''
+          await click(item)
+          await wait(300)
+          const pressed = $(`.sessions-filter-tabs > [data-status-filter="${id}"]`)
+          await check(
+            'squeezed status tabs fold behind "+N more", and a folded one can be picked',
+            Boolean(more) && oneLine && pressed?.getAttribute('aria-pressed') === 'true',
+            `more: ${more?.textContent ?? 'none'}; one line: ${oneLine}; picked ${id}, its tab ${pressed ? pressed.getAttribute('aria-pressed') : 'not shown'}`
+          )
+          if (tabs) tabs.style.maxWidth = ''
+          const all = byText('.sessions-filter-tab', 'All')
+          if (all) await click(all)
+          await wait(200)
+        }
+
+        // Each row says what Claude last said, from its transcript, so you
+        // can tell what it's up to without opening it.
+        {
+          const ready = $('[data-record-id="fixture-rec-ready"]')
+          const said = ready?.querySelector('[data-last-said]')?.textContent ?? ''
+          await check(
+            "a session's row shows what Claude last said",
+            said.startsWith('Done. The worktree tests pass now.'),
+            `row ${ready ? 'found' : 'missing'}; said "${said}"`
+          )
+        }
+
+        // The house tab's number is the sessions finished since you last
+        // looked; clicking it shows just those.
+        {
+          const list =
+            await api.invoke<{ key: string; record: { id: string } | null }[]>('sessions:list')
+          const target = list.find((s) => s.record?.id === 'fixture-rec-errored') ?? list[0]
+          await api.invoke('session:markUnread', target.key)
+          await ctx.refreshSessions()
+          await until(() => Boolean($('[data-home-unread]')), 4000)
+          await click($('[data-home-unread]'))
+          await wait(400)
+          const rows = $$('.sessions-row')
+          await check(
+            "clicking the house tab's number shows only the unread sessions",
+            rows.length > 0 && rows.every((r) => r.classList.contains('sessions-row-unread')),
+            `${rows.length} rows, ${rows.filter((r) => r.classList.contains('sessions-row-unread')).length} unread; badge ${$('[data-home-unread]')?.textContent ?? 'none'}`
+          )
+          const b = byText('.sessions-filter-clear', 'Clear filters')
+          if (b) await click(b)
+          await wait(200)
+        }
+
         // Filters: several statuses at once, search, and the switches.
         {
           const rowStatuses = (): string[] =>
@@ -2017,7 +2106,14 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
                 r.querySelector<HTMLElement>('.sessions-row-badge [data-status]')?.dataset.status ??
                 '?'
             )
-          const tab = (id: string): HTMLElement | null => $(`[data-status-filter="${id}"]`)
+          // A status the row has no room for is behind "+N more": open it.
+          const tab = async (id: string): Promise<HTMLElement | null> => {
+            const shown = $<HTMLElement>(`.sessions-filter-tabs > [data-status-filter="${id}"]`)
+            if (shown) return shown
+            await click($('[data-status-more]'))
+            await until(() => Boolean($(`.cr-popover [data-status-filter="${id}"]`)), 1500)
+            return $<HTMLElement>(`.cr-popover [data-status-filter="${id}"]`)
+          }
           // The switches live in the Filter menu: open it, flip one, close it.
           const toggleFilter = async (id: string): Promise<void> => {
             await click($('[data-sessions-filter-button]'))
@@ -2034,12 +2130,22 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           await clear()
           const before = rowStatuses().length
 
-          await click(tab('working'))
-          await click(tab('errored'))
+          // A click switches: the second status replaces the first.
+          await click(await tab('working'))
+          await click(await tab('errored'))
+          await wait(200)
+          const switched = rowStatuses()
+          await check(
+            'clicking a status tab switches to it alone, not adding it',
+            switched.length > 0 && switched.every((st) => st === 'errored'),
+            switched.join(',')
+          )
+          // ⌘-click adds one.
+          await click(await tab('working'), ['meta'])
           await wait(200)
           const picked = rowStatuses()
           await check(
-            'two status tabs on at once show both statuses and nothing else',
+            '⌘-click adds a second status: both show, and nothing else',
             picked.length > 1 &&
               picked.length < before &&
               picked.every((st) => st === 'working' || st === 'errored') &&
@@ -2139,6 +2245,37 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             $('.settings-page-title')?.textContent === 'Appearance' && !$('.settings-hooks-state'),
             $('.settings-page-title')?.textContent ?? 'no title'
           )
+          // Interface size: the whole window grows, and ⌘− steps it back down.
+          // Clicks are placed in page pixels, which are off while the window
+          // is zoomed, so the size is put back through the setting, not a click.
+          {
+            const reset = async (): Promise<void> => {
+              await api.invoke('settings:set', { uiZoom: 1 })
+              await wait(300)
+            }
+            await reset()
+            const width = window.innerWidth
+            await click(byText('[aria-label="Interface size"] button', '125%'))
+            await until(() => window.innerWidth < width * 0.85, 2000)
+            const grown = window.innerWidth
+            await key('-', ['meta'])
+            await until(() => window.innerWidth > grown + 10, 2000)
+            const stepped = window.innerWidth
+            const saved = (await api.invoke<{ uiZoom?: number }>('settings:get')).uiZoom
+            await check(
+              'Interface size scales the window, and ⌘− steps it down one size',
+              Math.abs(grown - width / 1.25) < 4 &&
+                Math.abs(stepped - width / 1.1) < 4 &&
+                saved === 1.1,
+              `width ${width} → ${grown} at 125% → ${stepped} after ⌘−; saved ${saved}`
+            )
+            await reset()
+            await check(
+              'back at 100%, the window is its own size again',
+              Math.abs(window.innerWidth - width) < 2,
+              `width ${width}, now ${window.innerWidth}; saved ${(await api.invoke<{ uiZoom?: number }>('settings:get')).uiZoom}`
+            )
+          }
           const themeHeader = (): HTMLElement | null => $('.settings-page .cr-disclosure-header')
           await check(
             'the theme list starts closed, with the current theme named beside it',
@@ -2371,6 +2508,97 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       }
     },
     // ---- Scrolling a full-screen agent ----
+    // ---- Chat view ----
+    // The same session as a conversation: its transcript, Claude's prompts
+    // answered from cards, and the switch back to the terminal. The prompts
+    // are seeded as the hook server would hold them; the reply each answer
+    // sends is read back.
+    {
+      name: 'Chat view',
+      run: async () => {
+        await openSessionByTitle('Waiting session')
+        await click(byText('.session-detail-actions .cr-segmented__option', 'Chat'))
+        await until(() => Boolean($('[data-chat-view] [data-chat-you]')), 4000)
+        const you = $('[data-chat-you]')?.textContent ?? ''
+        const toolRows = $$<HTMLElement>('[data-chat-tools] .cr-chat-tool')
+        await check(
+          'Chat shows what you asked, Claude’s words, and its tool calls as lines',
+          you.includes('Clean up the worktrees') &&
+            $$('[data-chat-claude]').length === 2 &&
+            toolRows.length === 3,
+          `you "${you}", ${$$('[data-chat-claude]').length} replies, ${toolRows.length} tool rows`
+        )
+        await check(
+          'a failed tool call says so, and an edit shows lines added and removed',
+          toolRows[1]?.dataset.failed === 'true' &&
+            /failed/.test(toolRows[1]?.textContent ?? '') &&
+            /\+5.*−3/.test(toolRows[2]?.textContent ?? ''),
+          toolRows.map((r) => r.textContent).join(' | ')
+        )
+
+        await api.invoke('dev:seed-prompt', {
+          session_id: 'fixture-waiting',
+          tool_name: 'Bash',
+          tool_input: { command: 'git branch -D fixture/chat-check' }
+        })
+        await until(() => Boolean($('[data-prompt="permission"]')), 3000)
+        const card = $('[data-prompt="permission"]')
+        await check(
+          'a permission prompt shows as a card with the command, in the attention colour and words',
+          (card?.textContent ?? '').includes('git branch -D fixture/chat-check') &&
+            (card?.textContent ?? '').includes('Needs an answer'),
+          card?.textContent ?? 'no card'
+        )
+        await click(byText('[data-prompt="permission"] .cr-button', 'Allow'))
+        await until(() => !$('[data-prompt="permission"]'), 3000)
+        const allowed = String(await api.invoke('dev:last-prompt-reply'))
+        await check(
+          'Allow answers Claude and the card goes',
+          !$('[data-prompt="permission"]') && allowed.includes('"behavior":"allow"'),
+          allowed
+        )
+
+        await api.invoke('dev:seed-prompt', {
+          session_id: 'fixture-waiting',
+          tool_name: 'AskUserQuestion',
+          tool_input: {
+            questions: [
+              {
+                question: 'Which colour?',
+                header: 'Colour',
+                multiSelect: false,
+                options: [{ label: 'Red' }, { label: 'Blue' }]
+              }
+            ]
+          }
+        })
+        await until(() => Boolean($('[data-prompt="question"]')), 3000)
+        const answerButton = (): HTMLButtonElement | null =>
+          byText('[data-prompt="question"] .cr-button', 'Answer') as HTMLButtonElement | null
+        await check(
+          'Answer waits until every question has one',
+          answerButton()?.disabled === true,
+          `disabled ${answerButton()?.disabled}`
+        )
+        await click(byText('[data-prompt="question"] .cr-chat-option-label', 'Blue'))
+        await click(answerButton())
+        await until(() => !$('[data-prompt="question"]'), 3000)
+        const answered = String(await api.invoke('dev:last-prompt-reply'))
+        await check(
+          'picking an option answers Claude’s question with it',
+          answered.includes('"answers":{"Which colour?":"Blue"}'),
+          answered
+        )
+
+        await click(byText('.session-detail-actions .cr-segmented__option', 'Terminal'))
+        await until(() => Boolean($('.xterm-screen')), 6000)
+        await check(
+          'Terminal brings the terminal back',
+          Boolean($('.xterm-screen')) && !$('[data-chat-view]'),
+          $('[data-chat-view]') ? 'chat still showing' : 'no terminal'
+        )
+      }
+    },
     {
       name: 'Scrolling a full-screen agent',
       run: async () => {
@@ -2467,14 +2695,17 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           // started when the field opened; its title lands cleaned up,
           // selected and focused, so Enter keeps it and Escape still cancels.
           await click(byText('.session-detail-rename-form button', 'Suggest'))
-          await until(
-            () =>
-              ($<HTMLInputElement>('.session-detail-header input')?.value ?? '').startsWith(
-                'Suggested:'
-              ),
-            6000
-          )
-          await wait(100)
+          // The focus and select-all land a frame after the text, and frames
+          // wait in a background window: wait for all three.
+          await until(() => {
+            const f = $<HTMLInputElement>('.session-detail-header input')
+            return (
+              (f?.value ?? '').startsWith('Suggested:') &&
+              document.activeElement === f &&
+              f?.selectionStart === 0 &&
+              f?.selectionEnd === f?.value.length
+            )
+          }, 6000)
           {
             const f = $<HTMLInputElement>('.session-detail-header input')
             await check(
@@ -2791,8 +3022,21 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           await key('b', ['meta'])
           await check('⌘B still shows and hides the sidebar', toggled && rail() === railBefore)
         }
+        // A background window draws late, so wait for the bar itself; and
+        // note whether the key reached the page, so a failure says which.
+        let sawFindKey = false
+        const seeFind = (e: KeyboardEvent): void => {
+          if (e.metaKey && e.key.toLowerCase() === 'f') sawFindKey = true
+        }
+        window.addEventListener('keydown', seeFind, true)
         await key('f', ['meta'])
-        await check('⌘F opens find in the terminal', Boolean($('.terminal-search')))
+        await until(() => Boolean($('.terminal-search')), 2000)
+        window.removeEventListener('keydown', seeFind, true)
+        await check(
+          '⌘F opens find in the terminal',
+          Boolean($('.terminal-search')),
+          `key reached the page: ${sawFindKey}; terminal mounted: ${Boolean($('.terminal-surface'))}`
+        )
         await typeText('feature')
         await until(() => /\d+ of \d+/.test($('.terminal-search-count')?.textContent ?? ''), 5000)
         const count = $('.terminal-search-count')?.textContent ?? ''
@@ -3113,7 +3357,17 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             /carrying over/.test($('[data-cycle-strip="next"]')?.textContent ?? ''),
           $('[data-cycle-strip="next"]')?.textContent?.slice(0, 160) ?? 'no strip'
         )
-        const before = noEstimate()
+        // Read the count once the strip has settled: a ticket an earlier check
+        // created can still be arriving, and a mid-refresh read was off by one.
+        let before = -1
+        for (let i = 0; i < 20; i++) {
+          const a = noEstimate()
+          await wait(250)
+          if (a > 0 && a === noEstimate()) {
+            before = a
+            break
+          }
+        }
         await dragTo('TEAM-202', 'sprint-2')
         await check(
           'dragging a backlog ticket into the next cycle moves it, and its load updates',
@@ -3756,6 +4010,65 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         await click($('[aria-label="Close tab (⌘W)"]'))
         await wait(300)
 
+        // A second terminal, then both side by side and back to one: tmux's
+        // own zoom toggle, read back from tmux.
+        {
+          await openSessionByTitle('Working session')
+          const list =
+            await api.invoke<{ record: { id: string; tmuxPaneId: string | null } | null }[]>(
+              'sessions:list'
+            )
+          const pane = list.find((x) => x.record?.id === 'fixture-rec-working')?.record?.tmuxPaneId
+          const panes = async (): Promise<{ zoomed: boolean }[]> =>
+            pane ? api.invoke('terminal:listWindowPanes', pane) : []
+          await click($('[aria-label="Add terminal"]'))
+          await until(() => Boolean($('[data-side-by-side]')), 4000)
+          await click($('[data-side-by-side]'))
+          await until(() => $('[data-side-by-side]')?.dataset.sideBySide === 'on', 3000)
+          const both = await panes()
+          await click($('[data-side-by-side]'))
+          await until(() => $('[data-side-by-side]')?.dataset.sideBySide === 'off', 3000)
+          const one = await panes()
+          await check(
+            'two terminals show side by side, and back to one at a time',
+            both.length === 2 && !both[0].zoomed && one.length === 2 && one[0].zoomed,
+            `side by side: ${JSON.stringify(both)}; one: ${JSON.stringify(one)}`
+          )
+          await click($('[aria-label="Close second terminal"]'))
+          await until(() => Boolean($('[aria-label="Add terminal"]')), 3000)
+          await click($('[aria-label="Close tab (⌘W)"]'))
+          await wait(300)
+        }
+
+        // A running session whose branch has work but no PR: the menu asks
+        // Claude to open one, and the words land in its terminal.
+        {
+          await openSessionByTitle('Working session')
+          await click($('[aria-label="More actions"]'))
+          const ask = (): HTMLElement | null | undefined =>
+            byText('.session-detail-menu button', 'Ask Claude to open a pull request')
+          await until(() => Boolean(ask()), 3000)
+          const items = $$('.session-detail-menu button').map((b) => b.textContent ?? '')
+          await click(ask())
+          const list =
+            await api.invoke<{ record: { id: string; tmuxPaneId: string | null } | null }[]>(
+              'sessions:list'
+            )
+          const pane = list.find((x) => x.record?.id === 'fixture-rec-working')?.record?.tmuxPaneId
+          let screen = ''
+          for (let i = 0; i < 20 && !/Open a pull request for this branch/.test(screen); i++) {
+            await wait(300)
+            screen = pane ? await api.invoke<string>('session:pane', pane, 200) : ''
+          }
+          await check(
+            'a running session with no PR can ask Claude to open one, in its terminal',
+            /Open a pull request for this branch/.test(screen),
+            `menu: ${items.join(' | ')}; pane ${pane ?? 'none'}`
+          )
+          await click($('[aria-label="Close tab (⌘W)"]'))
+          await wait(300)
+        }
+
         // Hand-off note: header overflow menu -> dialog with the note built from
         // the branch's own history -> Post to a linked ticket, or Copy when
         // unlinked. Linked and unlinked in the same block, so this leaves the
@@ -4183,6 +4496,66 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
 
           await click(byText('.cr-modal button', 'Cancel'))
           await until(() => !$('.cr-modal'), 2000)
+        }
+
+        // A done session's worktree can be removed and the session kept: it
+        // stays done, marked as having no worktree, and Resume puts the
+        // worktree back at the same path from its branch.
+        {
+          type Created = {
+            ok: boolean
+            error?: string
+            record?: { id: string; worktreePath: string }
+          }
+          type Rec = {
+            id: string
+            archivedAt: number | null
+            deletedAt?: number | null
+            worktreeRemovedAt?: number | null
+          }
+          type Cand = { path: string; hasLiveSession: boolean; liveSessionsDone: boolean }
+          const run = Date.now().toString(36)
+          const made = await api.invoke<Created>('sessions:create', {
+            creationId: crypto.randomUUID(),
+            projectId: 'fixture-project',
+            branch: `fixture/shelve-${run}`,
+            basedOn: 'new',
+            title: `shelve-${run}`
+          })
+          const id = made.record?.id ?? ''
+          const path = made.record?.worktreePath ?? ''
+          await api.invoke('sessions:archive', id)
+          const removed = await api.invoke<{ removed: string[]; failed: { reason: string }[] }>(
+            'projects:removeWorktrees',
+            'fixture-project',
+            [path],
+            false
+          )
+          const recordOf = async (): Promise<Rec | undefined> =>
+            (await api.invoke<Rec[]>('sessions:recordsForProject', 'fixture-project')).find(
+              (s) => s.id === id
+            )
+          const kept = await recordOf()
+          await check(
+            "removing a done session's worktree keeps the session, done, with no worktree",
+            removed.removed.includes(path) &&
+              Boolean(kept?.archivedAt) &&
+              !kept?.deletedAt &&
+              Boolean(kept?.worktreeRemovedAt),
+            `${made.error ?? ''} removed ${removed.removed.length}, failed ${removed.failed
+              .map((f) => f.reason)
+              .join(', ')}; record ${JSON.stringify(kept)}`
+          )
+          await api.invoke('sessions:resume', id)
+          const listed = await api.invoke<Cand[]>('projects:worktreesForCleanup', 'fixture-project')
+          const back = await recordOf()
+          await check(
+            'Resume rebuilds its worktree at the same path',
+            listed.some((w) => w.path === path) && !back?.worktreeRemovedAt,
+            `worktree listed: ${listed.some((w) => w.path === path)}; record ${JSON.stringify(back)}`
+          )
+          await api.invoke('sessions:delete', id, { removeWorktree: true, discardChanges: true })
+          await ctx.refreshSessions()
         }
 
         // Step 3 — pin a session from Home's recent list: it should jump to the
@@ -4646,7 +5019,13 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         await until(() => Boolean(rowField()), 3000)
         const rowBefore = rowField()?.value ?? ''
         await click(byText('.sessions-row-rename-form button', 'Suggest'))
-        await until(() => (rowField()?.value ?? '').startsWith('Suggested:'), 6000)
+        // Focus lands a frame after the text, and frames wait in a background window.
+        await until(
+          () =>
+            (rowField()?.value ?? '').startsWith('Suggested:') &&
+            document.activeElement === rowField(),
+          6000
+        )
         await check(
           'a list row suggests a name in place',
           rowField()?.value === `Suggested: ${rowBefore}` && document.activeElement === rowField(),
@@ -4914,12 +5293,21 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             const r = btn.getBoundingClientRect()
             const at = { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
             await input({ type: 'mouseMove', ...at })
-            const shown = await until(() => Boolean($('.cr-tooltip')), 1500)
+            let shown = await until(() => Boolean($('.cr-tooltip')), 1500)
+            // macOS sends no hover to a window that isn't frontmost, and
+            // something else on the machine can take focus mid-run. What's
+            // checked here is where the tooltip sits, so open it with the
+            // event a real hover sends.
+            if (!shown && !document.hasFocus()) {
+              btn.closest('.cr-tooltip-trigger')?.dispatchEvent(new MouseEvent('mouseenter'))
+              shown = await until(() => Boolean($('.cr-tooltip')), 1500)
+            }
             const tip = $('.cr-tooltip')?.getBoundingClientRect()
             if (!shown || !tip) misplaced.push(`${label}: no tooltip`)
             else if (Math.abs(tip.left + tip.width / 2 - at.x) > 2)
               misplaced.push(`${label}: ${Math.round(tip.left + tip.width / 2 - at.x)}px off`)
             await input({ type: 'mouseMove', x: 5, y: Math.round(window.innerHeight / 2) })
+            btn.closest('.cr-tooltip-trigger')?.dispatchEvent(new MouseEvent('mouseleave'))
             await until(() => !$('.cr-tooltip'), 1000)
           }
           await check(

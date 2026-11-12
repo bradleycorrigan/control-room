@@ -140,3 +140,9 @@
 .wt-cleanup-row-age--old {
   color: var(--status-attention);
 }
+
+/* A done session in it: removing the worktree stops Claude and keeps the session. */
+.wt-cleanup-row-kept {
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}

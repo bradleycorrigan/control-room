@@ -21,6 +21,8 @@ import {
   killWindow,
   splitWindow,
   focusPane,
+  showBothPanes,
+  selectPaneOnly,
   listWindowPanes,
   killPane
 } from './exec/tmux'
@@ -140,6 +142,7 @@ import {
   createSession,
   deleteSession,
   retireSessionsInWorktree,
+  restoreWorktree,
   type CreateSessionInput,
   type DeleteSessionInput
 } from './engine/sessions'
@@ -737,6 +740,8 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('settings:set', async (_evt, patch: Partial<AppSettings>) => {
     const next = updateSettings(patch)
+    if (patch.uiZoom)
+      for (const win of BrowserWindow.getAllWindows()) win.webContents.setZoomFactor(patch.uiZoom)
     // Broadcast, because settings are read by components that mount long
     // before Settings is opened. The terminal's text size is the case that
     // forced this: it read the value once on mount, so changing it did
@@ -1439,6 +1444,16 @@ export function registerIpcHandlers(): void {
     return focusPane(paneId)
   })
 
+  // Both panes side by side, or one at a time (tmux's zoom toggle).
+  ipcMain.handle('terminal:showBoth', async (_evt, paneId: string, both: boolean) => {
+    return showBothPanes(paneId, both === true)
+  })
+
+  // Side by side, the tabs only move where typing goes.
+  ipcMain.handle('terminal:selectPane', async (_evt, paneId: string) => {
+    return selectPaneOnly(paneId)
+  })
+
   ipcMain.handle('terminal:closePane', async (_evt, paneId: string) => {
     return killPane(paneId)
   })
@@ -1526,6 +1541,12 @@ export function registerIpcHandlers(): void {
     if (record.deletedAt) {
       return { ok: false, error: 'this session was deleted: its worktree no longer exists' }
     }
+    // Its worktree was removed to clean up: put it back first.
+    if (!existsSync(record.worktreePath)) {
+      const restored = await restoreWorktree(id)
+      if (!restored.ok)
+        return { ok: false, error: `Could not rebuild its worktree: ${restored.error}` }
+    }
     // Archived is where a resumable session waits, so Resume is the way out
     // of it — refusing here made the archive a dead end and forced the UI to
     // unarchive first, as a separate step that meant nothing on its own.
@@ -1596,8 +1617,13 @@ export function registerIpcHandlers(): void {
     const state = getState()
     const record = state.sessions.find((s) => s.id === id)
     if (!record) return { ok: false, error: 'session not found' }
-    if (record.deletedAt || !existsSync(record.worktreePath)) {
+    if (record.deletedAt) {
       return { ok: false, error: 'its worktree no longer exists, so there is nowhere to start it' }
+    }
+    if (!existsSync(record.worktreePath)) {
+      const restored = await restoreWorktree(id)
+      if (!restored.ok)
+        return { ok: false, error: `Could not rebuild its worktree: ${restored.error}` }
     }
     const project = state.projects.find((p) => p.id === record.projectId)
     let command: string

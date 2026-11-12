@@ -23,6 +23,7 @@
 }
 
 .backlog-title {
+  font-family: var(--font-display);
   margin: 0;
   font-size: var(--text-display-size);
   line-height: var(--text-display-line);
@@ -533,7 +534,8 @@
 /* ---- Connect Jira ---- */
 
 .backlog-setup {
-  max-width: 480px;
+  container-type: inline-size;
+  max-width: 760px;
   margin: var(--space-48) auto 0;
   display: flex;
   flex-direction: column;
@@ -3569,4 +3571,31 @@
   .backlog-create--drafted .backlog-field--draftable :is(input, textarea, button) {
     animation: none;
   }
+}
+
+/* ---- Quieter list chrome: what a row says first is its title ----------
+   Group headers are a light band and a hairline, not a solid bar. On a row
+   the epic stays a coloured pill (the detail people scan for); cycle,
+   estimate and type are plain words, so the right-hand side stops being a
+   row of equal-weight boxes. */
+.backlog-group-title {
+  background: color-mix(in srgb, var(--surface) 45%, transparent);
+  box-shadow: inset 0 -1px 0 var(--border);
+  border-radius: 0;
+}
+
+.backlog-group-title .backlog-group-count {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.backlog-row .backlog-pills > .backlog-pill:not(.backlog-pill--accent):not(.backlog-pill--status),
+.backlog-row
+  .backlog-pills
+  > .backlog-edit.backlog-pill:not(.backlog-pill--accent):not(.backlog-pill--status) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  padding: 0 var(--space-4);
+  color: var(--text-muted);
 }

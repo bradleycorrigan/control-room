@@ -25,6 +25,7 @@ import {
 } from './hooks-server'
 import { isUnread, lastActivityAt, migrateSeen } from './seen'
 import { getTranscriptTitle } from '../exec/transcripts'
+import { lastAssistantLine } from '../exec/handoffNote'
 import { preStartPaneFor, preStartStatus } from './pre-start'
 import type { LiveSession, SessionRecord } from '../store/types'
 
@@ -823,6 +824,11 @@ export async function discoverLiveSessions(): Promise<LiveSession[]> {
 
   for (const paneId of preStartPanes.keys()) {
     if (!preStartSeen.has(paneId)) preStartPanes.delete(paneId)
+  }
+
+  for (const s of live) {
+    const id = s.claudeSessionId ?? s.record?.claudeSessionId
+    s.lastSaid = lastAssistantLine(id ?? null)
   }
 
   return live

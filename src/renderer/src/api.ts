@@ -802,6 +802,18 @@ export function closeTerminalPane(paneId: string): Promise<boolean> {
 export interface TerminalWindowPane {
   paneId: string
   active: boolean
+  /** One pane full size, not both side by side. */
+  zoomed: boolean
+}
+
+/** Both panes side by side (`both`), or one at a time. */
+export function showBothTerminalPanes(paneId: string, both: boolean): Promise<boolean> {
+  return window.api.invoke<boolean>('terminal:showBoth', paneId, both)
+}
+
+/** Side by side: moves typing to `paneId` without changing the layout. */
+export function selectTerminalPane(paneId: string): Promise<boolean> {
+  return window.api.invoke<boolean>('terminal:selectPane', paneId)
 }
 
 // Every pane sharing `paneId`'s window — used on mount (and while polling)

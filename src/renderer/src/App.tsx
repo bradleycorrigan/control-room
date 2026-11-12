@@ -160,6 +160,8 @@ function App(): React.JSX.Element {
   const [shotProjectTab, setShotProjectTab] = useState<string | undefined>(undefined)
   const [shotHistoryTab, setShotHistoryTab] = useState<'recent' | 'cli' | undefined>(undefined)
   const [gridView, setGridView] = useState(false)
+  // Screenshots only (the jira-setup shot): Tickets shows its Connect Jira form.
+  const [jiraSetupPreview, setJiraSetupPreview] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [keyboardHelpOpen, setKeyboardHelpOpen] = useState(false)
   const { projects, refresh: refreshProjects } = useProjects()
@@ -818,6 +820,12 @@ function App(): React.JSX.Element {
     })
     // Backlog with the sample issues; -start presses Start session on the
     // first one and leaves the pre-filled composer open.
+    registerShotScreen('jira-setup', async () => {
+      setPaletteOpen(false)
+      setJiraSetupPreview(true)
+      setView('backlog')
+      await new Promise((r) => setTimeout(r, 800))
+    })
     registerShotScreen('backlog', async () => {
       setPaletteOpen(false)
       setView('backlog')
@@ -1020,6 +1028,48 @@ function App(): React.JSX.Element {
       const picks = list.filter((s) => s.record)
       setOpenTabs(picks.map((s) => s.key))
       setOpenSessionKey(picks[picks.length - 1]?.key ?? null)
+      await new Promise((r) => setTimeout(r, 800))
+    })
+    // The chat view on the waiting session, with a question and a permission
+    // prompt held open as the hook would.
+    registerShotScreen('session-chat', async () => {
+      try {
+        sessionStorage.setItem('cr-session-view', 'chat')
+      } catch {
+        // shot runs have storage; nothing to do without it
+      }
+      await window.api.invoke('dev:seed-prompt', {
+        session_id: 'fixture-waiting',
+        tool_name: 'AskUserQuestion',
+        tool_input: {
+          questions: [
+            {
+              question: 'Delete the branches whose pull requests were closed without merging?',
+              header: 'Closed PRs',
+              multiSelect: false,
+              options: [
+                {
+                  label: 'Only merged ones',
+                  description: 'Leave closed, unmerged branches alone.'
+                },
+                { label: 'Closed ones too', description: 'Delete every branch whose PR is closed.' }
+              ]
+            }
+          ]
+        }
+      })
+      await window.api.invoke('dev:seed-prompt', {
+        session_id: 'fixture-waiting',
+        tool_name: 'Bash',
+        tool_input: { command: 'git branch -D fixture/old-cleanup' },
+        permission_suggestions: [
+          { type: 'addRules', rules: [{ toolName: 'Bash' }], behavior: 'allow' }
+        ]
+      })
+      setView('sessions')
+      setPaletteOpen(false)
+      const list = sessions.length > 0 ? sessions : await listSessions()
+      setOpenSessionKey(list.find((s) => s.claudeSessionId === 'fixture-waiting')?.key ?? null)
       await new Promise((r) => setTimeout(r, 800))
     })
     registerShotScreen('session-detail', async () => {
@@ -2041,6 +2091,20 @@ function App(): React.JSX.Element {
         setPaletteOpen(false)
       })
     }
+    // Appearance with the theme picker open.
+    registerShotScreen('settings-themes', async () => {
+      try {
+        localStorage.setItem('settings-section', JSON.stringify('appearance'))
+      } catch {
+        // Blocked storage: the shot shows whichever section it has.
+      }
+      setView('settings')
+      setPaletteOpen(false)
+      await new Promise((r) => setTimeout(r, 300))
+      const toggle = document.querySelector<HTMLElement>('.settings-item--disclosure button')
+      if (toggle?.getAttribute('aria-expanded') !== 'true') toggle?.click()
+      await new Promise((r) => setTimeout(r, 300))
+    })
     registerShotScreen('command-palette', () => {
       setView('sessions')
       setOpenSessionKey(null)
@@ -2120,6 +2184,16 @@ function App(): React.JSX.Element {
   const handleShowUnread = useCallback(() => {
     setUnreadOnly(true)
     setStatusFilter([])
+    setSelectedProjectId(null)
+    setOpenSessionKey(null)
+    setGridView(false)
+    setView('sessions')
+  }, [setUnreadOnly, setStatusFilter])
+
+  // The sidebar's "N sessions need you": the list, filtered to them.
+  const handleShowNeedsYou = useCallback(() => {
+    setUnreadOnly(false)
+    setStatusFilter(['needs_attention', 'your_turn'])
     setSelectedProjectId(null)
     setOpenSessionKey(null)
     setGridView(false)
@@ -2248,6 +2322,7 @@ function App(): React.JSX.Element {
               onNewSession={() => setShowNewSessionForm(true)}
               onOpenSession={openSessionFrom}
               openSessionKey={openSessionKey}
+              onShowNeedsYou={handleShowNeedsYou}
             />
             <div
               className="sidebar-resize-handle"
@@ -2299,6 +2374,7 @@ function App(): React.JSX.Element {
               />
             ) : view === 'backlog' ? (
               <BacklogScreen
+                previewSetup={jiraSetupPreview}
                 sidebarHidden={sidebarHidden}
                 sidebarWidth={sidebarWidth}
                 onSidebarResizeStart={startSidebarResize}
@@ -2351,6 +2427,7 @@ function App(): React.JSX.Element {
                   activeKey={openSession?.key ?? null}
                   homeUnread={sessions.filter((s) => s.unread).length}
                   onHome={goToSessionsList}
+                  onShowUnread={handleShowUnread}
                   onSelect={openSessionByKey}
                   onClose={closeTab}
                   onCloseOthers={closeOtherTabs}

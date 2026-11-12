@@ -1,4 +1,6 @@
 import './assets/base.css'
+// Bundled with the app (Electron is offline): the face for page titles only.
+import '@fontsource-variable/funnel-display/wght.css'
 import './theme/tokens.css'
 import './styles.css'
 import './components/app-shell.css'

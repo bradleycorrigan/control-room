@@ -96,8 +96,14 @@
   --layer-toast: 500; /* reports on everything above, so it sits above them */
   --layer-tooltip: 600; /* transient, explains what you are already pointing at */
 
-  /* Electron is offline — no Google Fonts. System stacks only. */
+  /* Electron is offline — no Google Fonts. System stacks, plus one bundled
+     face (main.tsx imports it) for page titles and empty states: never body
+     text, menus or anything dense. */
   --font-ui: -apple-system, 'SF Pro Text', system-ui, sans-serif;
+  --font-display: 'Funnel Display Variable', var(--font-ui);
+  /* A pixel face for the status words only ("needs an answer"). Drawn on an
+     11px grid, so it is used at 11px and nowhere dense. */
+  --font-pixel: 'Departure Mono', var(--font-mono);
   /* Menlo first, deliberately. Claude Code's banner is drawn with quadrant block
      glyphs (U+259B/259C/259D) and SF Mono is not installed on stock macOS —
      CTFontCreateWithName("SFMono-Regular") resolves to Helvetica here — so
@@ -184,16 +190,20 @@
   --text-stat-line: 28px;
   --text-stat-weight: 600;
 
-  /* Section 1.9 — motion. */
+  /* Section 1.9 — motion. One curve for everything: fast off the mark, long
+     soft landing, so a menu is there the moment you click and settles after. */
   --motion-fast: 120ms;
   --motion-medium: 200ms;
-  --motion-easing: ease-out;
+  /* A menu, popover or dialog appearing. */
+  --motion-enter: 180ms;
+  --motion-easing: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-fast: 0ms;
     --motion-medium: 0ms;
+    --motion-enter: 0ms;
   }
 }
 

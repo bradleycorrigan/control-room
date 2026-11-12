@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
 import type { ContextWindowUsage } from '../../../main/exec/transcripts'
 import TerminalFrame from '../components/TerminalFrame'
+import ChatView from '../components/ChatView'
 import DiffOverlay from '../components/DiffOverlay'
 import ShipPanel from '../components/ShipPanel'
 import ContextWindowPanel from '../components/ContextWindowPanel'
@@ -15,7 +16,8 @@ import {
   Badge,
   Pill,
   EmptyState,
-  Popover
+  Popover,
+  SegmentedControl
 } from '../components/primitives'
 import './session-detail.css'
 import { accentByCursorThemeName, themes } from '../theme/themes'
@@ -40,7 +42,8 @@ import {
   getSessionArtifacts,
   type TranscriptArtifact,
   draftTicketFromSession,
-  type TicketDraftResult
+  type TicketDraftResult,
+  askClaude
 } from '../api-sessions'
 import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
 import PrChip from '../components/PrChip'
@@ -243,6 +246,26 @@ export default function SessionDetail({
   // re-subscribing on every focus change.
   const terminalFocusedRef = useRef(false)
   const paneId = session.tmux?.paneId ?? null
+  // Chat or Terminal: the same session either way. Remembered across
+  // sessions and launches. A check or screenshot run keeps it to that launch,
+  // so one run's choice never decides what the next run's checks see.
+  const viewStore = (): Storage => (window.api.isShotMode ? sessionStorage : localStorage)
+  const [paneView, setPaneView] = useState<'chat' | 'terminal'>(() => {
+    try {
+      return viewStore().getItem('cr-session-view') === 'chat' ? 'chat' : 'terminal'
+    } catch {
+      return 'terminal'
+    }
+  })
+  const choosePaneView = (v: 'chat' | 'terminal'): void => {
+    setPaneView(v)
+    try {
+      viewStore().setItem('cr-session-view', v)
+    } catch {
+      // private storage: the choice lasts until the window closes
+    }
+  }
+  const canChat = !!paneId && !!session.tmux && !!session.claudeSessionId
   const accent = useMemo(() => accentForSession(session), [session])
   const terminalStatus = terminalStatusOf(session)
   // Ticks so `startingUp` below stops being true once the window has passed,
@@ -355,7 +378,8 @@ export default function SessionDetail({
 
   // This branch's own pull request, if it has one. Only looked for once the
   // branch has commits: before that there's nothing a PR could hold.
-  const [branchPr, setBranchPr] = useState<PullRequestInfo | null>(null)
+  // undefined until asked; null once we know there isn't one.
+  const [branchPr, setBranchPr] = useState<PullRequestInfo | null | undefined>(undefined)
   useEffect(() => {
     if (!recordId || !hasCommitsAhead) return
     let cancelled = false
@@ -366,6 +390,28 @@ export default function SessionDetail({
       cancelled = true
     }
   }, [recordId, hasCommitsAhead, session.status, session.activityAt, shipCheck])
+  // Opening a PR is Claude's job: while it's running here and the branch has
+  // work but no PR, the menu asks it to, in so many words.
+  const askPrItem =
+    session.record && session.tmux && hasCommitsAhead && branchPr === null
+      ? [
+          {
+            label: 'Ask Claude to open a pull request',
+            icon: 'GitPullRequest' as const,
+            group: 'pr',
+            onClick: () => {
+              const id = session.record!.id
+              void askClaude(id, 'open-pr').then((r) =>
+                pushToast?.(
+                  r.ok
+                    ? 'Asked Claude to open a pull request.'
+                    : (r.error ?? 'Couldn’t ask Claude.')
+                )
+              )
+            }
+          }
+        ]
+      : []
   // Every pill: the branch's PR first, then the ones the agent opened
   // elsewhere. The branch's PR can be in both lists; it keeps its own pill.
   const otherPrs = linkedPrs.filter((pr) => pr.url !== branchPr?.url)
@@ -802,6 +848,17 @@ export default function SessionDetail({
             picker) beside a quiet cluster of secondary ones. 28px: this row
             sits inside the session header, not the app's own title bar. */}
         <div className="session-detail-actions">
+          {canChat && (
+            <SegmentedControl
+              aria-label="Show the session as"
+              options={[
+                { value: 'chat', label: 'Chat' },
+                { value: 'terminal', label: 'Terminal' }
+              ]}
+              value={paneView}
+              onChange={choosePaneView}
+            />
+          )}
           <Pill
             size={28}
             tone="var(--text-muted)"
@@ -866,7 +923,10 @@ export default function SessionDetail({
               different orders, so what you could do to a session depended on
               where you happened to be looking at it. Rename stays in place
               here — there is a title on screen to turn into a field. */}
-          <MenuItems items={sessionActions(session)} onPicked={() => setMenuOpen(false)} />
+          <MenuItems
+            items={[...sessionActions(session), ...askPrItem]}
+            onPicked={() => setMenuOpen(false)}
+          />
         </Popover>
       </div>
 
@@ -913,7 +973,13 @@ export default function SessionDetail({
         </div>
       )}
 
-      {paneId && session.tmux ? (
+      {canChat && paneView === 'chat' ? (
+        <ChatView
+          claudeSessionId={session.claudeSessionId}
+          paneId={paneId}
+          working={session.status === 'working'}
+        />
+      ) : paneId && session.tmux ? (
         <TerminalFrame
           tmuxSessionName={session.tmux.sessionName}
           paneId={paneId}

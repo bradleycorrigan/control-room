@@ -9,7 +9,7 @@ import {
   uninstallHooks,
   type HooksStatus
 } from '../api'
-import type { AppSettings } from '../../../main/store/types'
+import { UI_SIZES, type AppSettings } from '../../../main/store/types'
 import {
   Button,
   Card,
@@ -23,7 +23,7 @@ import { DEFAULT_DEV_CONTAINER_RUN, DEFAULT_DEV_CONTAINER_UP } from '../../../ma
 import { TERMINAL_FONT_SIZES } from '../components/Terminal'
 import { useStoredState } from '../state/useStoredState'
 import type { ThemeController } from '../theme/ThemeProvider'
-import { themes } from '../theme/themes'
+import { themes, type Theme } from '../theme/themes'
 import './settings.css'
 
 interface SettingsScreenProps {
@@ -308,6 +308,20 @@ export default function SettingsScreen({ theme }: SettingsScreenProps): React.JS
             <>
               {settings && (
                 <Card className="settings-group">
+                  <Item
+                    label="Interface size"
+                    note="Everything in the window, the terminal too. ⌘+ and ⌘− change it as well."
+                  >
+                    <SegmentedControl
+                      value={nearestUiSize(settings.uiZoom ?? 1)}
+                      onChange={(v) => void patchSettings({ uiZoom: v })}
+                      aria-label="Interface size"
+                      options={UI_SIZES.map((size) => ({
+                        value: size,
+                        label: `${Math.round(size * 100)}%`
+                      }))}
+                    />
+                  </Item>
                   <Item label="Terminal text size">
                     <SegmentedControl
                       value={settings.terminalFontSize}
@@ -368,59 +382,27 @@ export default function SettingsScreen({ theme }: SettingsScreenProps): React.JS
                     open={themesOpen}
                     onToggle={setThemesOpen}
                   >
-                    <div className="theme-swatch-list" role="radiogroup" aria-label="Theme">
-                      {themes.map((t) => {
-                        const selected = theme.themeId === t.id
-                        return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected}
-                            disabled={theme.themeFollowsSystem}
-                            className={`theme-swatch-row${selected ? ' theme-swatch-row-selected' : ''}`}
-                            style={{
-                              background: t.surface,
-                              borderColor: selected ? t.accent : t.border,
-                              boxShadow: selected ? `inset 0 0 0 1px ${t.accent}` : undefined,
-                              color: t.text
-                            }}
-                            onClick={() => theme.setTheme(t.id)}
-                            title={t.name}
-                          >
-                            <span className="theme-swatch-chip" style={{ background: t.bg }} />
-                            <span className="theme-swatch-chip" style={{ background: t.surface }} />
-                            <span
-                              className="theme-swatch-chip theme-swatch-chip-text"
-                              style={{ background: t.text }}
-                            />
-                            <span className="theme-swatch-chip" style={{ background: t.accent }} />
-                            <span className="theme-swatch-dots">
-                              <span
-                                className="theme-swatch-dot"
-                                style={{ background: t.status.working }}
-                              />
-                              <span
-                                className="theme-swatch-dot"
-                                style={{ background: t.status.attention }}
-                              />
-                              <span
-                                className="theme-swatch-dot"
-                                style={{ background: t.status.done }}
-                              />
-                              <span
-                                className="theme-swatch-dot"
-                                style={{ background: t.status.idle }}
-                              />
-                              <span
-                                className="theme-swatch-dot"
-                                style={{ background: t.status.error }}
-                              />
-                            </span>
-                            <span className="theme-swatch-name">{t.name}</span>
-                          </button>
-                        )
-                      })}
+                    <div className="theme-card-list" role="radiogroup" aria-label="Theme">
+                      {(['dark', 'light'] as const).map((kind) => (
+                        <div key={kind} className="theme-card-group">
+                          <h3 className="theme-card-group-title">
+                            {kind === 'dark' ? 'Dark' : 'Light'}
+                          </h3>
+                          <div className="theme-card-grid">
+                            {themes
+                              .filter((t) => t.isDark === (kind === 'dark'))
+                              .map((t) => (
+                                <ThemeCard
+                                  key={t.id}
+                                  theme={t}
+                                  selected={theme.themeId === t.id}
+                                  disabled={theme.themeFollowsSystem}
+                                  onPick={() => theme.setTheme(t.id)}
+                                />
+                              ))}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </Disclosure>
                 </div>
@@ -611,4 +593,76 @@ function CommandSetting({
       </span>
     </div>
   )
+}
+
+/**
+ * One theme, as a card: a small sketch of the app in its own colours (the
+ * page, the sidebar, three sessions with their status dots, the accent
+ * button), then its name and its five status colours. The colours are the
+ * theme's data, so they're set inline: this is the one place a theme is
+ * drawn without being applied.
+ */
+function ThemeCard({
+  theme: t,
+  selected,
+  disabled,
+  onPick
+}: {
+  theme: Theme
+  selected: boolean
+  disabled: boolean
+  onPick: () => void
+}): React.JSX.Element {
+  const line = (width: string, colour: string): React.JSX.Element => (
+    <span className="theme-card-line" style={{ width, background: colour }} />
+  )
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      disabled={disabled}
+      className={`theme-card${selected ? ' theme-card--selected' : ''}`}
+      style={{
+        background: t.surface,
+        borderColor: selected ? t.accent : t.border,
+        boxShadow: selected ? `inset 0 0 0 1px ${t.accent}` : undefined,
+        color: t.text
+      }}
+      onClick={onPick}
+      title={t.name}
+    >
+      <span className="theme-card-preview" style={{ background: t.bg, borderColor: t.border }}>
+        <span className="theme-card-side" style={{ background: t.bgSunken, borderColor: t.border }}>
+          {line('70%', t.textMuted)}
+          {line('50%', t.textFaint)}
+          {line('60%', t.textFaint)}
+        </span>
+        <span className="theme-card-main">
+          {[t.status.attention, t.status.working, t.status.done].map((dot, i) => (
+            <span key={i} className="theme-card-row" style={{ background: t.surface }}>
+              <span className="theme-card-dot" style={{ background: dot }} />
+              {line(['62%', '48%', '56%'][i], t.text)}
+            </span>
+          ))}
+          <span className="theme-card-button" style={{ background: t.accent }} />
+        </span>
+      </span>
+      <span className="theme-card-foot">
+        <span className="theme-card-name">{t.name}</span>
+        <span className="theme-swatch-dots">
+          {[t.status.working, t.status.attention, t.status.done, t.status.idle, t.status.error].map(
+            (c, i) => (
+              <span key={i} className="theme-swatch-dot" style={{ background: c }} />
+            )
+          )}
+        </span>
+      </span>
+    </button>
+  )
+}
+
+/** The listed size nearest a zoom factor (main's uiZoom.ts does the same). */
+function nearestUiSize(factor: number): number {
+  return UI_SIZES.reduce((best, s) => (Math.abs(s - factor) < Math.abs(best - factor) ? s : best))
 }

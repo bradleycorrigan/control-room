@@ -13,7 +13,9 @@ import {
   Tooltip,
   useConfirm,
   SegmentedControl,
-  type IconName
+  type IconName,
+  Step,
+  Steps
 } from '../components/primitives'
 import { STATUS_WORDS } from '../components/primitives/Badge'
 import Card from '../components/primitives/Card'
@@ -107,6 +109,8 @@ export interface ToastActionLike {
 }
 
 interface Props {
+  /** Screenshots only: the Connect Jira form, even when Jira is connected. */
+  previewSetup?: boolean
   sessions: LiveSession[]
   onStartSession: (seed: ComposerSeed) => void
   onOpenSession: (liveKey: string) => void
@@ -318,7 +322,8 @@ export default function BacklogScreen({
   onPanelClose,
   stepKeys,
   onStepTo,
-  onExpand
+  onExpand,
+  previewSetup = false
 }: Props): React.JSX.Element {
   const [status, setStatus] = useState<JiraStatus | null>(null)
   const [board, setBoard] = useState<JiraBoardData | null>(null)
@@ -1745,7 +1750,7 @@ export default function BacklogScreen({
   // page container fills the page, and for that moment it squeezed the
   // session beneath to zero height, which wiped its terminal.
   if (!status) return <div className={panelOnly ? 'backlog-panel-only' : 'backlog'} />
-  if (!status.configured) {
+  if (!status.configured || previewSetup) {
     return (
       <div className="backlog">
         <JiraSetup
@@ -2600,6 +2605,7 @@ export default function BacklogScreen({
         {board && visible.length === 0 && !dragging && (
           <EmptyState
             icon="SearchX"
+            art="no-match"
             title={q ? `Nothing matches “${query.trim()}”` : 'No tickets here'}
             body={
               q
@@ -6547,75 +6553,89 @@ function JiraSetup({
         void submit()
       }}
     >
-      <div className="backlog-setup-icon">
-        <Icon name="ListTodo" size={20} />
-      </div>
       <h1 className="backlog-title">Connect Jira</h1>
       <p className="backlog-caption">
         See every ticket in your projects, edit them, move them across the board, and start a
-        session from any of them.
+        session from any of them. Three steps.
       </p>
-      <label className="backlog-field">
-        <span>Jira site</span>
-        <Input
-          placeholder="yourcompany.atlassian.net"
-          value={site}
-          onChange={(e) => setSite(e.target.value)}
-        />
-      </label>
-      <label className="backlog-field">
-        <span>Your Jira email</span>
-        <Input
-          type="email"
-          placeholder="you@company.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-      </label>
-      <label className="backlog-field">
-        <span>Projects</span>
-        <Input
-          placeholder="PROJ, TEAM"
-          value={projects}
-          onChange={(e) => setProjects(e.target.value)}
-        />
-      </label>
-      <label className="backlog-field">
-        <span>
-          API token ·{' '}
-          <button
+      <Steps>
+        <Step
+          number={1}
+          title="Your Jira site"
+          note="Where your team’s tickets live, the email you sign in with, and the projects to show."
+        >
+          <label className="backlog-field">
+            <span>Jira site</span>
+            <Input
+              placeholder="yourcompany.atlassian.net"
+              value={site}
+              onChange={(e) => setSite(e.target.value)}
+            />
+          </label>
+          <label className="backlog-field">
+            <span>Your Jira email</span>
+            <Input
+              type="email"
+              placeholder="you@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+          <label className="backlog-field">
+            <span>Projects</span>
+            <Input
+              placeholder="PROJ, TEAM"
+              value={projects}
+              onChange={(e) => setProjects(e.target.value)}
+            />
+          </label>
+        </Step>
+        <Step
+          number={2}
+          title="An API token"
+          note="Jira’s password for apps like this one. Create one, copy it, and paste it here."
+        >
+          <Button
+            variant="outlined"
+            size="compact"
             type="button"
-            className="backlog-link"
+            className="backlog-setup-token-button"
             onClick={() =>
               void openExternal('https://id.atlassian.com/manage-profile/security/api-tokens')
             }
           >
-            create one
-          </button>
-        </span>
-        <Input
-          type="password"
-          autoComplete="off"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-        />
-      </label>
-      <p className="backlog-note">
-        The token is encrypted with your Mac&rsquo;s Keychain and only ever sent to your Jira site.
-        Changes you make here are made in Jira as you.
-      </p>
-      {encryptionUnavailable && (
-        <p className="backlog-error">
-          This Mac isn&rsquo;t letting Control Room encrypt anything right now, so the token
-          can&rsquo;t be saved.
-        </p>
-      )}
-      {error && <p className="backlog-error">{error}</p>}
-      <div>
-        <Button variant="filled" type="submit" disabled={busy || encryptionUnavailable}>
-          {busy ? 'Checking with Jira…' : 'Connect'}
-        </Button>
-      </div>
+            <Icon name="ExternalLink" size={14} />
+            Create a token on Atlassian
+          </Button>
+          <label className="backlog-field">
+            <span>API token</span>
+            <Input
+              type="password"
+              autoComplete="off"
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+            />
+          </label>
+        </Step>
+        <Step
+          number={3}
+          title="Connect"
+          note="Control Room checks with Jira before it saves anything. The token is encrypted with your Mac’s Keychain and only ever sent to your Jira site. Changes you make here are made in Jira as you."
+        >
+          {encryptionUnavailable && (
+            <p className="backlog-error">
+              This Mac isn&rsquo;t letting Control Room encrypt anything right now, so the token
+              can&rsquo;t be saved.
+            </p>
+          )}
+          {error && <p className="backlog-error">{error}</p>}
+          <div>
+            <Button variant="filled" type="submit" disabled={busy || encryptionUnavailable}>
+              {busy ? 'Checking with Jira…' : 'Connect'}
+            </Button>
+          </div>
+        </Step>
+      </Steps>
     </form>
   )
 }

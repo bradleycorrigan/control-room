@@ -1,0 +1,304 @@
+/* The chat view: a session as a conversation, in a reading-width column. */
+.cr-chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+
+.cr-chat-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.cr-chat-column,
+.cr-chat-composer {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.cr-chat-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  padding: var(--space-8) var(--space-8) var(--space-16);
+}
+
+.cr-chat-empty {
+  margin: var(--space-48) 0 0;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* You: a bubble on the right, your words as you typed them. */
+.cr-chat-you {
+  align-self: flex-end;
+  max-width: 80%;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-xl) var(--radius-xl) var(--space-1) var(--radius-xl);
+  background: var(--surface-raised);
+  font-size: var(--text-body-size);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Claude: plain text on the page, like a document, not a bubble. */
+.cr-chat-claude {
+  font-size: var(--text-body-size);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.cr-chat-claude .md-text > :first-child {
+  margin-top: 0;
+}
+.cr-chat-claude .md-text > :last-child {
+  margin-bottom: 0;
+}
+
+/* Tool calls: one quiet mono line each, in a sunken block. */
+.cr-chat-tools {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: 18px;
+}
+
+.cr-chat-tool,
+.cr-chat-tools-more {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  min-width: 0;
+  padding: 6px var(--space-12);
+}
+
+.cr-chat-tool + .cr-chat-tool,
+.cr-chat-tools-more + .cr-chat-tool {
+  border-top: 1px solid var(--border);
+}
+
+.cr-chat-tools-more {
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+.cr-chat-tools-more:hover {
+  color: var(--text);
+}
+
+.cr-chat-tool-label {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.cr-chat-tool-detail {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.cr-chat-tool-added {
+  flex-shrink: 0;
+  color: var(--status-done);
+}
+.cr-chat-tool-removed,
+.cr-chat-tool-failed {
+  flex-shrink: 0;
+  color: var(--status-error);
+}
+
+/* A prompt waiting on you: the attention colour and the words "Needs an
+   answer", like every other status in the app. */
+.cr-chat-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--status-attention) 45%, transparent);
+}
+
+.cr-chat-prompt-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.cr-chat-prompt-dot {
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--status-attention);
+}
+
+.cr-chat-prompt-word {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.cr-chat-prompt-title {
+  font-weight: 600;
+}
+
+.cr-chat-prompt-code {
+  margin: 0;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.cr-chat-prompt-plan {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+}
+
+.cr-chat-prompt-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.cr-chat-prompt-note,
+.cr-chat-prompt-error {
+  margin-left: auto;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+.cr-chat-prompt-error {
+  color: var(--status-error);
+}
+
+.cr-chat-prompt-feedback {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.cr-chat-question {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.cr-chat-question-text {
+  padding: 0;
+  margin-bottom: var(--space-8);
+}
+
+.cr-chat-option {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  cursor: pointer;
+}
+.cr-chat-option[data-on] {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.cr-chat-option input[type='radio'],
+.cr-chat-option input[type='checkbox'] {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.cr-chat-option-words {
+  display: flex;
+  flex-direction: column;
+}
+.cr-chat-option-desc {
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+.cr-chat-option-other {
+  flex: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+
+/* The message box: a raised panel at the foot, the same width as the column. */
+.cr-chat-composer-row {
+  padding: 0 var(--space-8) var(--space-8);
+}
+
+.cr-chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-12) var(--space-8) var(--space-16);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.cr-chat-composer:focus-within {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.cr-chat-input {
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-body-size);
+  line-height: 1.5;
+  field-sizing: content;
+  min-height: 21px;
+  max-height: 200px;
+}
+
+.cr-chat-composer-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.cr-chat-hint {
+  margin-right: auto;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+.cr-chat-hint kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+}
+.cr-chat-composer-foot .cr-chat-prompt-error {
+  margin-left: 0;
+  margin-right: auto;
+}

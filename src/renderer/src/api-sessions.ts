@@ -81,6 +81,17 @@ export type { MergeMethod, PrStatusResult } from '../../main/exec/prActions'
 type PrDoneResult = ShipResult & { branchError?: string }
 
 /** Whether it can be merged now, how, and if not, why. */
+/** Something Control Room can ask Claude, in its own words (ipc-sessions ASKS). */
+export type ClaudeAsk = 'open-pr'
+
+/** Types that ask into the session's terminal, as if you had. */
+export function askClaude(
+  id: string,
+  ask: ClaudeAsk
+): Promise<{ ok: boolean; error: string | null }> {
+  return window.api.invoke('sessions:askClaude', id, ask)
+}
+
 export function getPullRequestStatus(id: string, pr: number | string): Promise<PrStatusResult> {
   return window.api.invoke<PrStatusResult>('sessions:prStatus', id, pr)
 }

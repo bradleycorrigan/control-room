@@ -386,6 +386,21 @@ export function getTranscriptTitle(sessionId: string): string | null {
   return aiTitle
 }
 
+/** Markdown down to the words: no heading marks, emphasis, code ticks or link targets. */
+export function plainOneLine(markdown: string): string {
+  return (
+    markdown
+      .replace(/```[\s\S]*?```/g, ' ')
+      // A heading becomes a sentence, so it doesn't run into the next one.
+      .replace(/^\s{0,3}#{1,6}\s+(.+?)\s*$/gm, (_m, h: string) => (/[.:!?]$/.test(h) ? h : `${h}.`))
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '')
+      .replace(/(\*\*|__|\*|_|`)/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  )
+}
+
 /** A pull request the session opened, from the `pr-link` line Claude Code writes for each one. */
 export interface TranscriptPrLink {
   number: number

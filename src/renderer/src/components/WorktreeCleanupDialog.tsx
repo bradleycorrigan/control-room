@@ -24,7 +24,7 @@ interface Props {
  * before actually removing anything (projects:removeWorktrees). A missing
  * folder isn't a block — it's still safe (and preselected) to remove. */
 function blockedReason(w: WorktreeCleanupCandidate): string | null {
-  if (w.hasLiveSession) return 'a live session is using it'
+  if (w.hasLiveSession && !w.liveSessionsDone) return 'a live session is using it'
   if (w.dirty) return 'has uncommitted changes'
   return null
 }
@@ -107,11 +107,16 @@ export default function WorktreeCleanupDialog({
     setSelected((prev) => new Set([...prev, ...untouched.map((w) => w.path)]))
 
   const handleRemove = async (): Promise<void> => {
+    const stopping = candidates.filter((w) => selected.has(w.path) && w.hasLiveSession).length
     const confirmed = await confirm({
       title: `Remove ${selectedCount} worktree${selectedCount === 1 ? '' : 's'}?`,
-      body: deleteBranches
-        ? 'This deletes each worktree from disk and its branch, if fully merged.'
-        : 'This deletes each worktree from disk. Branches are left alone.',
+      body:
+        (deleteBranches
+          ? 'This deletes each worktree from disk and its branch, if fully merged.'
+          : 'This deletes each worktree from disk. Branches are left alone.') +
+        (stopping > 0
+          ? ` Claude is stopped in ${stopping === 1 ? 'the one' : `the ${stopping}`} still running. Their sessions stay done, and Resume rebuilds the worktree.`
+          : ''),
       confirmLabel: `Remove ${selectedCount} worktree${selectedCount === 1 ? '' : 's'}`,
       danger: true
     })
@@ -153,9 +158,11 @@ export default function WorktreeCleanupDialog({
     }
   }
 
+  // Merged into the default branch, or a pull request that merged: a squash
+  // merge leaves no trace git can see, so the PR is the only sign.
   const anyMergedSelected = [...selected].some((path) => {
     const w = candidates.find((c) => c.path === path)
-    return w?.merged
+    return w?.merged || w?.prState === 'MERGED'
   })
 
   // The checkbox is disabled once nothing merged is selected, but a
@@ -231,6 +238,14 @@ export default function WorktreeCleanupDialog({
                         <span>{reason}</span>
                       </Row>
                     )}
+                    {!reason && w.hasLiveSession && (
+                      <span
+                        className="wt-cleanup-row-kept"
+                        title="Claude is stopped and the session stays done. Resume rebuilds the worktree."
+                      >
+                        session done, kept
+                      </span>
+                    )}
                   </div>
                 </button>
               )
@@ -256,6 +271,11 @@ export default function WorktreeCleanupDialog({
             aria-checked={deleteBranches}
             className="wt-cleanup-checkbox"
             disabled={!anyMergedSelected}
+            title={
+              anyMergedSelected
+                ? undefined
+                : 'Select a worktree whose branch or pull request merged'
+            }
             onClick={() => setDeleteBranches((v) => !v)}
           >
             <PickCheck on={deleteBranches} />

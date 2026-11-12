@@ -716,8 +716,110 @@ cliTranscript('fixture-working', [
         }
       ]
     }
+  },
+  // What it last said: the Sessions rows and cards show it under the title.
+  {
+    type: 'assistant',
+    timestamp: new Date(now - 7 * 60_000).toISOString(),
+    message: {
+      role: 'assistant',
+      content: [
+        {
+          type: 'text',
+          text: 'Running the **status** tests again now that `poller.ts` reads the hook port.'
+        }
+      ]
+    }
   }
 ])
+
+// The last thing Claude said in the other sessions, for the rows and cards.
+// No `cwd` on these lines, so they stay out of History's CLI list (whose
+// count the checks know) and only answer "what did it last say".
+function lastSaid(sessionId: string, lines: string[]): void {
+  cliTranscript(
+    sessionId,
+    lines.map((text, i) => ({
+      type: 'assistant',
+      timestamp: new Date(now - (60 - i) * 60_000).toISOString(),
+      message: { role: 'assistant', content: [{ type: 'text', text }] }
+    }))
+  )
+}
+lastSaid('fixture-ready', [
+  'Looking at the worktree tests first.',
+  '## Done\n\nThe worktree tests pass now. I moved the fixture setup into `beforeEach` so each test gets a clean repo. Want me to open a PR?'
+])
+lastSaid('fixture-errored', [
+  'The build failed: `tsc` can’t find the `SessionRecord` type after the rename. I stopped there.'
+])
+// The waiting session has a whole conversation, for the chat view: what you
+// asked, Claude's words, its tool calls (one failed) and the question it's
+// waiting on. Still no `cwd`, and its last words are the question.
+{
+  const at = (min: number): string => new Date(now - min * 60_000).toISOString()
+  const said = (min: number, text: string): Record<string, unknown> => ({
+    type: 'assistant',
+    timestamp: at(min),
+    message: { role: 'assistant', content: [{ type: 'text', text }] }
+  })
+  cliTranscript('fixture-waiting', [
+    {
+      type: 'user',
+      uuid: 'chat-you-1',
+      timestamp: at(50),
+      message: { role: 'user', content: 'Clean up the worktrees whose branches have merged.' }
+    },
+    said(49, 'I’ll list the worktrees and check each branch against its pull request.'),
+    {
+      type: 'assistant',
+      timestamp: at(48),
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            id: 'toolu_chat_1',
+            name: 'Bash',
+            input: { command: 'git worktree list' }
+          },
+          {
+            type: 'tool_use',
+            id: 'toolu_chat_2',
+            name: 'Bash',
+            input: { command: 'gh pr list --state merged --limit 20' }
+          },
+          {
+            type: 'tool_use',
+            id: 'toolu_chat_3',
+            name: 'Edit',
+            input: {
+              file_path: '/fixture/src/main/exec/git.ts',
+              old_string: 'a\nb\nc',
+              new_string: 'a\nb\nc\nd\ne'
+            }
+          }
+        ]
+      }
+    },
+    {
+      type: 'user',
+      timestamp: at(47),
+      message: {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'toolu_chat_1', content: 'ok' },
+          { type: 'tool_result', tool_use_id: 'toolu_chat_2', content: 'ok', is_error: true },
+          { type: 'tool_result', tool_use_id: 'toolu_chat_3', content: 'ok' }
+        ]
+      }
+    },
+    said(
+      46,
+      'Should the cleanup also delete branches whose pull request was closed without merging, or only merged ones?'
+    )
+  ])
+}
 
 console.log(`fixture: built at ${fixtureRoot}`)
 console.log(`fixture: CR_SESSIONS_DIR=${sessionsDir}`)

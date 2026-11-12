@@ -10,9 +10,7 @@ import {
   hasUncommittedChanges,
   lastCommitTime,
   removeWorktreeClean,
-  deleteLocalBranch,
-  forceDeleteBranch,
-  branchTip,
+  deleteMergedBranch,
   pullRequestsByBranch,
   pruneWorktrees,
   gitStatus,
@@ -21,7 +19,7 @@ import {
 import { handoffGitSummary } from './exec/sessionGit'
 import { openInCursor } from './exec/cursor'
 import { discoverLiveSessions } from './engine/discovery'
-import { retireSessionsInWorktree } from './engine/sessions'
+import { retireSessionsInWorktree, shelveSessionsInWorktree } from './engine/sessions'
 import type { LiveSession } from './store/types'
 
 interface WrapUpOutcome {
@@ -48,6 +46,22 @@ function normalizePath(p: string): string {
 // clean, and `git worktree remove` on it either succeeds and kills the
 // agent's cwd out from under it, or fails loudly if the agent has written
 // there — neither is "safe to remove".
+/**
+ * Every live session in the worktree is one you've marked done: removing it
+ * stops them and keeps them, so that's allowed. A session with no record
+ * (started outside the app) can't be marked done, so it always blocks.
+ */
+function liveSessionsAllDone(worktreePath: string, liveSessions: LiveSession[]): boolean {
+  const target = normalizePath(worktreePath)
+  return liveSessions
+    .filter((s) => {
+      if (!s.alive) return false
+      const sessionPath = normalizePath(s.record?.worktreePath ?? s.cwd)
+      return sessionPath === target || sessionPath.startsWith(target + path.sep)
+    })
+    .every((s) => s.record?.archivedAt != null)
+}
+
 function worktreeHasLiveSession(worktreePath: string, liveSessions: LiveSession[]): boolean {
   const target = normalizePath(worktreePath)
   return liveSessions.some((s) => {
@@ -160,6 +174,7 @@ export function registerProjectsIpc(): void {
         // dialog should offer to clean up. Matches by cwd too, so a
         // discovered session with no record isn't missed.
         const hasLiveSession = worktreeHasLiveSession(w.path, liveSessions)
+        const liveSessionsDone = hasLiveSession && liveSessionsAllDone(w.path, liveSessions)
         // git already flags a worktree whose folder is gone as "prunable" —
         // that row is always safe to remove (there is nothing left to lose),
         // regardless of merge state.
@@ -174,6 +189,7 @@ export function registerProjectsIpc(): void {
           prState,
           dirty,
           hasLiveSession,
+          liveSessionsDone,
           missing,
           lastCommitAt,
           preselect: safe
@@ -201,7 +217,11 @@ export function registerProjectsIpc(): void {
         discoverLiveSessions()
       ])
       const byPath = new Map(worktrees.map((w) => [w.path, w]))
-      const merged = await mergedBranches(project.repoPath, defaultBranch)
+      // A squash-merged PR's branch counts too: git can't see that merge.
+      const [merged, prs] = await Promise.all([
+        mergedBranches(project.repoPath, defaultBranch),
+        deleteBranches ? pullRequestsByBranch(project.repoPath) : Promise.resolve(new Map())
+      ])
 
       const removed: string[] = []
       const branchesDeleted: string[] = []
@@ -213,7 +233,10 @@ export function registerProjectsIpc(): void {
           failed.push({ path: wtPath, reason: 'not a worktree of this project' })
           continue
         }
-        if (worktreeHasLiveSession(wtPath, liveSessions)) {
+        if (
+          worktreeHasLiveSession(wtPath, liveSessions) &&
+          !liveSessionsAllDone(wtPath, liveSessions)
+        ) {
           failed.push({ path: wtPath, reason: 'a live session is using it' })
           continue
         }
@@ -221,18 +244,27 @@ export function registerProjectsIpc(): void {
           failed.push({ path: wtPath, reason: 'has uncommitted changes' })
           continue
         }
+        // Its sessions are stopped first and kept as done: Resume rebuilds
+        // the worktree from the branch. Only a deleted branch ends them.
+        await shelveSessionsInWorktree(wtPath)
         const result = await removeWorktreeClean(project.repoPath, wtPath)
         if (!result.ok) {
           failed.push({ path: wtPath, reason: result.error ?? 'git worktree remove failed' })
           continue
         }
         removed.push(wtPath)
-        await retireSessionsInWorktree(wtPath)
 
         const branch = w.branch?.replace(/^refs\/heads\//, '')
-        if (deleteBranches && branch && merged.has(branch)) {
-          const branchResult = await deleteLocalBranch(project.repoPath, branch)
-          if (branchResult.ok) branchesDeleted.push(branch)
+        if (
+          deleteBranches &&
+          branch &&
+          (merged.has(branch) || prs.get(branch)?.state === 'MERGED')
+        ) {
+          const branchResult = await deleteMergedBranch(project.repoPath, branch, prs.get(branch))
+          if (branchResult.ok) {
+            branchesDeleted.push(branch)
+            await retireSessionsInWorktree(wtPath)
+          }
         }
       }
 
@@ -258,15 +290,12 @@ export function registerProjectsIpc(): void {
     if (await hasUncommittedChanges(worktreePath))
       return fail('This worktree has uncommitted changes. Commit or discard them first.')
 
-    const tip = await branchTip(wt.repoPath, branch)
     await retireSessionsInWorktree(worktreePath)
     const removed = await removeWorktreeClean(wt.repoPath, worktreePath)
     if (!removed.ok) return fail(removed.error ?? 'Could not remove the worktree.')
     await pruneWorktrees(wt.repoPath)
 
-    let branchDeleted = (await deleteLocalBranch(wt.repoPath, branch)).ok
-    if (!branchDeleted && tip && pr.headRefOid && tip === pr.headRefOid)
-      branchDeleted = (await forceDeleteBranch(wt.repoPath, branch)).ok
+    const branchDeleted = (await deleteMergedBranch(wt.repoPath, branch, pr)).ok
     return {
       ok: true,
       branchDeleted,

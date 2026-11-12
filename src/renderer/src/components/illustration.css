@@ -1,0 +1,63 @@
+/* Empty-screen drawings (Illustration.tsx). Theme tokens only, so each one
+   is redrawn in whichever theme is on. */
+.cr-ill {
+  display: block;
+  margin: 0 auto var(--space-16);
+  overflow: visible;
+}
+
+.cr-ill-shadow {
+  fill: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.cr-ill-fill {
+  fill: var(--surface-raised);
+}
+
+.cr-ill-line {
+  stroke: var(--text-muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cr-ill-faint {
+  stroke: var(--text-faint);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.cr-ill-faint-fill {
+  fill: color-mix(in srgb, var(--text-muted) 35%, transparent);
+}
+
+.cr-ill-accent {
+  fill: var(--accent);
+}
+
+.cr-ill-accent-line {
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.cr-ill-glass {
+  fill: color-mix(in srgb, var(--accent) 12%, var(--bg));
+}
+
+/* The cursor blinks, as a terminal's does; held still for reduced motion. */
+.cr-ill-cursor {
+  animation: cr-ill-blink 1.1s steps(1) infinite;
+}
+
+@keyframes cr-ill-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-ill-cursor {
+    animation: none;
+  }
+}

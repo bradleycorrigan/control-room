@@ -285,7 +285,12 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
     await until(() => stored().length === openedBefore + i + 1)
   }
   // A plain click switches to a session, which gives the strip an active tab.
-  const last = unopenedKey() ?? cards().map(keyOf).find((k): k is string => Boolean(k)) ?? null
+  const last =
+    unopenedKey() ??
+    cards()
+      .map(keyOf)
+      .find((k): k is string => Boolean(k)) ??
+    null
   picked.push(titleOf(last))
   await click(cardFor(last) ?? null, 'left')
   await until(onSessionScreen)
@@ -438,11 +443,24 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
     ) ?? null
   await ctx.goToSessionsList()
   await wait(400)
-  await click(rows()[0])
+  const first = rows()[0]
+  // An earlier step left the list scrolled: bring the row out from under the tabs.
+  first?.scrollIntoView({ block: 'center' })
+  await wait(100)
+  const box = first?.getBoundingClientRect()
+  const under = box
+    ? document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    : null
+  await click(first)
   await wait(400)
+  const opened = onSessionScreen()
   await click(nav('Home'))
   await click(nav('Sessions'))
-  await check('Sessions from elsewhere returns to the open session', onSessionScreen())
+  await check(
+    'Sessions from elsewhere returns to the open session',
+    onSessionScreen(),
+    `row click opened it: ${opened}; under the pointer: ${under?.tagName}.${under?.className}`
+  )
   await click(nav('Sessions'))
   await check(
     'Sessions again goes up to the list',
