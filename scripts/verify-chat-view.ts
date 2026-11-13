@@ -87,6 +87,22 @@ async function main(): Promise<void> {
     JSON.stringify(edit)
   )
 
+  // ---- A pasted message ----
+  const { userText } = await import('../src/main/exec/chatTranscript')
+  const pasted = userText(
+    '\n\n<pasted_content id="94c4">\nTidy the list and add the org id\n\nAttached files - read these from disk before you start:\n- /tmp/shot.png\n</pasted_content id="94c4">\n'
+  )
+  check(
+    'a message sent as a paste shows its words, not nothing',
+    pasted?.startsWith('Tidy the list and add the org id') === true &&
+      !pasted.includes('pasted_content'),
+    JSON.stringify(pasted)
+  )
+  check(
+    'Claude Code’s own tagged text still stays out',
+    userText('<local-command-stdout>done</local-command-stdout>') === null
+  )
+
   // ---- How a command reads ----
   const { describeTool, withoutCd } = await import('../src/main/exec/chatTranscript')
   const described = describeTool('Bash', {

@@ -149,9 +149,21 @@ function describe(
   }
 }
 
+/**
+ * A message pasted into the terminal (how Control Room sends a long one)
+ * arrives wrapped in `<pasted_content id="…">` tags. Take the words out of
+ * the wrapper: they are what you sent.
+ */
+function unwrapPaste(raw: string): string {
+  return raw.replace(
+    /<pasted_content id="[^"]*">\n?([\s\S]*?)\n?<\/pasted_content id="[^"]*">/g,
+    (_, inner: string) => inner
+  )
+}
+
 /** A typed slash command arrives as tags; show it as you typed it. Other tagged text is Claude Code's own. */
-function userText(raw: string): string | null {
-  const t = raw.trim()
+export function userText(raw: string): string | null {
+  const t = unwrapPaste(raw).trim()
   if (!t) return null
   const cmd = t.match(/<command-name>([^<]*)<\/command-name>/)
   if (cmd) {
