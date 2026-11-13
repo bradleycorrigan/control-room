@@ -87,6 +87,43 @@ async function main(): Promise<void> {
     JSON.stringify(edit)
   )
 
+  // ---- A message sent mid-turn ----
+  const midTurn = parseChat(
+    [
+      line({
+        type: 'assistant',
+        uuid: 'a1',
+        timestamp: '2026-11-13T10:00:00.000Z',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'Working on it.' }] }
+      }),
+      line({
+        type: 'attachment',
+        uuid: 'q1',
+        timestamp: '2026-11-13T10:00:05.000Z',
+        attachment: {
+          type: 'queued_command',
+          prompt: 'also add the org id',
+          commandMode: 'prompt',
+          origin: { kind: 'human' }
+        }
+      }),
+      line({
+        type: 'attachment',
+        uuid: 'o1',
+        timestamp: '2026-11-13T10:00:06.000Z',
+        attachment: { type: 'hook_success', content: 'ok' }
+      })
+    ].join('')
+  )
+  check(
+    'a message sent mid-turn shows as yours; other attachments stay out',
+    midTurn.length === 2 &&
+      midTurn[1].kind === 'user' &&
+      midTurn[1].text === 'also add the org id' &&
+      midTurn[1].at === '2026-11-13T10:00:05.000Z',
+    JSON.stringify(midTurn)
+  )
+
   // ---- A pasted message ----
   const { userText } = await import('../src/main/exec/chatTranscript')
   const pasted = userText(

@@ -53,6 +53,17 @@ interface Line {
   isMeta?: boolean
   isSidechain?: boolean
   message?: { role?: string; content?: string | Block[] }
+  attachment?: { type?: string; prompt?: unknown; commandMode?: string }
+}
+
+/** The words of a queued prompt: a string, or text blocks when it carried images. */
+function promptText(prompt: unknown): string {
+  if (typeof prompt === 'string') return prompt
+  if (!Array.isArray(prompt)) return ''
+  return (prompt as Block[])
+    .filter((b) => b?.type === 'text')
+    .map((b) => str(b.text))
+    .join('\n\n')
 }
 
 function str(v: unknown): string {
@@ -218,6 +229,16 @@ export class ChatParser {
     const content = line.message?.content
     const id = line.uuid ?? `l${this.n++}`
     const at = typeof line.timestamp === 'string' ? line.timestamp : null
+    // A message you sent while Claude was mid-turn. Claude Code takes it into
+    // the running turn and records it as a queued_command attachment, not as
+    // a user line, so without this it never showed: it looked dropped.
+    if (line.type === 'attachment') {
+      const a = line.attachment
+      if (a?.type !== 'queued_command' || (a.commandMode && a.commandMode !== 'prompt')) return
+      const t = userText(promptText(a.prompt))
+      if (t) this.out.push({ kind: 'user', id, text: t, at, images: [] })
+      return
+    }
     if (line.type === 'user') {
       if (typeof content === 'string') {
         const t = userText(content)
