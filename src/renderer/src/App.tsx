@@ -1117,6 +1117,30 @@ function App(): React.JSX.Element {
         await new Promise((r) => setTimeout(r, 300))
       })
     }
+    // A message sent while Claude works: it shows at once, marked queued.
+    registerShotScreen('session-chat-queued', async () => {
+      try {
+        sessionStorage.setItem('cr-session-view', 'chat')
+      } catch {
+        // shot runs have storage; nothing to do without it
+      }
+      setView('sessions')
+      setPaletteOpen(false)
+      const list = sessions.length > 0 ? sessions : await listSessions()
+      setOpenSessionKey(list.find((s) => s.claudeSessionId === 'fixture-working')?.key ?? null)
+      await new Promise((r) => setTimeout(r, 1500))
+      const box = document.querySelector<HTMLTextAreaElement>('.cr-chat-input')
+      if (box) {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set?.call(
+          box,
+          '# and add the org id too'
+        )
+        box.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      await new Promise((r) => setTimeout(r, 100))
+      document.querySelector<HTMLElement>('.cr-chat-send')?.click()
+      await new Promise((r) => setTimeout(r, 300))
+    })
     // The chat view's history: a long paste folded, its file as a chip, and a
     // reply with a code block (hovered, so its copy button shows).
     registerShotScreen('session-chat-history', async () => {

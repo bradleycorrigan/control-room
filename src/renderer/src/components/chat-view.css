@@ -514,9 +514,41 @@
   }
 }
 
-/* Sent, and on its way to the transcript. */
-[data-sending] .cr-chat-you {
+/* Sent, waiting for Claude to finish, or failed: only these two look
+   different from a message the transcript already has. */
+[data-chat-outgoing='queued'] .cr-chat-you,
+[data-chat-outgoing='failed'] .cr-chat-you {
   opacity: 0.6;
+}
+
+.cr-chat-outgoing-note {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-end;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  font-size: var(--text-caption-size);
+  line-height: var(--text-caption-line);
+  color: var(--text-muted);
+}
+
+.cr-chat-outgoing-note--failed {
+  color: var(--status-error);
+}
+
+.cr-chat-outgoing-retry {
+  padding: 0 var(--space-4);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  color: var(--text);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.cr-chat-outgoing-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* Time and copy beside a message, on hover. They float, so a message takes

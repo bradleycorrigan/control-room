@@ -38,6 +38,23 @@ const TOOLS_SHOWN = 5
 
 type Row = Item | { kind: 'day'; id: string; label: string }
 
+/**
+ * A message you sent that the transcript hasn't caught up with. It shows the
+ * moment you press Send, looking sent: the terminal takes it in well under a
+ * second, and waiting on that made every message seem stuck. "Queued" only
+ * when Claude was busy, so it really is waiting its turn; "failed" only if
+ * the send itself came back with an error.
+ */
+interface Outgoing {
+  id: string
+  text: string
+  paths: string[]
+  /** When Send was pressed: any message of yours in the transcript after this means it has landed. */
+  sentAt: number
+  state: 'sent' | 'queued' | 'failed'
+  error?: string | null
+}
+
 /** "Today", "Yesterday", or "Tuesday 11 November". */
 function dayLabel(d: Date): string {
   const today = new Date()
@@ -130,7 +147,7 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
   const [atBottom, setAtBottom] = useState(true)
   // What you sent that the transcript hasn't caught up with yet: shown at
   // once, faded, so a message never seems to vanish for a second or two.
-  const [sent, setSent] = useState<{ id: string; text: string }[]>([])
+  const [sent, setSent] = useState<Outgoing[]>([])
   // Messages there on first load appear as they are; later ones ease in.
   const [firstIds, setFirstIds] = useState<Set<string> | null>(null)
   const isNew = (id: string): true | undefined => (firstIds && !firstIds.has(id) ? true : undefined)
@@ -184,7 +201,30 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
     () => (entries ?? []).filter((e) => e.kind === 'user').map((e) => e.text),
     [entries]
   )
-  const waiting = sent.filter((m) => !yours.some((t) => t.includes(m.text.trim().slice(0, 80))))
+  // Gone once the transcript has it: by its words, or failing that by any
+  // message of yours written after Send. Without the second, a message the
+  // transcript records differently stayed at the foot, under its own reply.
+  const lastYours = useMemo(() => {
+    const times = (entries ?? [])
+      .filter((e) => e.kind === 'user' && e.at)
+      .map((e) => new Date((e as { at: string }).at).getTime())
+    return times.length ? Math.max(...times) : 0
+  }, [entries])
+  const waiting = sent.filter(
+    (m) =>
+      m.state === 'failed' ||
+      !(yours.some((t) => t.includes(m.text.trim().slice(0, 80))) || lastYours >= m.sentAt - 500)
+  )
+  const deliver = (m: Outgoing): void => {
+    void window.api
+      .invoke<{ ok: boolean; error: string | null }>('chat:send', paneId, m.text, m.paths)
+      .then((r) => {
+        if (!r.ok)
+          setSent((all) =>
+            all.map((x) => (x.id === m.id ? { ...x, state: 'failed', error: r.error } : x))
+          )
+      })
+  }
   const scrollToEnd = (): void => {
     const el = scrollRef.current
     if (!el) return
@@ -244,9 +284,20 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
             )
           )}
           {waiting.map((m) => (
-            <div key={m.id} className="cr-chat-you-wrap" data-sending>
-              <div className="cr-chat-you">{m.text}</div>
-            </div>
+            <OutgoingMessage
+              key={m.id}
+              message={m}
+              onRetry={() => {
+                const again: Outgoing = {
+                  ...m,
+                  sentAt: Date.now(),
+                  state: working ? 'queued' : 'sent',
+                  error: null
+                }
+                setSent((all) => all.map((x) => (x.id === m.id ? again : x)))
+                deliver(again)
+              }}
+            />
           ))}
           {mine.map((p) => (
             <PromptCard key={p.id} prompt={p} />
@@ -264,9 +315,17 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
         paneId={paneId}
         working={working}
         lastSent={yours[yours.length - 1] ?? null}
-        onSent={(text) => {
-          setSent((s) => [...s, { id: crypto.randomUUID(), text }])
+        onSend={(text, paths) => {
+          const m: Outgoing = {
+            id: crypto.randomUUID(),
+            text,
+            paths,
+            sentAt: Date.now(),
+            state: working ? 'queued' : 'sent'
+          }
+          setSent((s) => [...s, m])
           scrollToEnd()
+          deliver(m)
         }}
       />
     </div>
@@ -601,6 +660,32 @@ const YouMessage = memo(function YouMessage({
   )
 })
 
+function OutgoingMessage({
+  message: m,
+  onRetry
+}: {
+  message: Outgoing
+  onRetry: () => void
+}): React.JSX.Element {
+  return (
+    <div className="cr-chat-you-wrap" data-chat-outgoing={m.state}>
+      <div className="cr-chat-you">{m.text}</div>
+      {m.state === 'queued' && (
+        <span className="cr-chat-outgoing-note">Queued until Claude finishes</span>
+      )}
+      {m.state === 'failed' && (
+        <span className="cr-chat-outgoing-note cr-chat-outgoing-note--failed" role="alert">
+          <Icon name="CircleAlert" size={14} />
+          <span title={m.error ?? undefined}>Didn’t send</span>
+          <button type="button" className="cr-chat-outgoing-retry" onClick={onRetry}>
+            Retry
+          </button>
+        </span>
+      )}
+    </div>
+  )
+}
+
 const ToolGroup = memo(function ToolGroup({
   tools,
   isNew
@@ -623,6 +708,20 @@ const ToolGroup = memo(function ToolGroup({
     </div>
   )
 })
+
+/**
+ * The first line of a note as plain words, for a one-line summary: no `**`,
+ * backticks, heading marks or list bullets, and a link shows as its text.
+ */
+function plainLine(text: string): string | null {
+  const line = text.split('\n').find((l) => l.trim())
+  if (!line) return null
+  return line
+    .replace(/^\s*(?:#{1,6}\s+|[-*+]\s+|>\s*)/, '')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\*\*|__|`/g, '')
+    .trim()
+}
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`
@@ -675,7 +774,7 @@ const WorkBlock = memo(function WorkBlock({
   const note = [...work.steps].reverse().find((s): s is Said => s.kind === 'assistant')
   const time = took(work.from, work.to)
   const headline = work.live
-    ? (note?.text.split('\n').find((l) => l.trim()) ?? 'Working')
+    ? (plainLine(note?.text ?? '') ?? 'Working')
     : time
       ? `Worked for ${time}`
       : 'Worked'
@@ -1026,12 +1125,13 @@ function Composer({
   paneId,
   working,
   lastSent,
-  onSent
+  onSend
 }: {
   paneId: string | null
   working: boolean
   lastSent: string | null
-  onSent: (text: string) => void
+  /** Takes a message with words; it shows at once and is delivered from there. */
+  onSend: (text: string, paths: string[]) => void
 }): React.JSX.Element {
   // A draft survives switching to the terminal and back, per session.
   const draftKey = paneId ? `cr-chat-draft:${paneId}` : null
@@ -1073,9 +1173,18 @@ function Composer({
   const ready = !!paneId && (!!text.trim() || attach.chips.length > 0) && !attach.pending
   const send = (): void => {
     if (!ready || sending) return
-    setSending(true)
     setError(null)
-    const words = text
+    const words = text.trim()
+    // Words go up and show straight away; the box is clear for the next one.
+    if (words) {
+      onSend(words, attach.readyPaths())
+      setText('')
+      attach.clear()
+      return
+    }
+    // Files alone have no words to show as a message, so they wait for the
+    // terminal as before, and an error lands here.
+    setSending(true)
     void window.api
       .invoke<{ ok: boolean; error: string | null }>(
         'chat:send',
@@ -1085,11 +1194,8 @@ function Composer({
       )
       .then((r) => {
         setSending(false)
-        if (r.ok) {
-          if (words.trim()) onSent(words.trim())
-          setText('')
-          attach.clear()
-        } else setError(r.error)
+        if (r.ok) attach.clear()
+        else setError(r.error)
       })
   }
   const interrupt = (): void => {

@@ -2702,6 +2702,27 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         )
         fill($<HTMLTextAreaElement>('.cr-chat-input'), '')
 
+        // Send shows the message at once, looking sent, and clears the box:
+        // delivering it to the terminal takes over a second. (A shell comment,
+        // so the fixture's shell pane does nothing with it.)
+        {
+          fill($<HTMLTextAreaElement>('.cr-chat-input'), '# instant send check')
+          await wait(50)
+          const pressed = performance.now()
+          await click($('.cr-chat-send'))
+          const shown = await until(() => Boolean($('[data-chat-outgoing] .cr-chat-you')), 300)
+          const after = Math.round(performance.now() - pressed)
+          const bubble = $<HTMLElement>('[data-chat-outgoing]')
+          await check(
+            'a sent message shows straight away, not faded, and the box clears',
+            shown &&
+              bubble?.dataset.chatOutgoing === 'sent' &&
+              getComputedStyle(bubble.querySelector('.cr-chat-you')!).opacity === '1' &&
+              $<HTMLTextAreaElement>('.cr-chat-input')?.value === '',
+            `shown ${shown} after ${after}ms; state ${bubble?.dataset.chatOutgoing}; box "${$<HTMLTextAreaElement>('.cr-chat-input')?.value}"`
+          )
+        }
+
         // ⌘F finds in the conversation.
         await key('f', ['meta'])
         await until(() => Boolean($('.cr-chat-find-input')), 2000)
@@ -2787,6 +2808,20 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           Boolean($('.xterm-screen')) && !$('[data-chat-view]'),
           $('[data-chat-view]') ? 'chat still showing' : 'no terminal'
         )
+
+        // While Claude works, the folded line shows its latest note as plain
+        // words: the working session's note has **bold** and `code` in it.
+        await openSessionByTitle('Working session')
+        await click(byText('.session-detail-actions .cr-segmented__option', 'Chat'))
+        await until(() => Boolean($('[data-chat-work] .cr-chat-work-headline')), 4000)
+        const headline = $('[data-chat-work] .cr-chat-work-headline')?.textContent ?? ''
+        await check(
+          'the live work line shows Claude’s latest note without markdown marks',
+          headline.includes('status tests') && !/[*`]/.test(headline),
+          headline || 'no work line'
+        )
+        await click(byText('.session-detail-actions .cr-segmented__option', 'Terminal'))
+        await until(() => Boolean($('.xterm-screen')), 6000)
       }
     },
     {
