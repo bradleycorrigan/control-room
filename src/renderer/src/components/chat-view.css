@@ -85,28 +85,23 @@
 }
 
 /* Tool calls: one quiet mono line each, in a sunken block. */
+/* Steps are a log, not content: quiet rows with no box, so they never
+   compete with Claude's reply. Only a failure keeps its colour. */
 .cr-chat-tools {
   display: flex;
   flex-direction: column;
-  border-radius: var(--radius-md);
-  background: var(--bg-sunken);
-  font-family: var(--font-mono);
-  font-size: var(--text-mono-size);
-  line-height: 18px;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
 }
 
 .cr-chat-tool,
 .cr-chat-tools-more {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--space-8);
+  column-gap: var(--space-8);
   min-width: 0;
-  padding: 6px var(--space-12);
-}
-
-.cr-chat-tool + .cr-chat-tool,
-.cr-chat-tools-more + .cr-chat-tool {
-  border-top: 1px solid var(--border);
+  padding: 2px 0;
 }
 
 .cr-chat-tools-more {
@@ -131,7 +126,86 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-muted);
+}
+
+/* The whole command, under its description, when the row is opened. */
+.cr-chat-tool-full {
+  flex-basis: 100%;
+  margin-top: var(--space-4);
+  padding: var(--space-8);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   color: var(--text);
+}
+
+/* A turn's work, folded to one line. */
+.cr-chat-work-summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  font-family: var(--font-ui);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--motion-fast) var(--motion-easing);
+}
+.cr-chat-work-summary:hover {
+  color: var(--text);
+}
+.cr-chat-work-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.cr-chat-work-chevron {
+  flex-shrink: 0;
+  align-self: center;
+  transition: transform var(--motion-fast) var(--motion-easing);
+}
+.cr-chat-work[data-open] .cr-chat-work-chevron {
+  transform: rotate(90deg);
+}
+
+.cr-chat-work-headline {
+  min-width: 0;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-chat-work-tally {
+  flex-shrink: 0;
+}
+
+.cr-chat-work-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin-top: var(--space-8);
+  padding-left: 22px;
+}
+
+/* Claude's notes on the way: smaller and quieter than a reply. */
+.cr-chat-work-steps .cr-chat-claude,
+.cr-chat-work-steps .cr-chat-claude .md-text {
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  color: var(--text-muted);
 }
 
 .cr-chat-tool-added {

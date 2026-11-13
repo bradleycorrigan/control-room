@@ -1094,6 +1094,29 @@ function App(): React.JSX.Element {
       setOpenSessionKey(list.find((s) => s.claudeSessionId === 'fixture-working')?.key ?? null)
       await new Promise((r) => setTimeout(r, 2500))
     })
+    // A turn's work folded to one line, then opened: Claude's note, each step,
+    // and one command opened to show all of it.
+    for (const opened of [false, true]) {
+      registerShotScreen(opened ? 'session-chat-work-open' : 'session-chat-work', async () => {
+        try {
+          sessionStorage.setItem('cr-session-view', 'chat')
+        } catch {
+          // shot runs have storage; nothing to do without it
+        }
+        setView('sessions')
+        setPaletteOpen(false)
+        const list = sessions.length > 0 ? sessions : await listSessions()
+        setOpenSessionKey(list.find((s) => s.claudeSessionId === 'fixture-waiting')?.key ?? null)
+        await new Promise((r) => setTimeout(r, 1500))
+        document.querySelector('[data-chat-work]')?.scrollIntoView({ block: 'center' })
+        if (opened) {
+          document.querySelector<HTMLElement>('.cr-chat-work-summary')?.click()
+          await new Promise((r) => setTimeout(r, 200))
+          document.querySelectorAll<HTMLElement>('[data-chat-work] .cr-chat-tool')[1]?.click()
+        }
+        await new Promise((r) => setTimeout(r, 300))
+      })
+    }
     // The chat view's history: a long paste folded, its file as a chip, and a
     // reply with a code block (hovered, so its copy button shows).
     registerShotScreen('session-chat-history', async () => {

@@ -2587,13 +2587,34 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         await click(byText('.session-detail-actions .cr-segmented__option', 'Chat'))
         await until(() => Boolean($('[data-chat-view] [data-chat-you]')), 4000)
         const you = $('[data-chat-you]')?.textContent ?? ''
-        const toolRows = $$<HTMLElement>('[data-chat-tools] .cr-chat-tool')
+        const work = $<HTMLElement>('[data-chat-work]')
+        const summary = work?.querySelector<HTMLElement>('.cr-chat-work-summary')
+        const replies = (): string[] =>
+          $$<HTMLElement>('[data-chat-claude]').map((c) => c.textContent ?? '')
         await check(
-          'Chat shows what you asked, Claude’s words, and its tool calls as lines',
+          'Chat folds a turn’s work to one line, and shows Claude’s reply in full under it',
           you.includes('Clean up the worktrees') &&
-            $$('[data-chat-claude]').length === 3 &&
-            toolRows.length === 3,
-          `you "${you}", ${$$('[data-chat-claude]').length} replies, ${toolRows.length} tool rows`
+            /^Worked for \d/.test(summary?.textContent ?? '') &&
+            /2 commands, 1 edit/.test(summary?.textContent ?? '') &&
+            /1 failed/.test(summary?.textContent ?? '') &&
+            $$('[data-chat-tools] .cr-chat-tool').length === 0 &&
+            replies().length === 3 &&
+            replies()[0].includes('Two of the branches have merged'),
+          `you "${you}"; work "${summary?.textContent}"; ${$$('[data-chat-tools] .cr-chat-tool').length} tool rows showing; replies ${JSON.stringify(replies())}`
+        )
+        await click(summary ?? null)
+        await until(() => $$('[data-chat-work] .cr-chat-tool').length === 3, 2000)
+        const toolRows = $$<HTMLElement>('[data-chat-work] .cr-chat-tool')
+        await check(
+          'opened, it shows Claude’s note and each step; a command says what it does, not how',
+          Boolean(work?.querySelector('[data-chat-claude]')?.textContent?.includes('I’ll list')) &&
+            toolRows[0]?.textContent === 'List the worktrees' &&
+            !toolRows[0]?.querySelector('.cr-chat-tool-label') &&
+            toolRows[1]?.querySelector('.cr-chat-tool-label')?.textContent === 'Ran' &&
+            /^gh pr list/.test(
+              toolRows[1]?.querySelector('.cr-chat-tool-detail')?.textContent ?? ''
+            ),
+          toolRows.map((r) => r.textContent).join(' | ')
         )
         await check(
           'a failed tool call says so, and an edit shows lines added and removed',
@@ -2601,6 +2622,16 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             /failed/.test(toolRows[1]?.textContent ?? '') &&
             /\+5.*−3/.test(toolRows[2]?.textContent ?? ''),
           toolRows.map((r) => r.textContent).join(' | ')
+        )
+        await click(toolRows[1] ?? null)
+        await check(
+          'opening a command shows the whole of it, cd and all',
+          await until(
+            () =>
+              ($('.cr-chat-tool-full')?.textContent ?? '').startsWith('cd /fixture/repo && gh pr'),
+            2000
+          ),
+          $('.cr-chat-tool-full')?.textContent ?? 'no full command'
         )
 
         const times = $$<HTMLTimeElement>('[data-chat-view] .cr-chat-time')

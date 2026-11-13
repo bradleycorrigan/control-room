@@ -87,6 +87,33 @@ async function main(): Promise<void> {
     JSON.stringify(edit)
   )
 
+  // ---- How a command reads ----
+  const { describeTool, withoutCd } = await import('../src/main/exec/chatTranscript')
+  const described = describeTool('Bash', {
+    command: 'cd /x && npm test',
+    description: 'Run the tests'
+  })
+  check(
+    'a command with a description shows just that, and keeps the command for opening',
+    described.label === '' &&
+      described.detail === 'Run the tests' &&
+      described.full === 'cd /x && npm test',
+    JSON.stringify(described)
+  )
+  const bare = describeTool('Bash', { command: "cd '/a b' && cd sub; git status" })
+  check(
+    'without one, the leading cd steps go, so the part that differs shows',
+    bare.label === 'Ran' &&
+      bare.detail === 'git status' &&
+      withoutCd('git status') === 'git status',
+    JSON.stringify(bare)
+  )
+  check(
+    'a command with nothing to add has no second line',
+    describeTool('Bash', { command: 'ls' }).full === '',
+    JSON.stringify(describeTool('Bash', { command: 'ls' }))
+  )
+
   // ---- Claude Code's working line ----
   const { parseActivity } = await import('../src/main/exec/chatTranscript')
   const act = parseActivity(

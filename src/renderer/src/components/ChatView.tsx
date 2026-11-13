@@ -20,7 +20,19 @@ interface Props {
 }
 
 type ToolEntry = Extract<ChatEntry, { kind: 'tool' }>
-type Item = Exclude<ChatEntry, ToolEntry> | { kind: 'tools'; id: string; tools: ToolEntry[] }
+type Said = Extract<ChatEntry, { kind: 'assistant' }>
+type Tools = { kind: 'tools'; id: string; tools: ToolEntry[] }
+/** Claude's work on one turn, folded to a line: its notes to itself and its tool calls. */
+type Work = {
+  kind: 'work'
+  id: string
+  steps: (Said | Tools)[]
+  from: string | null
+  to: string | null
+  /** The turn Claude is on right now: everything so far is work, even its last words. */
+  live: boolean
+}
+type Item = Exclude<ChatEntry, ToolEntry> | Tools | Work
 
 const TOOLS_SHOWN = 5
 
@@ -63,6 +75,50 @@ function group(entries: ChatEntry[]): Item[] {
       else out.push({ kind: 'tools', id: `t-${e.id}`, tools: [e] })
     } else out.push(e)
   }
+  return out
+}
+
+/**
+ * Each turn's work folded into one line. A turn is what follows one of your
+ * messages; its work is everything up to its last tool call, and what Claude
+ * says after that is its reply, shown in full. A turn with no tool calls is
+ * all reply. While Claude is working, the whole current turn is work: its
+ * latest words may be a note on the way, not the answer.
+ */
+function fold(items: Item[], working: boolean): Item[] {
+  const out: Item[] = []
+  let turn: Item[] = []
+  let asked: string | null = null
+  const flush = (last: boolean): void => {
+    const lastTool = turn.map((i) => i.kind).lastIndexOf('tools')
+    if (lastTool === -1) {
+      out.push(...turn)
+    } else {
+      const live = last && working
+      const steps = (live ? turn : turn.slice(0, lastTool + 1)) as (Said | Tools)[]
+      const times = steps
+        .flatMap((s) => (s.kind === 'tools' ? s.tools.map((t) => t.at) : [s.at]))
+        .filter((t): t is string => !!t)
+      out.push({
+        kind: 'work',
+        id: `w-${steps[0].id}`,
+        steps,
+        from: asked ?? times[0] ?? null,
+        to: times[times.length - 1] ?? null,
+        live
+      })
+      if (!live) out.push(...turn.slice(lastTool + 1))
+    }
+    turn = []
+  }
+  for (const item of items) {
+    if (item.kind === 'user') {
+      flush(false)
+      out.push(item)
+      asked = item.at
+    } else turn.push(item)
+  }
+  flush(true)
   return out
 }
 
@@ -122,7 +178,7 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
     () => prompts.filter((p) => !!claudeSessionId && p.claudeSessionId === claudeSessionId),
     [prompts, claudeSessionId]
   )
-  const items = useMemo(() => group(entries ?? []), [entries])
+  const items = useMemo(() => fold(group(entries ?? []), working), [entries, working])
   const rows = useMemo(() => withDays(items), [items])
   const yours = useMemo(
     () => (entries ?? []).filter((e) => e.kind === 'user').map((e) => e.text),
@@ -180,6 +236,8 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
                 />
               ) : item.kind === 'assistant' ? (
                 <ClaudeMessage key={item.id} text={item.text} at={item.at} isNew={isNew(item.id)} />
+              ) : item.kind === 'work' ? (
+                <WorkBlock key={item.id} work={item} isNew={isNew(item.id)} />
               ) : (
                 <ToolGroup key={item.id} tools={item.tools} isNew={isNew(item.id)} />
               )
@@ -566,19 +624,103 @@ const ToolGroup = memo(function ToolGroup({
   )
 })
 
-/** One tool call. A long command or path opens in place to show all of it. */
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
+/** "40s", "6m", "1h 20m": how long a turn's work took. */
+function took(from: string | null, to: string | null): string | null {
+  if (!from || !to) return null
+  const s = Math.round((new Date(to).getTime() - new Date(from).getTime()) / 1000)
+  if (!Number.isFinite(s) || s < 1) return null
+  if (s < 60) return `${s}s`
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m}m`
+  return m % 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${Math.floor(m / 60)}h`
+}
+
+/** "3 commands, 1 edit, 4 other steps". */
+function tally(tools: ToolEntry[]): string {
+  const commands = tools.filter((t) => t.name === 'Bash').length
+  const edits = tools.filter((t) => ['Edit', 'MultiEdit', 'Write'].includes(t.name)).length
+  const other = tools.length - commands - edits
+  return [
+    commands && plural(commands, 'command', 'commands'),
+    edits && plural(edits, 'edit', 'edits'),
+    other &&
+      plural(
+        other,
+        commands || edits ? 'other step' : 'step',
+        commands || edits ? 'other steps' : 'steps'
+      )
+  ]
+    .filter(Boolean)
+    .join(', ')
+}
+
+/**
+ * A turn's work as one line: how long it took and what it did, or while
+ * Claude is on it, its latest note. Opens to every note and tool call.
+ */
+const WorkBlock = memo(function WorkBlock({
+  work,
+  isNew
+}: {
+  work: Work
+  isNew?: true
+}): React.JSX.Element {
+  const [open, setOpen] = useState(false)
+  const tools = work.steps.flatMap((s) => (s.kind === 'tools' ? s.tools : []))
+  const failed = tools.filter((t) => t.failed).length
+  const note = [...work.steps].reverse().find((s): s is Said => s.kind === 'assistant')
+  const time = took(work.from, work.to)
+  const headline = work.live
+    ? (note?.text.split('\n').find((l) => l.trim()) ?? 'Working')
+    : time
+      ? `Worked for ${time}`
+      : 'Worked'
+  return (
+    <div className="cr-chat-work" data-chat-work data-open={open || undefined} data-new={isNew}>
+      <button
+        type="button"
+        className="cr-chat-work-summary"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Icon name="ChevronRight" size={14} className="cr-chat-work-chevron" />
+        <span className="cr-chat-work-headline">{headline}</span>
+        {tools.length > 0 && <span className="cr-chat-work-tally">{tally(tools)}</span>}
+        {failed > 0 && <span className="cr-chat-tool-failed">{failed} failed</span>}
+      </button>
+      {open && (
+        <div className="cr-chat-work-steps">
+          {work.steps.map((s) =>
+            s.kind === 'assistant' ? (
+              <ClaudeMessage key={s.id} text={s.text} at={s.at} />
+            ) : (
+              <ToolGroup key={s.id} tools={s.tools} />
+            )
+          )}
+        </div>
+      )}
+    </div>
+  )
+})
+
+/** One tool call. Opens in place to show the whole command or path behind it. */
 function ToolRow({ tool: t }: { tool: ToolEntry }): React.JSX.Element {
   const [open, setOpen] = useState(false)
-  const long = t.detail.length > 60
+  const long = t.detail.length > 60 || Boolean(t.full)
   const body = (
     <>
-      <span className="cr-chat-tool-label">{t.label}</span>
+      {t.label && <span className="cr-chat-tool-label">{t.label}</span>}
       {t.detail && <span className="cr-chat-tool-detail">{t.detail}</span>}
       {t.added !== null && t.added > 0 && <span className="cr-chat-tool-added">+{t.added}</span>}
       {t.removed !== null && t.removed > 0 && (
         <span className="cr-chat-tool-removed">−{t.removed}</span>
       )}
       {t.failed && <span className="cr-chat-tool-failed">failed</span>}
+      {open && t.full && <code className="cr-chat-tool-full">{t.full}</code>}
     </>
   )
   return long ? (

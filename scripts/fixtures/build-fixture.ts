@@ -781,13 +781,15 @@ claudeSaid('fixture-errored', [
             type: 'tool_use',
             id: 'toolu_chat_1',
             name: 'Bash',
-            input: { command: 'git worktree list' }
+            input: { command: 'git worktree list', description: 'List the worktrees' }
           },
           {
             type: 'tool_use',
             id: 'toolu_chat_2',
             name: 'Bash',
-            input: { command: 'gh pr list --state merged --limit 20' }
+            // The `cd <folder> &&` agents put on nearly every command: the
+            // row leaves it off, and shows it when opened.
+            input: { command: 'cd /fixture/repo && gh pr list --state merged --limit 20' }
           },
           {
             type: 'tool_use',
@@ -814,6 +816,8 @@ claudeSaid('fixture-errored', [
         ]
       }
     },
+    // Said after the last tool call: the turn's reply, shown under its folded work.
+    said(46.8, 'Two of the branches have merged.'),
     // A long paste with a file on it, as Home or Chat sends one, and a reply
     // with a code block: the chat view folds the first and copies the second.
     {

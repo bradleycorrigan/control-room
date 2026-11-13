@@ -22,7 +22,11 @@ export type ChatEntry =
       id: string
       name: string
       label: string
+      /** What it did, in a few words: a command's own description where it gave one. */
       detail: string
+      /** The whole command or path, shown when the row is opened. Empty when detail says it all. */
+      full: string
+      at: string | null
       added: number | null
       removed: number | null
       failed: boolean
@@ -59,16 +63,44 @@ function lineCount(s: string): number {
   return s ? s.split('\n').length : 0
 }
 
+/**
+ * A command without the `cd <folder> &&` it starts with: agents put one on
+ * nearly every command, so every row began with the same long path and the
+ * part that differed was cut off.
+ */
+export function withoutCd(command: string): string {
+  let c = command.trim()
+  const lead = /^cd\s+(?:'[^']*'|"[^"]*"|\S+)\s*(?:&&|;)\s*/
+  while (lead.test(c)) c = c.replace(lead, '')
+  return c
+}
+
 /** "Edit", "src/main/poller.ts", +12 −3: the words a tool row shows. */
 export function describeTool(
+  name: string,
+  input: Record<string, unknown>
+): { label: string; detail: string; full: string; added: number | null; removed: number | null } {
+  const shown = describe(name, input)
+  const file = str(input.file_path) || str(input.notebook_path) || str(input.path)
+  const full = name === 'Bash' ? str(input.command).trim() : file
+  return { ...shown, full: full && full !== shown.detail ? full : '' }
+}
+
+function describe(
   name: string,
   input: Record<string, unknown>
 ): { label: string; detail: string; added: number | null; removed: number | null } {
   const file = str(input.file_path) || str(input.notebook_path) || str(input.path)
   const short = file ? file.split('/').slice(-3).join('/') : ''
   switch (name) {
-    case 'Bash':
-      return { label: 'Ran', detail: str(input.command), added: null, removed: null }
+    case 'Bash': {
+      // Claude Code asks for a plain description of every command ("List
+      // the worktrees"); it reads as a sentence on its own, so no "Ran".
+      const said = str(input.description).trim()
+      return said
+        ? { label: '', detail: said, added: null, removed: null }
+        : { label: 'Ran', detail: withoutCd(str(input.command)), added: null, removed: null }
+    }
     case 'Read':
       return { label: 'Read', detail: short, added: null, removed: null }
     case 'Write':
@@ -222,6 +254,7 @@ export class ChatParser {
             id: b.id ?? `${id}:${i}`,
             name: b.name,
             ...describeTool(b.name, b.input ?? {}),
+            at,
             failed: false
           }
           this.tools.set(entry.id, entry)
