@@ -2223,8 +2223,8 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
               (el) => el.textContent?.trim() ?? ''
             )
           await check(
-            'the Settings sidebar lists its five sections',
-            items().join('|') === 'Views|New sessions|Dev containers|Appearance|Hooks',
+            'the Settings sidebar lists its six sections',
+            items().join('|') === 'Views|New sessions|Editor|Dev containers|Appearance|Hooks',
             items().join('|')
           )
           await openSettingsSection('Appearance')
@@ -2289,6 +2289,85 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           'the raw hook config is behind a toggle, closed by default',
           Boolean($('.settings-hooks-details')) &&
             !($('.settings-hooks-details') as HTMLDetailsElement | null)?.open
+        )
+      }
+    },
+    // ---- Editor and setup ----
+    {
+      name: 'Editor and setup',
+      run: async () => {
+        await ctx.goTo('settings')
+        await wait(600)
+        await openSettingsSection('Editor')
+        const options = (): HTMLElement[] =>
+          $$('[role="radiogroup"][aria-label="Editor"] [role="radio"]')
+        await until(() => options().length > 0, 4000)
+        const words = (): string[] => options().map((o) => o.textContent?.trim() ?? '')
+        const picked = (): string =>
+          options()
+            .find((o) => o.getAttribute('aria-checked') === 'true')
+            ?.textContent?.trim() ?? ''
+        await check(
+          'Settings › Editor lists the editors found plus your own command, with Cursor picked',
+          words().at(-1)?.startsWith('Another editor') === true && picked().startsWith('Cursor'),
+          `${words().join(' | ')}; picked: ${picked()}`
+        )
+        await click(byText('[role="radiogroup"][aria-label="Editor"] [role="radio"]', 'Another'))
+        await until(() => Boolean($('input[aria-label="Editor command"]')), 2000)
+        const saved = await api.invoke<{ editor: string | null; editorCommand: string }>(
+          'settings:get'
+        )
+        await check(
+          'picking your own command saves it and shows the command box',
+          saved.editor === 'custom' &&
+            saved.editorCommand.includes('{folder}') &&
+            Boolean($('input[aria-label="Editor command"]')),
+          JSON.stringify(saved)
+        )
+        await openSessionByTitle('Working session')
+        await check(
+          'the session header names the chosen editor',
+          await until(
+            () => Boolean($('.session-detail-folder[aria-label="Open in your editor"]')),
+            2000
+          ),
+          $('.session-detail-folder')?.getAttribute('aria-label') ?? 'no folder button'
+        )
+        await api.invoke('settings:set', { editor: 'cursor' })
+        await check(
+          'switching back to Cursor renames it straight away',
+          await until(
+            () => Boolean($('.session-detail-folder[aria-label="Open in Cursor"]')),
+            2000
+          ),
+          $('.session-detail-folder')?.getAttribute('aria-label') ?? 'no folder button'
+        )
+        await click($('.session-detail-header [aria-label^="Close tab"]'))
+        await wait(300)
+
+        // The setup dialog, from the title bar menu: three steps, and Done
+        // marks it finished.
+        await click($('.app-titlebar-menu-button'))
+        await until(() => Boolean(byText('.app-titlebar-menu-item', 'Set up Control Room')), 2000)
+        await click(byText('.app-titlebar-menu-item', 'Set up Control Room'))
+        await until(() => $$('.setup-tool').length > 0, 4000)
+        const titles = $$('.setup-dialog .cr-step-title').map((t) => t.textContent ?? '')
+        const tools = $$('.setup-tool-name').map((t) => t.textContent ?? '')
+        await check(
+          'setup shows Tools, Editor and Claude hooks, and checks tmux, git and claude',
+          titles.join('|') === 'Tools|Editor|Claude hooks' &&
+            tools.join('|') === 'tmux|git|claude' &&
+            Boolean($('.setup-dialog [role="radiogroup"][aria-label="Editor"]')),
+          `steps: ${titles.join('|')}; tools: ${tools.join('|')}`
+        )
+        await api.invoke('settings:set', { setupCompletedAt: null })
+        await click(byText('.setup-dialog button', 'Done'))
+        await until(() => !$('.setup-dialog'), 2000)
+        const after = await api.invoke<{ setupCompletedAt: number | null }>('settings:get')
+        await check(
+          'Done closes setup and marks it finished',
+          !$('.setup-dialog') && typeof after.setupCompletedAt === 'number',
+          `dialog open: ${Boolean($('.setup-dialog'))}; setupCompletedAt: ${after.setupCompletedAt}`
         )
       }
     },

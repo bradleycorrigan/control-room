@@ -1,3 +1,4 @@
+import type { EditorChoice } from './editors'
 export type SchemaVersion = 1
 
 export interface Project {
@@ -176,6 +177,16 @@ export interface AppSettings {
   // A dev container's hooks must carry this, so nothing else that can reach
   // the port can post events. Made once, on first start; never shown.
   hookToken: string
+  /**
+   * Where "Open in …" opens a worktree. Null until someone picks one (a new
+   * install); state files from before this setting get 'cursor', which was
+   * the only choice then.
+   */
+  editor: EditorChoice | null
+  /** For editor 'custom': a command line, `{folder}` replaced with the folder. */
+  editorCommand: string
+  /** When the setup dialog was finished or closed. Null shows it on launch. */
+  setupCompletedAt: number | null
 }
 
 export interface StateFile {

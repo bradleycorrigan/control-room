@@ -11,6 +11,7 @@ import {
 import { relativeTime } from '../lib/format-time'
 import '../screens/backlog.css'
 import './worktree-overlay.css'
+import { useEditorName } from '../state/useEditorName'
 
 /**
  * One worktree, opened from its card: what's attached to it (session, pull
@@ -78,6 +79,7 @@ export default function WorktreeOverlay({
       : 'Never pushed'
   const prompt = liveSession?.record?.lastPrompt ? cleanPrompt(liveSession.record.lastPrompt) : null
   const pending = detail === 'loading'
+  const editor = useEditorName()
 
   return (
     <Modal title={branch ?? 'No branch'} icon="GitBranch" width={720} onClose={onClose}>
@@ -88,12 +90,12 @@ export default function WorktreeOverlay({
           </div>
           <IconButton
             icon="Code"
-            label="Open in Cursor"
+            label={`Open in ${editor}`}
             size={28}
             variant="ghost"
             onClick={() =>
               void openWorktreeInIde(projectId, worktree.path).then((r) => {
-                if (!r.ok) pushToast(r.error ?? 'Could not open it in Cursor.')
+                if (!r.ok) pushToast(r.error ?? `Could not open it in ${editor}.`)
               })
             }
           />

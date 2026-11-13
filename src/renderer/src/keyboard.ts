@@ -46,7 +46,7 @@ export const KEYBOARD_MAP: KeyboardMapEntry[] = [
   { id: 'projects', combo: '⌘⇧1', description: 'Projects' },
   { id: 'sessions', combo: '⌘⇧2', description: 'Sessions' },
   { id: 'new-session', combo: '⌘N', description: 'New session' },
-  { id: 'open-ide', combo: '⌘⇧O', description: 'Open current session in Cursor' },
+  { id: 'open-ide', combo: '⌘⇧O', description: 'Open current session in your editor' },
   { id: 'grid', combo: '⌘G', description: 'Grid view toggle' },
   { id: 'toggle-sidebar', combo: '⌘B', description: 'Show or hide the sidebar' },
   { id: 'help', combo: '⌘/', description: 'Keyboard help' },

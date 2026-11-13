@@ -2,7 +2,7 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child
 import { homedir } from 'node:os'
 
 // Launched from Finder, process.env.PATH is roughly /usr/bin:/bin:/usr/sbin:/sbin —
-// tmux, claude and cursor are all "not found" without this.
+// tmux, claude and editor CLIs are all "not found" without this.
 const EXTRA_PATH = [
   `${homedir()}/.local/bin`,
   '/opt/homebrew/bin',
@@ -46,7 +46,8 @@ export interface RunResult {
   stderr: string
 }
 
-const REQUIRED_BINARIES = ['tmux', 'git', 'claude', 'cursor'] as const
+// The editor isn't here: it's a setting, with its own check (exec/editor.ts).
+const REQUIRED_BINARIES = ['tmux', 'git', 'claude'] as const
 // Found or not, the app works. A missing one is logged, never toasted: the
 // feature that needs it just doesn't show (the dev container toggle).
 const OPTIONAL_BINARIES = ['devcontainer'] as const

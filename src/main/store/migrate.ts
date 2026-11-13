@@ -1,4 +1,5 @@
 import type { StateFile, SchemaVersion } from './types'
+import { DEFAULT_EDITOR_COMMAND } from './editors'
 
 // The standard Dev Containers CLI (exec/devcontainer.ts).
 export const DEFAULT_DEV_CONTAINER_UP = 'devcontainer up --workspace-folder {folder}'
@@ -56,6 +57,12 @@ export function migrate(raw: unknown): StateFile {
       devContainerNeedsConfig: true,
       devContainerHookHost: 'host.docker.internal',
       hookToken: '',
+      // A brand-new install has no editor until the setup dialog asks. An
+      // existing state file had Cursor, the only editor there was, and has
+      // already been set up: no dialog on its next launch.
+      editor: obj.settings ? ('cursor' as const) : null,
+      editorCommand: DEFAULT_EDITOR_COMMAND,
+      setupCompletedAt: obj.settings ? Date.now() : null,
       ...(obj.settings ?? {})
     }
   }

@@ -260,6 +260,7 @@ const PAGE_SHARDS = [
     'Dropping',
     'Sessions',
     'Settings',
+    'Editor and setup',
     'Dev containers',
     'Projects tidy',
     'Skills and rules',

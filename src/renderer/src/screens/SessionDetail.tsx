@@ -68,6 +68,7 @@ import { CreateTicket } from './backlog/CreateTicket'
 import { useTitleSuggestion } from '../components/useTitleSuggestion'
 import { MenuItems } from '../components/MenuItems'
 import { Picker, type PickerOption } from './backlog/Picker'
+import { useEditorName } from '../state/useEditorName'
 
 interface Props {
   session: LiveSession
@@ -239,6 +240,7 @@ export default function SessionDetail({
   // (button shown, panel renders its own "no usage data" state on open).
   const [contextUsage, setContextUsage] = useState<ContextWindowUsage | null | undefined>(undefined)
   const [contextPanelOpen, setContextPanelOpen] = useState(false)
+  const editor = useEditorName()
   const [sessionActionNode, sessionActions] = useSessionActions({
     pushToast,
     onChanged: () => onSessionUpdated?.(),
@@ -690,11 +692,11 @@ export default function SessionDetail({
           <button
             type="button"
             className="session-detail-folder"
-            aria-label="Open in IDE"
-            title="Open in IDE"
+            aria-label={`Open in ${editor}`}
+            title={`Open in ${editor}`}
             onClick={() => {
               void openSessionInIde(session.record!.id).then((result) => {
-                if (!result.ok) pushToast?.(result.error ?? 'Could not open in your IDE.')
+                if (!result.ok) pushToast?.(result.error ?? `Could not open in ${editor}.`)
               })
             }}
           >

@@ -37,15 +37,15 @@ A Mac with Apple silicon (arm64). Then:
 
 Optional. Everything else works without them:
 
-| Tool                                                                        | What it adds                                                                                      |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| [Cursor](https://cursor.com) (`cursor` on your `PATH`)                      | "Open in IDE" for a session's worktree                                                            |
-| [GitHub CLI](https://cli.github.com) (`gh`), signed in with `gh auth login` | Pull request status, and opening pull requests from Ship                                          |
-| A Jira Cloud site and an API token                                          | The Tickets screen                                                                                |
-| The [Dev Containers CLI](https://github.com/devcontainers/cli) and Docker   | The dev container toggle (container icon) in the composer (see [Dev containers](#dev-containers)) |
-| `mise` / `direnv`                                                           | New worktrees get `mise trust` / `direnv allow` run for you                                       |
+| Tool                                                                                          | What it adds                                                                                      |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| An editor: Cursor, VS Code, Windsurf, Zed, Sublime Text, a JetBrains IDE, or your own command | "Open in …" for a session's worktree. Pick it in Settings › Editor                                |
+| [GitHub CLI](https://cli.github.com) (`gh`), signed in with `gh auth login`                   | Pull request status, and opening pull requests from Ship                                          |
+| A Jira Cloud site and an API token                                                            | The Tickets screen                                                                                |
+| The [Dev Containers CLI](https://github.com/devcontainers/cli) and Docker                     | The dev container toggle (container icon) in the composer (see [Dev containers](#dev-containers)) |
+| `mise` / `direnv`                                                                             | New worktrees get `mise trust` / `direnv allow` run for you                                       |
 
-When the app starts, it tells you if `tmux`, `git`, `claude` or `cursor` is missing.
+The first time it opens, the app shows a short setup: it checks `tmux`, `git` and `claude` (with the command to install any that are missing), asks which editor to use, and offers to install the Claude hooks. Open it again from the ⋯ menu › Set up Control Room.
 
 ## Install
 

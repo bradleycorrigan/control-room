@@ -19,6 +19,7 @@ import { useToasts } from './state/useToasts'
 import {
   onNavigate,
   openSessionInIde,
+  getAppSettings,
   installHooks,
   openDataFolder,
   listProjects,
@@ -42,6 +43,7 @@ import { DEFAULT_TERMINAL_FONT_SIZE } from './components/Terminal'
 import PrimitivesGallery from './dev/PrimitivesGallery'
 import { useThemeProvider } from './theme/ThemeProvider'
 import { useKeyboardMap, isShortcutMod } from './keyboard'
+import { SetupDialog } from './components/SetupDialog'
 
 // Sidebar geometry. The floor is the narrowest the longest project name stays
 // readable at; the ceiling stops the rail eating a window it is only a filter
@@ -164,6 +166,13 @@ function App(): React.JSX.Element {
   const [jiraSetupPreview, setJiraSetupPreview] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [keyboardHelpOpen, setKeyboardHelpOpen] = useState(false)
+  // First launch opens setup; after that, only the ⋯ menu or the palette does.
+  const [setupOpen, setSetupOpen] = useState(false)
+  useEffect(() => {
+    void getAppSettings().then((s) => {
+      if (s.setupCompletedAt === null) setSetupOpen(true)
+    })
+  }, [])
   const { projects, refresh: refreshProjects } = useProjects()
   const { sessions, refresh: refreshSessions } = useSessions()
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts()
@@ -2142,6 +2151,12 @@ function App(): React.JSX.Element {
       setPaletteOpen(false)
       setKeyboardHelpOpen(true)
     })
+    registerShotScreen('setup', () => {
+      setView('sessions')
+      setOpenSessionKey(null)
+      setPaletteOpen(false)
+      setSetupOpen(true)
+    })
     registerShotScreen('grid', () => {
       setView('sessions')
       setOpenSessionKey(null)
@@ -2158,7 +2173,7 @@ function App(): React.JSX.Element {
     })
     // One Settings section per shot: the screen remembers the last section
     // it showed, so the shot sets it before opening the screen.
-    for (const section of ['views', 'sessions', 'containers', 'appearance', 'hooks']) {
+    for (const section of ['views', 'sessions', 'editor', 'containers', 'appearance', 'hooks']) {
       registerShotScreen(`settings-${section}`, () => {
         try {
           localStorage.setItem('settings-section', JSON.stringify(section))
@@ -2210,11 +2225,11 @@ function App(): React.JSX.Element {
     async (target?: LiveSession) => {
       const session = target ?? currentSession
       if (!session?.record) {
-        pushToast('No session selected to open in IDE.')
+        pushToast('No session selected to open.')
         return
       }
       const result = await openSessionInIde(session.record.id)
-      if (!result.ok) pushToast(result.error ?? 'Could not open in Cursor.')
+      if (!result.ok) pushToast(result.error ?? 'Could not open it in your editor.')
     },
     [currentSession, pushToast]
   )
@@ -2293,7 +2308,7 @@ function App(): React.JSX.Element {
   // session was whichever came next in memory, and nothing showed which.
   const moveSessionFocus = useCallback(
     (delta: number) => {
-      if (paletteOpen || keyboardHelpOpen || showNewSessionForm) return
+      if (paletteOpen || keyboardHelpOpen || setupOpen || showNewSessionForm) return
       const items = [
         ...document.querySelectorAll<HTMLElement>('[data-session-item], [data-nav-item]')
       ].filter((el) => el.offsetParent !== null && !el.closest('[aria-hidden="true"]'))
@@ -2311,7 +2326,7 @@ function App(): React.JSX.Element {
       // background, and a list's open panel follows this (Backlog's peek).
       items[next].dispatchEvent(new CustomEvent('cr:nav-focus', { bubbles: true }))
     },
-    [paletteOpen, keyboardHelpOpen, showNewSessionForm]
+    [paletteOpen, keyboardHelpOpen, setupOpen, showNewSessionForm]
   )
 
   useKeyboardMap({
@@ -2365,6 +2380,7 @@ function App(): React.JSX.Element {
         onOpenSettings={() => setView('settings')}
         onInstallHooks={handleInstallHooks}
         onOpenDataFolder={handleOpenDataFolder}
+        onOpenSetup={() => setSetupOpen(true)}
         onNewSession={() => setShowNewSessionForm(true)}
         onShowUnread={handleShowUnread}
         onToggleSidebar={toggleSidebar}
@@ -2728,6 +2744,7 @@ function App(): React.JSX.Element {
         onInstallHooks={handleInstallHooks}
         onOpenSettings={() => setView('settings')}
         onOpenDataFolder={handleOpenDataFolder}
+        onOpenSetup={() => setSetupOpen(true)}
         onOpenKeyboardHelp={() => setKeyboardHelpOpen(true)}
         onSelectTicket={(key) => {
           // Same path as a session header's ticket pill (onOpenTicket below).
@@ -2743,6 +2760,7 @@ function App(): React.JSX.Element {
       />
 
       {keyboardHelpOpen && <KeyboardHelp onClose={() => setKeyboardHelpOpen(false)} />}
+      {setupOpen && <SetupDialog onClose={() => setSetupOpen(false)} />}
 
       <div className="toast-stack">
         {toasts.map((toast) => (

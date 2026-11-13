@@ -3,6 +3,7 @@ import type { LiveSession, Project } from '../../../main/store/types'
 import { themes } from '../theme/themes'
 import { findTicket, listCheckoutBranches, type CheckoutBranch } from '../api-palette'
 import { getJiraStatus, openExternal } from '../api'
+import { useEditorName } from '../state/useEditorName'
 
 interface Props {
   open: boolean
@@ -18,6 +19,7 @@ interface Props {
   onInstallHooks: () => void
   onOpenSettings: () => void
   onOpenDataFolder: () => void
+  onOpenSetup: () => void
   onOpenKeyboardHelp: () => void
   /** Open session tabs, in strip order — listed first, as "open tab". */
   openTabKeys: string[]
@@ -90,6 +92,7 @@ export default function CommandPalette({
   onInstallHooks,
   onOpenSettings,
   onOpenDataFolder,
+  onOpenSetup,
   onOpenKeyboardHelp,
   openTabKeys,
   onReopenClosedTab,
@@ -190,6 +193,8 @@ export default function CommandPalette({
       clearTimeout(timer)
     }
   }, [ticketKey])
+
+  const editor = useEditorName()
 
   const ticketItem = useMemo<PaletteItem | null>(() => {
     if (!ticketKey || ticketLookup?.key !== ticketKey || !ticketLookup.result) return null
@@ -316,8 +321,8 @@ export default function CommandPalette({
       {
         id: 'cmd:open-ide',
         kind: 'command',
-        label: 'Open in IDE',
-        searchText: 'open in ide cursor',
+        label: `Open in ${editor}`,
+        searchText: `open in ide editor ${editor.toLowerCase()}`,
         run: onOpenInIde
       },
       {
@@ -340,6 +345,13 @@ export default function CommandPalette({
         label: 'Open data folder',
         searchText: 'open data folder finder',
         run: onOpenDataFolder
+      },
+      {
+        id: 'cmd:setup',
+        kind: 'command',
+        label: 'Set up Control Room',
+        searchText: 'setup set up editor tools hooks onboarding',
+        run: onOpenSetup
       },
       {
         id: 'cmd:keyboard-help',
@@ -373,6 +385,8 @@ export default function CommandPalette({
     onInstallHooks,
     onOpenSettings,
     onOpenDataFolder,
+    onOpenSetup,
+    editor,
     onOpenKeyboardHelp,
     onSelectTheme,
     openTabKeys,

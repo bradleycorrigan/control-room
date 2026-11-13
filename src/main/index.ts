@@ -3,7 +3,7 @@ import { join } from 'path'
 import { existsSync, readFileSync } from 'node:fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
-import { load as loadStore, flushPendingSave } from './store/store'
+import { load as loadStore, flushPendingSave, getState } from './store/store'
 import { registerIpcHandlers } from './ipc'
 import { startPoller, stopPoller, triggerImmediateTick } from './engine/poller'
 import {
@@ -232,6 +232,9 @@ if (!gotSingleInstanceLock) {
           return
         }
         log.warn('startup: missing required binaries', { missing })
+        // Before setup, the setup dialog lists what's missing with the
+        // command to install it; a toast on top would say it twice.
+        if (getState().settings.setupCompletedAt === null) return
         const names = missing.map((r) => r.name).join(', ')
         mainWindow.webContents.send(
           'toast',

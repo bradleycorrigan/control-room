@@ -17,7 +17,7 @@ import {
   uncommittedChanges
 } from './exec/git'
 import { handoffGitSummary } from './exec/sessionGit'
-import { openInCursor } from './exec/cursor'
+import { openInEditor } from './exec/editor'
 import { discoverLiveSessions } from './engine/discovery'
 import { retireSessionsInWorktree, shelveSessionsInWorktree } from './engine/sessions'
 import type { LiveSession } from './store/types'
@@ -130,7 +130,7 @@ export function registerProjectsIpc(): void {
   ipcMain.handle('worktrees:openIde', async (_evt, projectId: string, worktreePath: string) => {
     if (!(await projectWorktree(projectId, worktreePath)))
       return { ok: false, error: 'not a worktree of this project' }
-    return openInCursor(worktreePath)
+    return openInEditor({ folder: worktreePath })
   })
 
   ipcMain.handle('worktrees:reveal', async (_evt, projectId: string, worktreePath: string) => {

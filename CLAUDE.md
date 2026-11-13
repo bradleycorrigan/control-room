@@ -2,7 +2,7 @@
 
 A local Electron app that manages Claude Code agent sessions: projects are git repos, a session is
 a worktree + branch + an agent running in a tmux window. It shows which sessions need attention,
-notifies, shows diffs, and opens a worktree in Cursor.
+notifies, shows diffs, and opens a worktree in your editor (Settings › Editor).
 
 **The plan is the spec.** The maintainer keeps the plans outside this repo, in their own
 `~/.claude/plans/` (maintainer-only, optional): `ok-now-i-want-rippling-starlight.md` (plan 7,
@@ -204,8 +204,9 @@ epoch milliseconds.
 - Never write to `~/.claude/settings.json` except the `hooks` key, after a timestamped backup, and
   only when the user presses the button.
 - Status is always shown as a colour **and** a word. Colour alone is not accessible.
-- Creating a session never opens Cursor. Per-worktree setup runs in the tmux pane
-  (`<setupCommand> && <agentCommand>`); Cursor opens only from "Open in IDE".
+- Creating a session never opens the editor. Per-worktree setup runs in the tmux pane
+  (`<setupCommand> && <agentCommand>`); the editor opens only from "Open in …"
+  (`src/main/exec/editor.ts`, the list in `src/main/store/editors.ts`).
 - Dev containers go through the standard Dev Containers CLI, typed into the tmux pane like any
   agent command (`src/main/exec/devcontainer.ts`). The commands are settings; nothing in the code
   knows about one machine's setup. "Start in dev container" shows only where it can work.

@@ -95,7 +95,8 @@ import {
   writePastedText
 } from './exec/attachments'
 import { listRules, appendRule, restoreRuleBackup } from './exec/rules'
-import { openInCursor } from './exec/cursor'
+import { detectEditors, openInEditor } from './exec/editor'
+import { checkRequiredBinaries } from './exec/run'
 import { discoverLiveSessions, invalidateAgentsCache, SHELL_COMMANDS } from './engine/discovery'
 import { acknowledgeSession } from './engine/status'
 import { markSeen, markUnread } from './engine/seen'
@@ -502,17 +503,15 @@ export function registerIpcHandlers(): void {
     if (!cwd || !inProject || !existsSync(cwd)) {
       return { ok: false, error: 'its folder is gone or outside your projects' }
     }
-    return openInCursor(cwd)
+    return openInEditor({ folder: cwd })
   })
 
   ipcMain.handle('session:openIde', async (_evt, id: string) => {
     const record = getState().sessions.find((s) => s.id === id)
     if (!record) return { ok: false, error: 'session not found' }
-    // Prefer the workspace file (it carries the interpreter and tasks), but fall
-    // back to the worktree when it was never written or has been removed.
-    const workspace = record.workspaceFile
-    const target = workspace && existsSync(workspace) ? workspace : record.worktreePath
-    return openInCursor(target)
+    // Editors that read it get the workspace file (it carries the interpreter
+    // and tasks); the rest, or a missing file, get the worktree.
+    return openInEditor({ folder: record.worktreePath, workspaceFile: record.workspaceFile })
   })
 
   ipcMain.handle('session:diff', async (_evt, id: string) => {
@@ -738,6 +737,11 @@ export function registerIpcHandlers(): void {
     }
     return { missing: null }
   })
+
+  // The setup dialog and Settings › Editor: which editors this Mac has, and
+  // whether the tools sessions need are installed.
+  ipcMain.handle('editors:detect', () => detectEditors())
+  ipcMain.handle('setup:tools', () => checkRequiredBinaries())
 
   ipcMain.handle('settings:get', async () => {
     return getState().settings

@@ -1,5 +1,6 @@
 import type { AppSettings, LiveSession, Project, SessionRecord } from '../../main/store/types'
 import type { HooksConfig } from '../../main/engine/hooks-settings'
+import type { EditorId } from '../../main/store/editors'
 import type { CliHistoryEntry, ContextWindowUsage } from '../../main/exec/transcripts'
 
 // The only renderer file allowed to touch window.api — the renderer sends
@@ -343,6 +344,29 @@ export function getAppSettings(): Promise<AppSettings> {
 
 export function setAppSettings(patch: AppSettingsPatch): Promise<AppSettings> {
   return window.api.invoke<AppSettings>('settings:set', patch)
+}
+
+/** An editor in the list, and whether this Mac has it (Settings › Editor, setup). */
+export interface DetectedEditor {
+  id: EditorId
+  name: string
+  installed: boolean
+}
+
+export function detectEditors(): Promise<DetectedEditor[]> {
+  return window.api.invoke<DetectedEditor[]>('editors:detect')
+}
+
+/** A tool sessions need, and where it was found on PATH. */
+export interface ToolCheck {
+  name: string
+  found: boolean
+  path: string | null
+  optional: boolean
+}
+
+export function checkSetupTools(): Promise<ToolCheck[]> {
+  return window.api.invoke<ToolCheck[]>('setup:tools')
 }
 
 export interface DevContainerAvailability {

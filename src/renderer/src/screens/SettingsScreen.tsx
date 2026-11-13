@@ -20,6 +20,7 @@ import {
   type IconName
 } from '../components/primitives'
 import { DEFAULT_DEV_CONTAINER_RUN, DEFAULT_DEV_CONTAINER_UP } from '../../../main/store/migrate'
+import { EditorPicker } from '../components/EditorPicker'
 import { TERMINAL_FONT_SIZES } from '../components/Terminal'
 import { useStoredState } from '../state/useStoredState'
 import type { ThemeController } from '../theme/ThemeProvider'
@@ -30,7 +31,7 @@ interface SettingsScreenProps {
   theme: ThemeController
 }
 
-type SectionId = 'views' | 'sessions' | 'containers' | 'appearance' | 'hooks'
+type SectionId = 'views' | 'sessions' | 'editor' | 'containers' | 'appearance' | 'hooks'
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: IconName; blurb: string }> = [
   {
@@ -44,6 +45,12 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: IconName; blurb: str
     label: 'New sessions',
     icon: 'CirclePlay',
     blurb: 'What a new session starts with. The composer can still change it for one session.'
+  },
+  {
+    id: 'editor',
+    label: 'Editor',
+    icon: 'Code',
+    blurb: 'Where “Open in …” opens a session’s worktree.'
   },
   {
     id: 'containers',
@@ -248,6 +255,18 @@ export default function SettingsScreen({ theme }: SettingsScreenProps): React.JS
 
           {/* Dev containers: the toggle in the composer only shows where it can
               work, so these settings are all there is to it. */}
+          {section.id === 'editor' && settings && (
+            <Card className="settings-group">
+              <div className="settings-item settings-item--prose">
+                <EditorPicker
+                  editor={settings.editor}
+                  editorCommand={settings.editorCommand}
+                  onChange={(patch) => void patchSettings(patch)}
+                />
+              </div>
+            </Card>
+          )}
+
           {section.id === 'containers' && settings && (
             <Card className="settings-group" data-settings-dev-containers>
               {devStatus && (

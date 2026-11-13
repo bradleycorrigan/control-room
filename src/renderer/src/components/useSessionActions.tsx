@@ -21,6 +21,7 @@ import {
 } from '../api'
 import { useConfirm } from './primitives'
 import { setSessionPinned } from '../api-projects'
+import { useEditorName } from '../state/useEditorName'
 
 interface Options {
   pushToast?: (message: string) => void
@@ -75,6 +76,7 @@ export function useSessionActions({
   const [writingHandoff, setWritingHandoff] = useState<LiveSession | null>(null)
 
   const [confirmNode, confirm] = useConfirm()
+  const editor = useEditorName()
 
   // Every session gets this menu, in this order, on every screen: Home, the
   // Sessions list and the session itself. Grouped: work on it, organise it,
@@ -94,14 +96,14 @@ export function useSessionActions({
     const id = session.claudeSessionId
     const actions: SessionCardAction[] = [
       {
-        label: 'Open in IDE',
+        label: `Open in ${editor}`,
         icon: 'FolderOpen',
         group: 'work',
         disabled: id ? undefined : 'It isn’t working in a folder Control Room can open',
         onClick: () => {
           if (!id) return
           void openSessionFolderInIde(id).then((result) => {
-            if (!result.ok) pushToast?.(result.error ?? 'Could not open in Cursor.')
+            if (!result.ok) pushToast?.(result.error ?? `Could not open in ${editor}.`)
           })
         }
       },
@@ -196,12 +198,12 @@ export function useSessionActions({
     return [
       // Work on it.
       {
-        label: 'Open in IDE',
+        label: `Open in ${editor}`,
         icon: 'FolderOpen',
         group: 'work',
         onClick: () => {
           void openSessionInIde(record.id).then((result) => {
-            if (!result.ok) pushToast?.(result.error ?? 'Could not open in Cursor.')
+            if (!result.ok) pushToast?.(result.error ?? `Could not open in ${editor}.`)
           })
         }
       },
