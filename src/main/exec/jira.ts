@@ -1,5 +1,6 @@
-import { app, safeStorage } from 'electron'
+import { app, BrowserWindow, safeStorage } from 'electron'
 import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { log } from '../log'
 
@@ -698,6 +699,7 @@ export async function configureJira(input: {
   }
   writeFileSync(configPath(), JSON.stringify(stored), { mode: 0o600 })
   boardCache = null
+  forgetSavedBoard()
   myAccountId = null
   return { ok: true, value: jiraStatus() }
 }
@@ -705,6 +707,7 @@ export async function configureJira(input: {
 export function disconnectJira(): void {
   rmSync(configPath(), { force: true })
   boardCache = null
+  forgetSavedBoard()
   myAccountId = null
   linksCache.clear()
   rmSync(linksCachePath(), { force: true })
@@ -715,6 +718,50 @@ export function disconnectJira(): void {
 
 let boardCache: { at: number; value: JiraBoardData } | null = null
 const BOARD_TTL_MS = 60_000
+// Older than BOARD_TTL_MS but younger than this, the board is shown at once
+// while a fresh one loads behind it; the screens are told when it lands.
+const BOARD_STALE_MS = 24 * 60 * 60_000
+
+// The last board, kept on disk, so the first look after a launch shows the
+// tickets at once instead of waiting seconds on Jira. Same site and projects
+// only; tickets are no secret from the person whose Jira they are, and the
+// file sits beside the remote-links cache in the app's own data folder.
+const savedBoardPath = (): string => join(app.getPath('userData'), 'jira-board.json')
+let savedBoardRead = false
+function savedBoard(): { at: number; value: JiraBoardData } | null {
+  if (savedBoardRead) return null
+  savedBoardRead = true
+  try {
+    const config = readConfig()
+    const saved = JSON.parse(readFileSync(savedBoardPath(), 'utf8')) as {
+      at: number
+      key: string
+      value: JiraBoardData
+    }
+    if (!config || saved.key !== boardKey(config)) return null
+    return { at: saved.at, value: saved.value }
+  } catch {
+    return null
+  }
+}
+function boardKey(config: { site: string; projects: string[] }): string {
+  return `${config.site}|${config.projects.join(',')}`
+}
+function saveBoard(at: number, value: JiraBoardData): void {
+  const config = readConfig()
+  if (!config) return
+  void writeFile(savedBoardPath(), JSON.stringify({ at, key: boardKey(config), value })).catch(
+    (err) => log.warn('jira: could not save the board', { error: String(err) })
+  )
+}
+function forgetSavedBoard(): void {
+  savedBoardRead = true
+  rmSync(savedBoardPath(), { force: true })
+}
+/** Tells every screen showing tickets that a fresher board is ready. */
+function announceBoard(): void {
+  for (const win of BrowserWindow.getAllWindows()) win.webContents.send('jira:boardRefreshed')
+}
 let myAccountId: string | null = null
 // Remote links cost one request per ticket, so they're kept per ticket and
 // only asked again when the ticket's `updated` moves, or after LINKS_TTL_MS:
@@ -928,6 +975,25 @@ export async function loadBoard(refresh = false): Promise<JiraResult<JiraBoardDa
   if ('error' in conn) return { ok: false, error: conn.error }
   if (!refresh && boardCache && Date.now() - boardCache.at < BOARD_TTL_MS) {
     return { ok: true, value: boardCache.value }
+  }
+  // An older board, in memory or saved from the last launch: shown now, with
+  // a fresh one loading behind it.
+  if (!refresh) {
+    const stale = boardCache ?? savedBoard()
+    if (stale && Date.now() - stale.at < BOARD_STALE_MS) {
+      if (!boardCache) boardCache = stale
+      if (!boardLoading) {
+        boardLoading = loadBoardFresh(conn)
+          .then((r) => {
+            if (r.ok) announceBoard()
+            return r
+          })
+          .finally(() => {
+            boardLoading = null
+          })
+      }
+      return { ok: true, value: stale.value }
+    }
   }
   // Two parts of the app asking at once (the Backlog and a ticket panel over
   // a session) share one load rather than each going to Jira.
@@ -1232,6 +1298,7 @@ async function loadBoardFresh(conn: Conn): Promise<JiraResult<JiraBoardData>> {
       steps: timings
     })
     boardCache = { at: Date.now(), value }
+    saveBoard(boardCache.at, value)
     saveLinksCache()
     return value
   })

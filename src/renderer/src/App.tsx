@@ -1072,6 +1072,79 @@ function App(): React.JSX.Element {
       setOpenSessionKey(list.find((s) => s.claudeSessionId === 'fixture-waiting')?.key ?? null)
       await new Promise((r) => setTimeout(r, 800))
     })
+    // The chat view while Claude works: the working line at the foot.
+    registerShotScreen('session-chat-working', async () => {
+      try {
+        sessionStorage.setItem('cr-session-view', 'chat')
+      } catch {
+        // shot runs have storage; nothing to do without it
+      }
+      setView('sessions')
+      setPaletteOpen(false)
+      const list = sessions.length > 0 ? sessions : await listSessions()
+      setOpenSessionKey(list.find((s) => s.claudeSessionId === 'fixture-working')?.key ?? null)
+      await new Promise((r) => setTimeout(r, 2500))
+    })
+    // The chat view's history: a long paste folded, its file as a chip, and a
+    // reply with a code block (hovered, so its copy button shows).
+    registerShotScreen('session-chat-history', async () => {
+      try {
+        sessionStorage.setItem('cr-session-view', 'chat')
+      } catch {
+        // shot runs have storage; nothing to do without it
+      }
+      setView('sessions')
+      setPaletteOpen(false)
+      const list = sessions.length > 0 ? sessions : await listSessions()
+      setOpenSessionKey(list.find((s) => s.claudeSessionId === 'fixture-waiting')?.key ?? null)
+      await new Promise((r) => setTimeout(r, 1500))
+      document.querySelectorAll('[data-chat-you]')[1]?.scrollIntoView({ block: 'start' })
+      await new Promise((r) => setTimeout(r, 300))
+    })
+    // The chat's boxes in focus: find open with a query, the message box
+    // typed into, a question's "something else" field in use. Each should
+    // show one ring, never a box inside a box.
+    registerShotScreen('session-chat-focus', async () => {
+      try {
+        sessionStorage.setItem('cr-session-view', 'chat')
+      } catch {
+        // shot runs have storage; nothing to do without it
+      }
+      await window.api.invoke('dev:seed-prompt', {
+        session_id: 'fixture-waiting',
+        tool_name: 'AskUserQuestion',
+        tool_input: {
+          questions: [
+            {
+              question: 'Which branches should go?',
+              header: 'Branches',
+              multiSelect: false,
+              options: [{ label: 'Only merged ones', description: 'Leave the rest.' }]
+            }
+          ]
+        }
+      })
+      setView('sessions')
+      setPaletteOpen(false)
+      const list = sessions.length > 0 ? sessions : await listSessions()
+      setOpenSessionKey(list.find((s) => s.claudeSessionId === 'fixture-waiting')?.key ?? null)
+      await new Promise((r) => setTimeout(r, 1500))
+      const fill = (el: HTMLInputElement | HTMLTextAreaElement | null, value: string): void => {
+        if (!el) return
+        const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement
+        Object.getOwnPropertyDescriptor(proto.prototype, 'value')?.set?.call(el, value)
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true }))
+      await new Promise((r) => setTimeout(r, 300))
+      fill(document.querySelector<HTMLInputElement>('.cr-chat-find-input'), 'worktree')
+      fill(
+        document.querySelector<HTMLTextAreaElement>('.cr-chat-input'),
+        'Only the merged ones, thanks'
+      )
+      document.querySelector<HTMLTextAreaElement>('.cr-chat-input')?.focus()
+      await new Promise((r) => setTimeout(r, 400))
+    })
     registerShotScreen('session-detail', async () => {
       setView('sessions')
       setPaletteOpen(false)
@@ -1462,7 +1535,7 @@ function App(): React.JSX.Element {
       )
       box.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
       await new Promise((resolve) => setTimeout(resolve, 900))
-      const chip = document.querySelector('.home-attachment-chip-name')?.textContent?.trim()
+      const chip = document.querySelector('.cr-attachment-chip-name')?.textContent?.trim()
       pushToast(`chip: "${chip ?? 'none'}" · composer holds ${box.value.length} chars`)
       await new Promise((resolve) => setTimeout(resolve, 200))
     })
@@ -2032,8 +2105,13 @@ function App(): React.JSX.Element {
       const list = sessions.length > 0 ? sessions : await listSessions()
       setOpenSessionKey(list[0]?.key ?? null)
       await new Promise((resolve) => setTimeout(resolve, 600))
-      const button = document.querySelector<HTMLButtonElement>('.session-detail-context-button')
-      button?.click()
+      document.querySelector<HTMLButtonElement>('button[aria-label="More actions"]')?.click()
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      Array.from(
+        document.querySelectorAll<HTMLButtonElement>('.session-detail-menu [role="menuitem"]')
+      )
+        .find((b) => b.textContent?.trim() === 'Token usage')
+        ?.click()
     })
     // Verification shots for the Modal-conversion milestone (delete/add-rule/
     // new-skill/keyboard-help dialogs) — none of these four had a shot entry

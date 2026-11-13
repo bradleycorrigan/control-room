@@ -234,7 +234,7 @@ function NeedsYou({
             key={session.key}
             type="button"
             className="projects-rail-needs-you-item"
-            title={session.lastSaid ?? sessionTitle(session)}
+            title={sessionTitle(session)}
             onClick={(e) => onOpenSession?.(session.key, e.metaKey || e.ctrlKey)}
           >
             <StatusDot status={session.status} size={8} />

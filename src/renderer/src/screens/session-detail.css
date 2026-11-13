@@ -326,6 +326,35 @@
   padding: 0;
 }
 
+/* Chat / Terminal: one control from the header's button family. The chosen
+   option is a full 28px button, filled exactly like the buttons beside it;
+   the other sits as plain text on a track the same height and corners, so
+   every edge in the row lines up. */
+.session-detail-header .cr-segmented {
+  box-sizing: border-box;
+  height: 28px;
+  gap: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg-sunken) 55%, var(--surface));
+}
+.session-detail-header .cr-segmented__option {
+  height: 28px;
+  padding: 0 var(--space-12);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+}
+.session-detail-header .cr-segmented__option:not(.cr-segmented__option--selected):hover {
+  background: transparent;
+  color: var(--text);
+}
+.session-detail-header .cr-segmented__option--selected {
+  background: var(--border);
+  color: var(--text);
+}
+
 /* Double-click renames: the title reads as editable on hover. */
 .session-detail-breadcrumb-title--renamable {
   /* Padding for the hover fill, taken back out so the text doesn't move. */
@@ -337,4 +366,30 @@
 
 .session-detail-breadcrumb-title--renamable:hover {
   background: var(--surface-raised);
+}
+
+/* ---- A slimmer header ----
+   The session's name and its chips (status, ticket, PRs, artifacts) share one
+   line, wrapping under the name only when the window is narrow; the folder
+   tile is the size of the buttons opposite. Two stacked lines and a 36px
+   tile spent ~40px of every session screen before the conversation began. */
+.session-detail-header {
+  padding: var(--space-8) var(--space-12);
+}
+.session-detail-breadcrumb-column {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--space-16);
+  row-gap: var(--space-4);
+}
+.session-detail-breadcrumb {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* The session's name in the display face, as page titles are. */
+.session-detail-breadcrumb-title {
+  font-family: var(--font-display);
+  letter-spacing: -0.005em;
 }

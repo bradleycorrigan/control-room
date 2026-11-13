@@ -1,0 +1,56 @@
+/* Attachment chips (AttachmentChips.tsx): under a prompt box once at least
+   one file is attached (picker, drop, a pasted image or a long paste). */
+.cr-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  padding: 0 var(--space-8);
+}
+
+.cr-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 28px;
+  max-width: 260px;
+  padding: 0 var(--space-4) 0 var(--space-8);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.cr-attachment-chip--error {
+  border-color: var(--status-error);
+  color: var(--status-error);
+}
+
+.cr-attachment-chip--pending {
+  color: var(--text-muted);
+}
+
+.cr-attachment-chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-label-size);
+}
+
+.cr-attachment-chip-spinner {
+  animation: cr-attachment-spin 0.8s linear infinite;
+}
+
+@keyframes cr-attachment-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-attachment-chip-spinner {
+    animation: none;
+  }
+}

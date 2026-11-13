@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
 import type { ContextWindowUsage } from '../../../main/exec/transcripts'
 import TerminalFrame from '../components/TerminalFrame'
@@ -14,7 +14,6 @@ import {
   IconButton,
   IconTile,
   Badge,
-  Pill,
   EmptyState,
   Popover,
   SegmentedControl
@@ -216,16 +215,24 @@ export default function SessionDetail({
   const [renameBusy, setRenameBusy] = useState(false)
   const [renameError, setRenameError] = useState<string | null>(null)
   const renameField = useRef<HTMLInputElement>(null)
+  // A suggested title lands selected, so Enter keeps it and typing replaces
+  // it. Selected once React has put it in the field: selecting on the next
+  // frame instead raced the commit in a busy window, and the text arrived
+  // after the select, with the cursor at its end.
+  const selectSuggestion = useRef(false)
   const titleSuggestion = useTitleSuggestion(
     renaming ? (session.record?.id ?? null) : null,
     (t) => {
+      selectSuggestion.current = true
       setRenameValue(t)
-      requestAnimationFrame(() => {
-        renameField.current?.focus()
-        renameField.current?.select()
-      })
     }
   )
+  useLayoutEffect(() => {
+    if (!selectSuggestion.current) return
+    selectSuggestion.current = false
+    renameField.current?.focus()
+    renameField.current?.select()
+  }, [renameValue])
   const [resuming, setResuming] = useState(false)
   // Plan 4 Part 7.4 — context window panel. `undefined` = not yet fetched
   // (button not shown), `null` = fetched but no transcript data available
@@ -691,10 +698,10 @@ export default function SessionDetail({
               })
             }}
           >
-            <IconTile icon="Folder" size={36} tone={accent} />
+            <IconTile icon="Folder" size={28} tone={accent} />
           </button>
         ) : (
-          <IconTile icon="Folder" size={36} tone={accent} />
+          <IconTile icon="Folder" size={28} tone={accent} />
         )}
         <div className="session-detail-breadcrumb-column">
           <div className="session-detail-breadcrumb">
@@ -859,14 +866,6 @@ export default function SessionDetail({
               onChange={choosePaneView}
             />
           )}
-          <Pill
-            size={28}
-            tone="var(--text-muted)"
-            className="session-detail-context-button"
-            onClick={() => setContextPanelOpen(true)}
-          >
-            claude ▾
-          </Pill>
           <div className="session-detail-actions-icons">
             {diffEligible && (
               <IconButton
@@ -924,7 +923,15 @@ export default function SessionDetail({
               where you happened to be looking at it. Rename stays in place
               here — there is a title on screen to turn into a field. */}
           <MenuItems
-            items={[...sessionActions(session), ...askPrItem]}
+            items={[
+              ...sessionActions(session).filter((a) => a.group !== 'end'),
+              ...askPrItem,
+              // Lived in the header as a "claude ▾" pill: a lot of room for a
+              // panel you open now and then. Sits above End and Delete, which
+              // stay last.
+              { label: 'Token usage', group: 'usage', onClick: () => setContextPanelOpen(true) },
+              ...sessionActions(session).filter((a) => a.group === 'end')
+            ]}
             onPicked={() => setMenuOpen(false)}
           />
         </Popover>

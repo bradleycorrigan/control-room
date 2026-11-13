@@ -2064,18 +2064,6 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           await wait(200)
         }
 
-        // Each row says what Claude last said, from its transcript, so you
-        // can tell what it's up to without opening it.
-        {
-          const ready = $('[data-record-id="fixture-rec-ready"]')
-          const said = ready?.querySelector('[data-last-said]')?.textContent ?? ''
-          await check(
-            "a session's row shows what Claude last said",
-            said.startsWith('Done. The worktree tests pass now.'),
-            `row ${ready ? 'found' : 'missing'}; said "${said}"`
-          )
-        }
-
         // The house tab's number is the sessions finished since you last
         // looked; clicking it shows just those.
         {
@@ -2524,7 +2512,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         await check(
           'Chat shows what you asked, Claude’s words, and its tool calls as lines',
           you.includes('Clean up the worktrees') &&
-            $$('[data-chat-claude]').length === 2 &&
+            $$('[data-chat-claude]').length === 3 &&
             toolRows.length === 3,
           `you "${you}", ${$$('[data-chat-claude]').length} replies, ${toolRows.length} tool rows`
         )
@@ -2534,6 +2522,98 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             /failed/.test(toolRows[1]?.textContent ?? '') &&
             /\+5.*−3/.test(toolRows[2]?.textContent ?? ''),
           toolRows.map((r) => r.textContent).join(' | ')
+        )
+
+        const times = $$<HTMLTimeElement>('[data-chat-view] .cr-chat-time')
+        const send = $<HTMLButtonElement>('.cr-chat-send')
+        await check(
+          'each message carries its time, and Send waits for something to send',
+          times.length >= 4 &&
+            times.every((t) => /\d/.test(t.textContent ?? '')) &&
+            send?.disabled === true,
+          `${times.length} times; send disabled ${send?.disabled}`
+        )
+        // A long paste folds to its first lines, and its file shows as a chip,
+        // not as the "Attached files" words.
+        const paste = $$<HTMLElement>('[data-chat-you]')[1]
+        const pasteBubble = paste?.querySelector<HTMLElement>('.cr-chat-you')
+        await check(
+          'a long paste folds, with a way to see it all, and its file is a chip',
+          pasteBubble?.dataset.clamped === 'true' &&
+            /Show all 25 lines/.test(paste?.textContent ?? '') &&
+            paste?.querySelector('.cr-attachment-chip')?.textContent === 'cleanup-plan.md' &&
+            !(paste?.textContent ?? '').includes('Attached files'),
+          `clamped ${pasteBubble?.dataset.clamped}; ${paste?.textContent?.slice(-160)}`
+        )
+        await click(byText('.cr-chat-you-more', 'Show all 25 lines'))
+        await check(
+          'Show all opens the whole paste',
+          pasteBubble?.dataset.clamped === undefined,
+          `clamped ${pasteBubble?.dataset.clamped}`
+        )
+        // A pasted screenshot shows as a thumbnail; a day divider marks the
+        // day the conversation began.
+        await until(() => Boolean($('[data-chat-view] .cr-chat-image img')), 3000)
+        const thumb = $<HTMLImageElement>('[data-chat-view] .cr-chat-image img')
+        await check(
+          'a pasted image shows in your message, and days are divided',
+          Boolean(thumb?.src.startsWith('data:image/png')) &&
+            $$('[data-chat-view] .cr-chat-day').length === 1 &&
+            /Today/.test($('[data-chat-view] .cr-chat-day')?.textContent ?? ''),
+          `image ${thumb?.src.slice(0, 22) ?? 'none'}; dividers ${$$(
+            '[data-chat-view] .cr-chat-day'
+          )
+            .map((d) => d.textContent)
+            .join(', ')}`
+        )
+        // Typing as React hears it: the value set the way an input sets it,
+        // then the input event.
+        const fill = (el: HTMLInputElement | HTMLTextAreaElement | null, value: string): void => {
+          if (!el) return
+          const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement
+          Object.getOwnPropertyDescriptor(proto.prototype, 'value')?.set?.call(el, value)
+          el.dispatchEvent(new Event('input', { bubbles: true }))
+        }
+        // "/" in the message box lists the commands that answer in the chat.
+        fill($<HTMLTextAreaElement>('.cr-chat-input'), '/co')
+        await until(() => Boolean($('.cr-chat-slash')), 2000)
+        const slashItems = $$('.cr-chat-slash-name').map((n) => n.textContent)
+        await check(
+          'typing / lists the matching commands',
+          slashItems.includes('/compact') && !slashItems.includes('/clear'),
+          slashItems.join(', ') || 'no menu'
+        )
+        await click($('.cr-chat-slash-item'))
+        await check(
+          'picking one puts it in the box, ready for more',
+          $<HTMLTextAreaElement>('.cr-chat-input')?.value === `${slashItems[0]} ` &&
+            !$('.cr-chat-slash'),
+          `box "${$<HTMLTextAreaElement>('.cr-chat-input')?.value}"`
+        )
+        fill($<HTMLTextAreaElement>('.cr-chat-input'), '')
+
+        // ⌘F finds in the conversation.
+        await key('f', ['meta'])
+        await until(() => Boolean($('.cr-chat-find-input')), 2000)
+        fill($<HTMLInputElement>('.cr-chat-find-input'), 'worktree')
+        await until(() => /of/.test($('.cr-chat-find-count')?.textContent ?? ''), 2000)
+        const findCount = $('.cr-chat-find-count')?.textContent ?? ''
+        await check(
+          '⌘F finds every match in the conversation and counts them',
+          /^\d+ of ([3-9]|\d\d+)$/.test(findCount),
+          findCount || 'no find bar'
+        )
+        await click($('.cr-chat-find [aria-label="Close find (Esc)"]'))
+
+        // A code block in Claude's reply copies whole from its corner.
+        const codeCopy = $<HTMLElement>('[data-chat-claude] .md-code-copy')
+        await click(codeCopy?.querySelector('button') ?? null)
+        await until(() => codeCopy?.dataset.copied === 'true', 2000)
+        await check(
+          'a code block in Claude’s reply has a copy button that copies it',
+          codeCopy?.dataset.copied === 'true' &&
+            Boolean($('[data-chat-claude] .cr-chat-claude-tools button')),
+          `copied ${codeCopy?.dataset.copied}; button ${Boolean(codeCopy)}`
         )
 
         await api.invoke('dev:seed-prompt', {
@@ -3003,6 +3083,31 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           `${split.got ?? 'nothing'} (wanted ${split.target ?? 'no fixture pane'})`
         )
 
+        // The split above leaves two panes in the worktree for a moment, and
+        // the fixture finds a session's pane by its folder, so until the
+        // next refresh the session reads as outside tmux and its terminal
+        // goes. The keys below go to that terminal: wait for it to be back.
+        await until(() => Boolean($('.terminal-surface')), 8000)
+        const joinNote = JSON.stringify(
+          (
+            (await api.invoke('sessions:list')) as Array<{
+              record: {
+                title: string
+                tmuxPaneId: string | null
+                tmuxWindowId: string | null
+              } | null
+              tmux: unknown
+              alive: boolean
+              claudeSessionId: string | null
+            }>
+          )
+            .filter((x) => x.record?.title === 'Working session')
+            .map((x) => ({
+              rec: [x.record?.tmuxPaneId, x.record?.tmuxWindowId],
+              tmux: x.tmux,
+              alive: x.alive
+            }))
+        )
         // Ctrl combinations belong to the terminal (tmux's Ctrl+B prefix, the
         // shell's Ctrl+K and Ctrl+F); only ⌘ makes an app shortcut.
         {
@@ -3035,7 +3140,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         await check(
           '⌘F opens find in the terminal',
           Boolean($('.terminal-search')),
-          `key reached the page: ${sawFindKey}; terminal mounted: ${Boolean($('.terminal-surface'))}`
+          `key reached the page: ${sawFindKey}; terminal mounted: ${Boolean($('.terminal-surface'))}; chat showing: ${Boolean($('[data-chat-view]'))}; open: "${$('.session-detail-breadcrumb-title')?.textContent ?? 'none'}"; join: ${joinNote}`
         )
         await typeText('feature')
         await until(() => /\d+ of \d+/.test($('.terminal-search-count')?.textContent ?? ''), 5000)

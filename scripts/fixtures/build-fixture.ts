@@ -733,10 +733,10 @@ cliTranscript('fixture-working', [
   }
 ])
 
-// The last thing Claude said in the other sessions, for the rows and cards.
-// No `cwd` on these lines, so they stay out of History's CLI list (whose
-// count the checks know) and only answer "what did it last say".
-function lastSaid(sessionId: string, lines: string[]): void {
+// What Claude said in the other sessions, for the chat view and the hand-off
+// note. No `cwd` on these lines, so they stay out of History's CLI list
+// (whose count the checks know).
+function claudeSaid(sessionId: string, lines: string[]): void {
   cliTranscript(
     sessionId,
     lines.map((text, i) => ({
@@ -746,11 +746,11 @@ function lastSaid(sessionId: string, lines: string[]): void {
     }))
   )
 }
-lastSaid('fixture-ready', [
+claudeSaid('fixture-ready', [
   'Looking at the worktree tests first.',
   '## Done\n\nThe worktree tests pass now. I moved the fixture setup into `beforeEach` so each test gets a clean repo. Want me to open a PR?'
 ])
-lastSaid('fixture-errored', [
+claudeSaid('fixture-errored', [
   'The build failed: `tsc` can’t find the `SessionRecord` type after the rename. I stopped there.'
 ])
 // The waiting session has a whole conversation, for the chat view: what you
@@ -767,10 +767,10 @@ lastSaid('fixture-errored', [
     {
       type: 'user',
       uuid: 'chat-you-1',
-      timestamp: at(50),
+      timestamp: at(26 * 60),
       message: { role: 'user', content: 'Clean up the worktrees whose branches have merged.' }
     },
-    said(49, 'I’ll list the worktrees and check each branch against its pull request.'),
+    said(26 * 60 - 1, 'I’ll list the worktrees and check each branch against its pull request.'),
     {
       type: 'assistant',
       timestamp: at(48),
@@ -814,6 +814,47 @@ lastSaid('fixture-errored', [
         ]
       }
     },
+    // A long paste with a file on it, as Home or Chat sends one, and a reply
+    // with a code block: the chat view folds the first and copies the second.
+    {
+      type: 'user',
+      uuid: 'chat-you-2',
+      timestamp: at(46.5),
+      message: {
+        role: 'user',
+        content:
+          'Here is the worktree list:\n' +
+          Array.from(
+            { length: 24 },
+            (_, i) => `/fixture/wt-${i + 1}  abc${i}  [fixture/branch-${i + 1}]`
+          ).join('\n') +
+          '\n\nAttached files - read these from disk before you start:\n- /fixture/notes/cleanup-plan.md\n\nLook at each one above before continuing.'
+      }
+    },
+    // A pasted screenshot, which the chat view shows as a thumbnail.
+    {
+      type: 'user',
+      uuid: 'chat-you-3',
+      timestamp: at(46.3),
+      message: {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'This is the screen I mean.' },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: 'iVBORw0KGgoAAAANSUhEUgAAAKAAAABkCAIAAACO1KzYAAABcklEQVR42u3dMUoDQRSA4beSSrC0MaUiqW0E7SStljZewMIThJTiCSy8QBrLpBVLIY038C4WCzLMQ1CQ7ES+rxp2u/l5ZJksbHcwPg7+rx1bIDAC06rRdzc+bm77xeHiKd99e7zoF2d3r/nu/WraL+aXL7a4xQn+qlutq7rVuqpbrWklcC5aXslFyyu5qMZ+gxGYPwycn6rKK/mpqrySn6o8Z7U4wWXR3LssmnuXRdUdXOeo0m8wAiMwgxjt7u3bBROMwAiMwAiMwAgsMAIjMNHoW5Wl65m/dX/k+WFqghEYgREYgQVm23VHk3O7YIIRGIERGIERmPjVv0knp1d2aljv66UJRmCBEZhwFo0JRmAERmCBEZhwFk1s+JzZBCOwwAhMOIvGBCMwAiOwwAhMOIsOZ8UmGIERGIHDWTQmGIERGIERGIERWGAERmDCV1diu79vYoIRGIERGIEFRmAERmAEJrxViQkWGIERGIERGIERmE80B0BVtrjphQAAAABJRU5ErkJggg=='
+            }
+          }
+        ]
+      }
+    },
+    said(
+      46.2,
+      'The merged ones can go with:\n\n```sh\ngit worktree remove ../wt-3\ngit branch -d fixture/branch-3\n```'
+    ),
     said(
       46,
       'Should the cleanup also delete branches whose pull request was closed without merging, or only merged ones?'

@@ -1,4 +1,5 @@
 import { Fragment } from 'react'
+import CopyButton from './CopyButton'
 import './markdown-text.css'
 
 /**
@@ -8,8 +9,15 @@ import './markdown-text.css'
  * React element built from the text, never HTML. File contents are untrusted.
  * Links show their words; a table shows as its own text, in mono.
  */
-export default function MarkdownText({ text }: { text: string }): React.JSX.Element {
-  return <div className="md-text">{blocks(stripFrontmatter(text))}</div>
+export default function MarkdownText({
+  text,
+  copyable = false
+}: {
+  text: string
+  /** A copy button in each code block's corner, for the whole block. */
+  copyable?: boolean
+}): React.JSX.Element {
+  return <div className="md-text">{blocks(stripFrontmatter(text), copyable)}</div>
 }
 
 /** The YAML block at the top of a SKILL.md: shown as the dialog's header, not as text. */
@@ -20,7 +28,7 @@ function stripFrontmatter(text: string): string {
 type Block =
   | { kind: 'heading'; level: number; text: string }
   | { kind: 'para'; text: string }
-  | { kind: 'code'; text: string }
+  | { kind: 'code'; text: string; lang?: string }
   | { kind: 'quote'; text: string }
   | { kind: 'list'; ordered: boolean; items: { depth: number; text: string }[] }
   | { kind: 'rule' }
@@ -37,9 +45,10 @@ function parse(text: string): Block[] {
     const line = lines[i]
     if (/^\s*```/.test(line)) {
       flush()
+      const lang = /^\s*```\s*([\w+#.-]{1,20})/.exec(line)?.[1]
       const code: string[] = []
       for (i++; i < lines.length && !/^\s*```/.test(lines[i]); i++) code.push(lines[i])
-      out.push({ kind: 'code', text: code.join('\n') })
+      out.push({ kind: 'code', text: code.join('\n'), lang })
       continue
     }
     // A table keeps its shape as text: cells line up in mono.
@@ -98,7 +107,7 @@ function parse(text: string): Block[] {
   return out
 }
 
-function blocks(text: string): React.ReactNode {
+function blocks(text: string, copyable: boolean): React.ReactNode {
   return parse(text).map((b, i) => {
     switch (b.kind) {
       case 'heading': {
@@ -113,7 +122,15 @@ function blocks(text: string): React.ReactNode {
       case 'para':
         return <p key={i}>{inline(b.text)}</p>
       case 'code':
-        return (
+        return copyable ? (
+          <div key={i} className="md-code-wrap">
+            <div className="md-code-head">
+              <span className="md-code-lang">{b.lang ?? ''}</span>
+              <CopyButton text={b.text} label="Copy code" className="md-code-copy" />
+            </div>
+            <pre className="md-code">{b.text}</pre>
+          </div>
+        ) : (
           <pre key={i} className="md-code">
             {b.text}
           </pre>

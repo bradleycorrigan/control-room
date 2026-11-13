@@ -158,6 +158,7 @@ import {
 import type { SessionRecord, AppSettings, Project } from './store/types'
 import { registerBacklogIpc } from './ipc-backlog'
 import { registerSessionsIpc } from './ipc-sessions'
+import { Swr } from './exec/swr'
 import { registerProjectsIpc } from './ipc-projects'
 import { registerPaletteIpc } from './ipc-palette'
 import { log } from './log'
@@ -191,7 +192,11 @@ export interface ProjectTidy {
   idleWorktrees: number
 }
 
-const worktreePrCache = new Map<string, { at: number; prs: Record<string, BranchPullRequest> }>()
+const worktreePrCache = new Swr<Record<string, BranchPullRequest>>(
+  'worktree-prs',
+  60_000,
+  24 * 60 * 60_000
+)
 const TIDY_CACHE_MS = 2 * 60 * 1000
 const IDLE_AFTER_MS = 14 * 24 * 60 * 60 * 1000
 const tidyCache = new Map<string, { at: number; result: ProjectTidy }>()
@@ -1148,11 +1153,11 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('worktrees:prs', async (_evt, projectId: string) => {
     const project = getState().projects.find((p) => p.id === projectId)
     if (!project) return {}
-    const cached = worktreePrCache.get(projectId)
-    if (cached && Date.now() - cached.at < 60_000) return cached.prs
-    const prs = Object.fromEntries(await pullRequestsByBranch(project.repoPath))
-    worktreePrCache.set(projectId, { at: Date.now(), prs })
-    return prs
+    // Shown at once from the last answer (up to a day old), asked again
+    // behind it when over a minute old, so the cards never wait on gh twice.
+    return worktreePrCache.get(projectId, async () =>
+      Object.fromEntries(await pullRequestsByBranch(project.repoPath))
+    )
   })
 
   ipcMain.handle(
@@ -1455,7 +1460,11 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('terminal:closePane', async (_evt, paneId: string) => {
-    return killPane(paneId)
+    const result = await killPane(paneId)
+    // A pane went: look again now, not at the next 30s safety tick, so the
+    // session's terminal never reads as gone in between.
+    triggerImmediateTick()
+    return result
   })
 
   ipcMain.handle('terminal:listWindowPanes', async (_evt, paneId: string) => {

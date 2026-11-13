@@ -41,8 +41,10 @@ import {
   type MergeMethod
 } from './exec/prActions'
 import { currentBranch } from './engine/sessionBranch'
-import { deliverPrompt, interruptPane } from './exec/tmux'
-import { readChat } from './exec/chatTranscript'
+import { capturePane, deliverPrompt, interruptPane } from './exec/tmux'
+import { parseActivity, readChat, readChatImage } from './exec/chatTranscript'
+import { validateAttachmentPath } from './exec/attachments'
+import { withAttachments } from './engine/sessions'
 import {
   answerPrompt,
   listPrompts,
@@ -317,21 +319,45 @@ export function registerSessionsIpc(): void {
   // session's pane like the terminal would.
   const PANE_ID = /^%\d{1,6}$/
   const CLAUDE_ID = /^[A-Za-z0-9-]{8,64}$/
-  ipcMain.handle('chat:transcript', (_evt, claudeSessionId: unknown) =>
+  ipcMain.handle('chat:transcript', (_evt, claudeSessionId: unknown, known: unknown) =>
     typeof claudeSessionId === 'string' && CLAUDE_ID.test(claudeSessionId)
-      ? readChat(claudeSessionId)
+      ? readChat(claudeSessionId, typeof known === 'string' ? known : undefined)
       : null
   )
-  ipcMain.handle('chat:send', async (_evt, paneId: unknown, text: unknown) => {
+  ipcMain.handle('chat:image', (_evt, claudeSessionId: unknown, key: unknown) =>
+    typeof claudeSessionId === 'string' &&
+    CLAUDE_ID.test(claudeSessionId) &&
+    typeof key === 'string' &&
+    key.length < 200
+      ? readChatImage(claudeSessionId, key)
+      : null
+  )
+  // Files go the way Home's composer sends them: each path checked by main,
+  // then listed after the message for Claude to read.
+  ipcMain.handle('chat:send', async (_evt, paneId: unknown, text: unknown, paths: unknown) => {
     if (typeof paneId !== 'string' || !PANE_ID.test(paneId))
       return { ok: false, error: 'No terminal.' }
-    if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'Nothing to send.' }
-    return deliverPrompt(paneId, text.slice(0, 100_000))
+    const files: string[] = []
+    for (const p of Array.isArray(paths) ? paths.slice(0, 10) : []) {
+      if (typeof p !== 'string') continue
+      const checked = validateAttachmentPath(p)
+      if (!checked.ok) return { ok: false, error: `${checked.name}: ${checked.error}` }
+      files.push(checked.path)
+    }
+    const words = typeof text === 'string' ? text.slice(0, 100_000) : ''
+    if (!words.trim() && files.length === 0) return { ok: false, error: 'Nothing to send.' }
+    return deliverPrompt(paneId, withAttachments(words.trim(), files))
   })
   ipcMain.handle('chat:interrupt', async (_evt, paneId: unknown) =>
     typeof paneId === 'string' && PANE_ID.test(paneId)
       ? interruptPane(paneId)
       : { ok: false, error: 'No terminal.' }
+  )
+  // What Claude Code's own status line says it's doing, read off the pane.
+  ipcMain.handle('chat:activity', async (_evt, paneId: unknown) =>
+    typeof paneId === 'string' && PANE_ID.test(paneId)
+      ? parseActivity(await capturePane(paneId, 0))
+      : null
   )
   ipcMain.handle('prompts:list', () => listPrompts())
   ipcMain.handle('prompts:answer', (_evt, id: unknown, answer: unknown) => {

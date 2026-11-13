@@ -281,12 +281,6 @@ export interface LiveSession {
   // last finished a turn, asked something or failed. null when we can't
   // tell. What "active 5m ago" and the last-active sort read.
   activityAt: number | null
-  // The last thing Claude said, one line, from its transcript (see
-  // handoffNote.ts lastAssistantLine). What the rows and cards show under
-  // the title, so you can tell what a session is up to without opening it.
-  // Filled in after the rest of the list is built; absent or null when
-  // there's no transcript or no reply yet.
-  lastSaid?: string | null
 }
 
 export interface LiveSubagentSummary {

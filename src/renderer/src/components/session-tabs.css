@@ -50,7 +50,7 @@
   flex-shrink: 0;
   /* Same side inset as the session screen, so the first tab starts at the
      header's left edge. */
-  padding: var(--space-12) var(--space-24) 0;
+  padding: var(--space-8) var(--space-24) 0;
   overflow-x: auto;
   scrollbar-width: none;
 }

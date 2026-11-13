@@ -25,7 +25,6 @@ import {
 } from './hooks-server'
 import { isUnread, lastActivityAt, migrateSeen } from './seen'
 import { getTranscriptTitle } from '../exec/transcripts'
-import { lastAssistantLine } from '../exec/handoffNote'
 import { preStartPaneFor, preStartStatus } from './pre-start'
 import type { LiveSession, SessionRecord } from '../store/types'
 
@@ -300,11 +299,16 @@ function latestHookEvent(
 function backfillRecord(
   record: SessionRecord,
   sessionId: string | null,
-  tmuxJoin: JoinedTmux | null
+  tmuxJoin: JoinedTmux | null,
+  paneAlive: (paneId: string) => boolean
 ): void {
   const patch: Partial<SessionRecord> = {}
   if (sessionId && record.claudeSessionId !== sessionId) patch.claudeSessionId = sessionId
-  if (tmuxJoin && record.tmuxPaneId !== tmuxJoin.paneId) {
+  // A record keeps a pane that's still there. A second terminal opened in the
+  // same worktree (the + split) matches by folder too; moving the record onto
+  // it lost the session its terminal the moment that shell was closed.
+  const keepsItsPane = !!record.tmuxPaneId && paneAlive(record.tmuxPaneId)
+  if (tmuxJoin && record.tmuxPaneId !== tmuxJoin.paneId && !keepsItsPane) {
     patch.tmuxPaneId = tmuxJoin.paneId
     patch.tmuxWindowId = tmuxJoin.windowId
   }
@@ -522,7 +526,7 @@ export async function discoverLiveSessions(): Promise<LiveSession[]> {
 
     // A path match is how a session started with `wta` in the terminal becomes first-class.
     if (record && session.cwd === record.worktreePath) {
-      backfillRecord(record, session.sessionId ?? null, tmuxJoin)
+      backfillRecord(record, session.sessionId ?? null, tmuxJoin, (id) => panesByPaneId.has(id))
     }
 
     if (record) {
@@ -824,11 +828,6 @@ export async function discoverLiveSessions(): Promise<LiveSession[]> {
 
   for (const paneId of preStartPanes.keys()) {
     if (!preStartSeen.has(paneId)) preStartPanes.delete(paneId)
-  }
-
-  for (const s of live) {
-    const id = s.claudeSessionId ?? s.record?.claudeSessionId
-    s.lastSaid = lastAssistantLine(id ?? null)
   }
 
   return live

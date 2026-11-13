@@ -1,5 +1,5 @@
 import { openSync, closeSync, readSync, fstatSync } from 'node:fs'
-import { findSessionTranscriptPath, plainOneLine } from './transcripts'
+import { findSessionTranscriptPath } from './transcripts'
 import type { HandoffGitSummary } from './sessionGit'
 
 /**
@@ -95,46 +95,6 @@ export function lastAssistantMessage(claudeSessionId: string | null): string | n
     // message — keep walking back for one that actually says something.
   }
   return null
-}
-
-/**
- * lastAssistantMessage as one plain line, for the Sessions rows and cards:
- * markdown flattened, cut at LAST_SAID_MAX. Cached on the transcript's size
- * and mtime, since the list asks for every session on every poll and most
- * haven't changed.
- */
-const lastSaidCache = new Map<string, { size: number; mtimeMs: number; text: string | null }>()
-const LAST_SAID_MAX = 280
-
-export function lastAssistantLine(claudeSessionId: string | null): string | null {
-  if (!claudeSessionId) return null
-  const jsonlPath = findSessionTranscriptPath(claudeSessionId)
-  if (!jsonlPath) return null
-  let size = 0
-  let mtimeMs = 0
-  try {
-    const fd = openSync(jsonlPath, 'r')
-    try {
-      const st = fstatSync(fd)
-      size = st.size
-      mtimeMs = st.mtimeMs
-    } finally {
-      closeSync(fd)
-    }
-  } catch {
-    return null
-  }
-  const cached = lastSaidCache.get(jsonlPath)
-  if (cached && cached.size === size && cached.mtimeMs === mtimeMs) return cached.text
-  const said = lastAssistantMessage(claudeSessionId)
-  const flat = said ? plainOneLine(said) : ''
-  const text = !flat
-    ? null
-    : flat.length > LAST_SAID_MAX
-      ? `${flat.slice(0, LAST_SAID_MAX - 1)}…`
-      : flat
-  lastSaidCache.set(jsonlPath, { size, mtimeMs, text })
-  return text
 }
 
 export interface HandoffNoteInput {

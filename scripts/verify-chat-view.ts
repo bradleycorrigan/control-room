@@ -87,6 +87,22 @@ async function main(): Promise<void> {
     JSON.stringify(edit)
   )
 
+  // ---- Claude Code's working line ----
+  const { parseActivity } = await import('../src/main/exec/chatTranscript')
+  const act = parseActivity(
+    'output\n\x1b[38;5;174m✻\x1b[0m Blanching… (1m 22s · ↓ 3.1k tokens · esc to interrupt)\n\n────\n> \n'
+  )
+  check(
+    'Claude Code’s working line gives its word and time',
+    act?.verb === 'Blanching…' && act.elapsed === '1m 22s',
+    JSON.stringify(act)
+  )
+  check(
+    'a screen without one gives nothing',
+    parseActivity('$ ls\nREADME.md\n> hello\n') === null,
+    JSON.stringify(parseActivity('$ ls\nREADME.md\n> hello\n'))
+  )
+
   // ---- Replies ----
   const ask = {
     questions: [
@@ -231,6 +247,64 @@ async function main(): Promise<void> {
   check(
     'a second answer to the same prompt is refused',
     !prompts.answerPrompt(idB, { kind: 'allow' }).ok
+  )
+
+  // ---- Reading a growing transcript ----
+  const { readChat, readChatImage } = await import('../src/main/exec/chatTranscript')
+  const grow = join(root, '-proj', 'grow.jsonl')
+  writeFileSync(
+    grow,
+    line({ type: 'user', uuid: 'u1', message: { role: 'user', content: 'First.' } })
+  )
+  const r1 = readChat('grow')
+  check(
+    'a transcript reads with a version',
+    r1?.entries?.length === 1 && !!r1.version,
+    JSON.stringify(r1)
+  )
+  const r2 = readChat('grow', r1?.version)
+  check(
+    'asked again unchanged, it sends no entries',
+    r2?.version === r1?.version && r2?.entries === undefined,
+    JSON.stringify(r2)
+  )
+  const png = 'iVBORw0KGgo='
+  appendFileSync(
+    grow,
+    line({
+      type: 'user',
+      uuid: 'u2',
+      message: {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Look at this.' },
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: png } }
+        ]
+      }
+    }) + '{"type":"assistant","message":{"content":"half'
+  )
+  const r3 = readChat('grow', r1?.version)
+  const u2 = r3?.entries?.[1]
+  check(
+    'new lines are added to what was read; a half-written line waits',
+    r3?.entries?.length === 2 &&
+      u2?.kind === 'user' &&
+      u2.text === 'Look at this.' &&
+      u2.images.length === 1,
+    JSON.stringify(r3?.entries)
+  )
+  check(
+    'a pasted image comes back by its key, as a data URL',
+    u2?.kind === 'user' && readChatImage('grow', u2.images[0]) === `data:image/png;base64,${png}`
+  )
+  appendFileSync(grow, ' done"}}\n')
+  const r4 = readChat('grow', r3?.version)
+  check(
+    'the rest of a half-written line completes it',
+    r4?.entries?.length === 3 &&
+      r4.entries[2].kind === 'assistant' &&
+      (r4.entries[2] as { text: string }).text === 'half done',
+    JSON.stringify(r4?.entries?.[2])
   )
 
   rmSync(root, { recursive: true, force: true })

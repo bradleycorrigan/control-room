@@ -993,80 +993,6 @@
   outline-offset: 2px;
 }
 
-/* What Claude last said, as a quote: a 2px rule in the session's status
-   colour, the words in full colour, one line in a row and two on a card. */
-.cr-said {
-  --said-tone: var(--border-strong);
-  margin: 0;
-  padding: 1px 0 1px var(--space-12);
-  border-left: 2px solid var(--said-tone);
-  font-size: var(--text-label-size);
-  line-height: var(--text-label-line);
-  color: var(--text);
-  overflow: hidden;
-}
-
-.cr-said[data-tone='attention'] {
-  --said-tone: var(--status-attention);
-}
-.cr-said[data-tone='done'] {
-  --said-tone: var(--status-done);
-}
-.cr-said[data-tone='error'] {
-  --said-tone: var(--status-error);
-}
-.cr-said[data-tone='working'] {
-  --said-tone: var(--status-working);
-}
-
-.sessions-row-said {
-  margin-top: var(--space-4);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* On a card, the last message is a speech bubble under the title, its tail
-   pointing up at it. The bubble is a raised surface rather than a rule, so the
-   card reads as "this session, and what it said"; two lines at most. */
-.cr-said.session-card-said {
-  --bubble-bg: var(--surface-raised);
-  position: relative;
-  flex-shrink: 0;
-  margin-top: var(--space-12);
-  padding: var(--space-8) var(--space-12);
-  border-left: none;
-  /* The tail grows out of a square corner, so there is no notch between
-     them. */
-  border-radius: 0 var(--radius-lg) var(--radius-lg) var(--radius-lg);
-  background: var(--bubble-bg);
-  overflow: visible;
-}
-
-/* The tail: a clipped box rather than a border trick, so its slope is
-   antialiased, and it overlaps the bubble by a pixel so no seam shows. */
-.cr-said.session-card-said::before {
-  content: '';
-  position: absolute;
-  top: -7px;
-  left: 0;
-  width: 10px;
-  height: 8px;
-  background: var(--bubble-bg);
-  clip-path: polygon(0 0, 100% 100%, 0 100%);
-}
-
-.session-card-said .cr-said-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-/* A hovered card turns raised itself, so its bubble steps up one more. */
-.session-card:hover .cr-said.session-card-said {
-  --bubble-bg: var(--bg-sunken);
-}
-
 /* The menu keeps the row's right edge now line 2 has no filler. */
 .sessions-row-line2 > .sessions-row-overflow {
   margin-left: auto;
@@ -1145,17 +1071,6 @@
   flex: 0 0 auto;
 }
 
-/* Inline after the status: one line, cut, no rule (the dot carries it). */
-.sessions-row-line2 > .cr-said.sessions-row-said {
-  flex: 1 1 0;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: none;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
 .sessions-row-line2 > .sessions-row-branch {
   font-family: var(--font-mono);
   font-size: var(--text-meta-size);
@@ -1169,4 +1084,9 @@
 .sessions-project-name {
   font-size: var(--text-body-size);
   line-height: var(--text-body-line);
+}
+
+/* A project's name over its sessions, in the display face. */
+.sessions-project-name {
+  font-family: var(--font-display);
 }

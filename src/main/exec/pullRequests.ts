@@ -1,5 +1,6 @@
 import { app } from 'electron'
 import { run } from './run'
+import { once, Swr } from './swr'
 
 /**
  * The pull request a session's branch has open, from GitHub's own CLI — so
@@ -33,6 +34,15 @@ export async function pullRequestFor(
       : null
   }
   if (!branch) return null
+  // Two parts of a session asking at once (the header and the ship panel)
+  // share one gh call.
+  return once(`branch-pr:${worktreePath}:${branch}`, () => fetchBranchPr(worktreePath, branch))
+}
+
+async function fetchBranchPr(
+  worktreePath: string,
+  branch: string
+): Promise<PullRequestInfo | null> {
   const res = await run('gh', ['pr', 'view', branch, '--json', 'number,url,title,state,isDraft'], {
     cwd: worktreePath,
     timeoutMs: 10_000
@@ -62,13 +72,15 @@ export interface LinkedPullRequest {
 type PrDetails = Pick<LinkedPullRequest, 'state' | 'title' | 'isDraft'>
 
 // A PR's state changes rarely; the header asks every time the agent finishes
-// a turn, so answers are kept a minute rather than calling gh each time.
-const stateCache = new Map<string, { at: number; details: PrDetails }>()
-const STATE_TTL_MS = 60_000
+// a turn. An answer under a minute old is used as is; one under an hour old
+// is shown at once while gh is asked again behind it.
+const stateCache = new Swr<PrDetails>('pr-details', 60_000, 60 * 60_000)
 
-async function pullRequestDetails(url: string): Promise<PrDetails> {
-  const cached = stateCache.get(url)
-  if (cached && Date.now() - cached.at < STATE_TTL_MS) return cached.details
+function pullRequestDetails(url: string): Promise<PrDetails> {
+  return stateCache.get(url, () => fetchPullRequestDetails(url))
+}
+
+async function fetchPullRequestDetails(url: string): Promise<PrDetails> {
   const details: PrDetails = { state: null, title: null, isDraft: false }
   // gh takes a PR's URL from any directory, so no checkout of its repo is needed.
   const res = await run('gh', ['pr', 'view', url, '--json', 'state,title,isDraft'], {
@@ -85,13 +97,12 @@ async function pullRequestDetails(url: string): Promise<PrDetails> {
       // Leave it unknown.
     }
   }
-  stateCache.set(url, { at: Date.now(), details })
   return details
 }
 
 /** Forget what gh said about a PR, after Control Room changes it (out of draft). */
 export function forgetPullRequestDetails(url: string): void {
-  stateCache.delete(url)
+  stateCache.forget(url)
 }
 
 /** Whether a string is a GitHub pull request's web address. */

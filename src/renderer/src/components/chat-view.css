@@ -1,5 +1,6 @@
 /* The chat view: a session as a conversation, in a reading-width column. */
 .cr-chat {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -11,6 +12,24 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* A thin, quiet scrollbar, like the reading panes in chat apps. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  /* Messages fade out at the top and bottom edges instead of being cut. */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 16px,
+    black calc(100% - 16px),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 16px,
+    black calc(100% - 16px),
+    transparent
+  );
 }
 
 .cr-chat-column,
@@ -28,15 +47,20 @@
 }
 
 .cr-chat-empty {
-  margin: var(--space-48) 0 0;
-  text-align: center;
-  color: var(--text-muted);
+  margin-top: var(--space-48);
 }
 
-/* You: a bubble on the right, your words as you typed them. */
-.cr-chat-you {
+/* You: a bubble on the right, your words as you typed them, files under it. */
+.cr-chat-you-wrap {
   align-self: flex-end;
   max-width: 80%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+
+.cr-chat-you {
   padding: var(--space-8) var(--space-12);
   border-radius: var(--radius-xl) var(--radius-xl) var(--space-1) var(--radius-xl);
   background: var(--surface-raised);
@@ -257,6 +281,7 @@
 }
 
 .cr-chat-composer {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
@@ -265,13 +290,16 @@
   background: var(--surface);
   box-shadow: inset 0 0 0 1px var(--border);
 }
-.cr-chat-composer:focus-within {
+.cr-chat-composer:has(.cr-chat-input:focus) {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-.cr-chat-input {
+.cr-chat-input,
+.cr-chat-input:focus,
+.cr-chat-input:focus-visible {
   border: none;
   outline: none;
+  box-shadow: none;
   resize: none;
   background: transparent;
   color: var(--text);
@@ -301,4 +329,406 @@
 .cr-chat-composer-foot .cr-chat-prompt-error {
   margin-left: 0;
   margin-right: auto;
+}
+
+/* Claude at work: the working colour, a turning sparkle and its own words. */
+.cr-chat-working {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-body-size);
+}
+
+.cr-chat-working-mark {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  fill: none;
+  stroke: var(--status-working);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  animation: cr-chat-sparkle 2.4s var(--motion-easing) infinite;
+}
+
+.cr-chat-working-verb {
+  color: var(--status-working);
+  font-weight: 500;
+}
+
+.cr-chat-working-time {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes cr-chat-sparkle {
+  0% {
+    transform: rotate(0deg) scale(0.7);
+  }
+  50% {
+    transform: rotate(90deg) scale(1);
+  }
+  100% {
+    transform: rotate(180deg) scale(0.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cr-chat-working-mark {
+    animation: none;
+  }
+}
+
+/* A long paste: its first lines, fading out, and a way to see the rest. */
+.cr-chat-you[data-clamped] {
+  max-height: 9.5em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent);
+  mask-image: linear-gradient(to bottom, black 60%, transparent);
+}
+
+.cr-chat-you-more {
+  border: none;
+  background: none;
+  padding: 0 var(--space-4);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-caption-size);
+  cursor: pointer;
+}
+.cr-chat-you-more:hover {
+  color: var(--text);
+}
+.cr-chat-you-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.cr-chat-you-files {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-4);
+}
+.cr-chat-you-files .cr-attachment-chip {
+  padding-right: var(--space-8);
+}
+
+/* Something dragged over the box: the accent outline says it can drop. */
+.cr-chat-composer[data-drag-over] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+.cr-chat-composer .cr-attachments {
+  padding: 0;
+}
+
+/* ---- Polish ---- */
+
+/* New messages ease in; the ones there when you open the chat don't. */
+[data-new] {
+  animation: cr-chat-in var(--motion-enter) var(--motion-easing);
+}
+@keyframes cr-chat-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-new] {
+    animation: none;
+  }
+}
+
+/* Sent, and on its way to the transcript. */
+[data-sending] .cr-chat-you {
+  opacity: 0.6;
+}
+
+/* Time and copy beside a message, on hover. They float, so a message takes
+   no more room than its words: yours to its left, Claude's to its right. */
+.cr-chat-you-wrap,
+.cr-chat-claude {
+  position: relative;
+}
+.cr-chat-you-tools,
+.cr-chat-claude-tools {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--motion-easing);
+}
+.cr-chat-you-tools {
+  top: 0;
+  right: calc(100% + var(--space-4));
+  flex-direction: row-reverse;
+}
+.cr-chat-claude-tools {
+  top: -2px;
+  left: calc(100% + var(--space-4));
+  flex-direction: column;
+  align-items: flex-start;
+}
+.cr-chat-you-wrap:hover > .cr-chat-you-tools,
+.cr-chat-claude:hover > .cr-chat-claude-tools,
+.cr-chat-you-tools:focus-within,
+.cr-chat-claude-tools:focus-within {
+  opacity: 1;
+}
+.cr-chat-time {
+  padding: 0 var(--space-4);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A tool row with more than fits opens to show all of it. */
+.cr-chat-tool--long {
+  width: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cr-chat-tool--long:hover .cr-chat-tool-detail {
+  color: var(--text);
+  text-decoration: underline dotted var(--text-muted);
+}
+.cr-chat-tool--long[data-open] .cr-chat-tool-detail {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cr-chat-tool--long:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Jump back to the newest message, when you've scrolled up to read. */
+.cr-chat-jump {
+  position: absolute;
+  left: 50%;
+  bottom: 112px;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  height: 28px;
+  padding: 0 var(--space-12);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  box-shadow:
+    0 4px 12px color-mix(in srgb, var(--bg) 60%, transparent),
+    inset 0 0 0 1px var(--border);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-caption-size);
+  cursor: pointer;
+  animation: cr-chat-in var(--motion-enter) var(--motion-easing);
+}
+.cr-chat-jump:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Send and Stop as round icon buttons at the box's corner. */
+.cr-chat-send,
+.cr-chat-stop {
+  border-radius: var(--radius-pill);
+}
+.cr-chat-send[data-sending] svg {
+  animation: cr-chat-spin 0.8s linear infinite;
+}
+@keyframes cr-chat-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.cr-chat-stop svg {
+  width: 12px;
+  height: 12px;
+  fill: currentColor;
+}
+
+/* ---- Day dividers ---- */
+.cr-chat-day {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  margin: var(--space-8) 0;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+.cr-chat-day::before,
+.cr-chat-day::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ---- Pasted images ---- */
+.cr-chat-you-images {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+.cr-chat-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+  height: 120px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+/* A screenshot shows whole, at a fixed height, never cropped. */
+.cr-chat-image img {
+  display: block;
+  height: 100%;
+  width: auto;
+  max-width: 320px;
+  object-fit: contain;
+}
+.cr-chat-image:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.cr-chat-image-full {
+  display: block;
+  max-width: 100%;
+  max-height: 70vh;
+  margin: 0 auto;
+  border-radius: var(--radius-md);
+}
+
+/* ---- Find ---- */
+.cr-chat-find {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  width: min(760px, 100%);
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-12);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-muted);
+  animation: cr-chat-in var(--motion-enter) var(--motion-easing);
+}
+.cr-chat-find-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+}
+.cr-chat-find-count {
+  font-size: var(--text-caption-size);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+::highlight(cr-find) {
+  background-color: color-mix(in srgb, var(--status-attention) 30%, transparent);
+  color: inherit;
+}
+::highlight(cr-find-current) {
+  background-color: var(--status-attention);
+  color: var(--bg);
+}
+
+/* ---- The slash menu, above the box ---- */
+.cr-chat-slash {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + var(--space-8));
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow:
+    0 8px 24px color-mix(in srgb, var(--bg) 70%, transparent),
+    inset 0 0 0 1px var(--border);
+  z-index: var(--layer-popover);
+  animation: cr-chat-in var(--motion-enter) var(--motion-easing);
+}
+.cr-chat-slash-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-12);
+  padding: var(--space-8) var(--space-12);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cr-chat-slash-item[aria-selected='true'] {
+  background: var(--surface);
+}
+.cr-chat-slash-name {
+  flex-shrink: 0;
+  min-width: 120px;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono-size);
+}
+.cr-chat-slash-desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+
+/* One ring per box. The find bar and the "something else" answer draw their
+   own when you're in them, so the input inside never adds a second (the
+   base stylesheet rings every focused input, typed or clicked). */
+.cr-chat-find-input:focus,
+.cr-chat-find-input:focus-visible,
+.cr-chat-option-other:focus,
+.cr-chat-option-other:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+/* A box lights up while you type in it; a button inside it that has focus
+   shows its own ring alone, so there is never a ring inside a ring. */
+.cr-chat-find:has(.cr-chat-find-input:focus) {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.cr-chat-option:has(input:focus-visible) {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* The option row's ring is the radio's: the radio draws none of its own. */
+.cr-chat-option input:focus-visible {
+  outline: none;
+}
+
+/* A long conversation: messages scrolled out of view aren't laid out or
+   painted until they come back, so a session with hundreds of turns
+   scrolls as lightly as a short one. */
+.cr-chat-you,
+.cr-chat-claude > .md-text,
+[data-chat-tools] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
 }

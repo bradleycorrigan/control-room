@@ -462,6 +462,9 @@ export default function BacklogScreen({
     void getBacklogPrefs().then(setPrefs)
   }, [load])
 
+  // A fresher board loaded behind the one on screen: show it.
+  useEffect(() => window.api.on('jira:boardRefreshed', () => void load()), [load])
+
   // Back at the window after a while: fetch what changed in Jira meanwhile.
   useEffect(() => {
     if (!status?.configured) return

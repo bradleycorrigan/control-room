@@ -88,3 +88,28 @@
   border: none;
   border-top: 1px solid var(--border);
 }
+
+/* A code block with a header: its language on the left, a copy button on
+   the right, always there, as in chat apps. */
+.md-code-wrap {
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+.md-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 32px;
+  padding: 0 var(--space-4) 0 var(--space-12);
+  border-bottom: 1px solid var(--border);
+}
+.md-code-lang {
+  font-family: var(--font-mono);
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+}
+.md-code-wrap .md-code {
+  margin: 0;
+  border-radius: 0;
+}

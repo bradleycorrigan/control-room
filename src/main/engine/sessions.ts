@@ -437,7 +437,7 @@ async function captureHarnessVersion(): Promise<string | undefined> {
  * sentence, never a bare path, so a trailing `;` in this block never happens
  * regardless of what an individual filename ends with.
  */
-function withAttachments(
+export function withAttachments(
   prompt: string | undefined,
   attachmentPaths: string[] | undefined
 ): string {

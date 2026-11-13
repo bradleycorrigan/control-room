@@ -2,13 +2,18 @@
    Project rail (plan 6) — left sidebar on Sessions screen only
    ========================================================================= */
 
+/* The projects list scrolls on its own; the header above it and the "needs
+   you" card and New session below it stay in view. When the whole rail
+   scrolled, a few expanded projects pushed the card and the button off the
+   bottom, and the card was never seen. */
 .projects-rail {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: transparent;
   padding: 0;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .projects-rail-header {
@@ -58,6 +63,11 @@
   gap: 2px;
   padding: 0 12px;
   min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.projects-rail-needs-you {
+  flex: 0 0 auto;
 }
 
 .projects-rail-item {
@@ -383,4 +393,11 @@
   font-size: var(--text-caption-size);
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
+}
+
+/* Project names and the section title in the display face, as the page and
+   session titles are: the places you navigate by read as a family. */
+.projects-rail-title,
+.projects-rail-label {
+  font-family: var(--font-display);
 }

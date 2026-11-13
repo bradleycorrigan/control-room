@@ -343,7 +343,28 @@ export function getContextWindowUsage(
 }
 
 /** Locates a session's transcript by id, searching every project dir under `~/.claude/projects` (or the fixture override). Never reverses the directory-name slug. */
+// Where each session's transcript was found. Every Sessions poll asks for
+// every session's, and the chat view twice a second, and each ask used to
+// list every project folder and test each one. A remembered path is checked
+// still to exist; a session not found is looked for again at most every 10s.
+const transcriptPaths = new Map<string, string>()
+const notFoundAt = new Map<string, number>()
+
 export function findSessionTranscriptPath(sessionId: string): string | null {
+  const known = transcriptPaths.get(sessionId)
+  if (known && existsSync(known)) return known
+  if (known) transcriptPaths.delete(sessionId)
+  const missedAt = notFoundAt.get(sessionId)
+  if (missedAt !== undefined && Date.now() - missedAt < 10_000) return null
+  const found = scanForTranscript(sessionId)
+  if (found) {
+    transcriptPaths.set(sessionId, found)
+    notFoundAt.delete(sessionId)
+  } else notFoundAt.set(sessionId, Date.now())
+  return found
+}
+
+function scanForTranscript(sessionId: string): string | null {
   if (!existsSync(CLAUDE_PROJECTS_DIR)) return null
 
   let projectDirs: string[]
@@ -523,7 +544,11 @@ export interface TranscriptArtifact {
 // been read, what was found, and Artifact calls still waiting on their result.
 const artifactScans = new Map<
   string,
-  { offset: number; found: Map<string, TranscriptArtifact>; pending: Map<string, string> }
+  {
+    offset: number
+    found: Map<string, TranscriptArtifact>
+    pending: Map<string, { title: string; typeUrl: string; updates: string }>
+  }
 >()
 const ARTIFACT_MARKER = Buffer.from('rtifact')
 const ARTIFACT_URL = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]{8,}/
@@ -558,6 +583,11 @@ function artifactTitle(input: Record<string, unknown>): string {
  * Every page a session published with the Artifact tool, oldest first, by its
  * claude.ai link. Only publishes of a page: asset uploads, reads and lists
  * are left out. Republishing the same page keeps one entry.
+ *
+ * An artifact made from a type (a sheet, a deck, a doc) counts too: its first
+ * publish names the type (`type_url`) and the result gives the new artifact's
+ * link before the type's. Its rows or slides then often arrive through its
+ * data store, not more publishes, so that first call is the only sign of it.
  */
 export function listTranscriptArtifacts(sessionId: string): TranscriptArtifact[] {
   const jsonlPath = findSessionTranscriptPath(sessionId)
@@ -600,15 +630,32 @@ export function listTranscriptArtifacts(sessionId: string): TranscriptArtifact[]
             if (b?.type === 'tool_use' && b.name === 'Artifact' && typeof b.id === 'string') {
               const input = (b.input ?? {}) as Record<string, unknown>
               const action = input.action ?? 'publish'
-              if (action === 'publish' && input.asset !== true && !input.type_url)
-                scan.pending.set(b.id, artifactTitle(input))
+              if (action === 'publish' && input.asset !== true) {
+                const typeUrl = typeof input.type_url === 'string' ? input.type_url : ''
+                scan.pending.set(b.id, {
+                  // A data file published into an artifact already listed
+                  // keeps that artifact's name, not the file's.
+                  title: typeUrl
+                    ? typeof input.title === 'string' && input.title.trim()
+                      ? input.title.trim()
+                      : 'Artifact'
+                    : artifactTitle(input),
+                  typeUrl,
+                  updates: typeof input.url === 'string' ? input.url : ''
+                })
+              }
             } else if (b?.type === 'tool_result' && typeof b.tool_use_id === 'string') {
-              const title = scan.pending.get(b.tool_use_id)
-              if (title === undefined) continue
+              const pending = scan.pending.get(b.tool_use_id)
+              if (pending === undefined) continue
               scan.pending.delete(b.tool_use_id)
               if (b.is_error === true) continue
-              const url = ARTIFACT_URL.exec(JSON.stringify(b.content ?? ''))?.[0]
+              // The first artifact link that isn't the type's own.
+              const text = JSON.stringify(b.content ?? '')
+              const links = text.match(new RegExp(ARTIFACT_URL.source, 'g')) ?? []
+              const url = links.find((l) => !pending.typeUrl.startsWith(l))
               if (!url) continue
+              const known = scan.found.get(url)
+              const title = known && pending.updates ? known.title : pending.title
               scan.found.delete(url)
               scan.found.set(url, { url, title })
             }

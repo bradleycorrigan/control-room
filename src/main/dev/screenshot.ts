@@ -232,6 +232,9 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
     await new Promise((r) => setTimeout(r, 400))
     const got = await runTmux(['display-message', '-p', '-t', made.paneId, '#{pane_current_path}'])
     await runTmux(['kill-pane', '-t', made.paneId])
+    // As terminal:splitPane and closePane do: panes changed, so look again now.
+    const { triggerImmediateTick } = await import('../engine/poller')
+    triggerImmediateTick()
     return { target: target[2], got: got.stdout.trim() }
   })
   ipcMain.handle('dev:log', (_evt, message: string) => {

@@ -826,21 +826,16 @@ function SessionListRow({
           </div>
         </div>
 
-        {/* Line 2: the status in a word, then what Claude last said; the
-            branch (or where the session came from) when it hasn't said
-            anything yet. The branch is otherwise in the title's tooltip. */}
+        {/* Line 2: the status in a word, then the branch (or where the
+            session came from). */}
         <div className="sessions-row-line2">
           <div className="sessions-row-badge">
             <Badge status={session.status} variant="bare" />
           </div>
-          {session.lastSaid ? (
-            <LastSaid session={session} className="sessions-row-said" />
-          ) : (
-            branch && (
-              <span className="sessions-row-branch" title={branch}>
-                {branch}
-              </span>
-            )
+          {branch && (
+            <span className="sessions-row-branch" title={branch}>
+              {branch}
+            </span>
           )}
         </div>
       </div>
@@ -1280,7 +1275,6 @@ function SessionCard({
           {branch}
         </div>
       )}
-      <LastSaid session={session} className="session-card-said" />
       <div className="session-card-bottom">
         <TicketPill session={session} />
         {/* Everything else sits on the right, ticket or no ticket, so a PR
@@ -1305,41 +1299,6 @@ function SessionCard({
       </div>
       {sessionActionNode}
     </div>
-  )
-}
-
-/** The colour of a quote's rule: what the session is waiting for. */
-function saidTone(status: LiveSession['status']): string {
-  if (status === 'needs_attention') return 'attention'
-  if (status === 'errored') return 'error'
-  if (status === 'working') return 'working'
-  if (status === 'ready' || status === 'idle' || status === 'done') return 'done'
-  return 'quiet'
-}
-
-/**
- * What Claude last said in the session, set as a quote: a rule down its left
- * edge in the session's status colour, the words in full colour. For a
- * session waiting on you it's usually the question itself, which is the
- * reason to open it.
- */
-function LastSaid({
-  session,
-  className
-}: {
-  session: LiveSession
-  className: string
-}): React.JSX.Element | null {
-  if (!session.lastSaid) return null
-  return (
-    <p
-      className={`cr-said ${className}`}
-      data-tone={saidTone(session.status)}
-      title={session.lastSaid}
-      data-last-said
-    >
-      <span className="cr-said-text">{session.lastSaid}</span>
-    </p>
   )
 }
 
