@@ -19,9 +19,7 @@ interface Props {
   size: ShellSize
   onOpenPalette: () => void
   onOpenSettings: () => void
-  onInstallHooks: () => void
   onOpenDataFolder: () => void
-  onOpenSetup: () => void
   onNewSession: () => void
   onViewSessions: () => void
   /** Show only the sessions waiting on the user. */
@@ -43,9 +41,7 @@ export default function AppShell({
   size, // Kept for Props compatibility (B6 doesn't use responsive sizing)
   onOpenPalette,
   onOpenSettings,
-  onInstallHooks,
   onOpenDataFolder,
-  onOpenSetup,
   onNewSession,
   onViewSessions,
   onShowUnread,
@@ -232,28 +228,6 @@ export default function AppShell({
               }}
             >
               Settings
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="app-titlebar-menu-item"
-              onClick={() => {
-                setOverflowOpen(false)
-                onInstallHooks()
-              }}
-            >
-              Install hooks
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="app-titlebar-menu-item"
-              onClick={() => {
-                setOverflowOpen(false)
-                onOpenSetup()
-              }}
-            >
-              Set up Control Room
             </button>
             <button
               type="button"

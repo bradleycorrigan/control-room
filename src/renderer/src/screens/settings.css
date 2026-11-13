@@ -11,6 +11,14 @@
   flex: none;
 }
 
+.settings-rail-foot {
+  display: flex;
+  flex-direction: column;
+  margin-top: auto;
+  padding: var(--space-8) 12px 0;
+  border-top: 1px solid var(--border);
+}
+
 /* The scroll container is the whole pane, so the scrollbar sits at the
    window's edge; the page inside holds the readable column. */
 .settings-main {

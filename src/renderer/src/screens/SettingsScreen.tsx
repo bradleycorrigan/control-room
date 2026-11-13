@@ -29,6 +29,8 @@ import './settings.css'
 
 interface SettingsScreenProps {
   theme: ThemeController
+  /** Opens the setup dialog: tools, editor and hooks in one place. */
+  onOpenSetup: () => void
 }
 
 type SectionId = 'views' | 'sessions' | 'editor' | 'containers' | 'appearance' | 'hooks'
@@ -72,7 +74,10 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: IconName; blurb: str
   }
 ]
 
-export default function SettingsScreen({ theme }: SettingsScreenProps): React.JSX.Element {
+export default function SettingsScreen({
+  theme,
+  onOpenSetup
+}: SettingsScreenProps): React.JSX.Element {
   const [status, setStatus] = useState<HooksStatus | null>(null)
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [busy, setBusy] = useState(false)
@@ -182,6 +187,18 @@ export default function SettingsScreen({ theme }: SettingsScreenProps): React.JS
                 </button>
               )
             })}
+          </div>
+          {/* Setup, for checking tools, editor and hooks in one go after
+              the first launch. Quiet, at the foot: most days nobody needs it. */}
+          <div className="settings-rail-foot">
+            <button type="button" className="projects-rail-item" onClick={onOpenSetup}>
+              <span className="projects-rail-label-wrapper">
+                <span className="backlog-sidebar-icon">
+                  <Icon name="ListChecks" size={16} />
+                </span>
+                <span className="projects-rail-label">Run setup again</span>
+              </span>
+            </button>
           </div>
         </nav>
       </Card>

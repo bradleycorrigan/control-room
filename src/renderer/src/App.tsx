@@ -2425,9 +2425,7 @@ function App(): React.JSX.Element {
         size={shellSize}
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenSettings={() => setView('settings')}
-        onInstallHooks={handleInstallHooks}
         onOpenDataFolder={handleOpenDataFolder}
-        onOpenSetup={() => setSetupOpen(true)}
         onNewSession={() => setShowNewSessionForm(true)}
         onShowUnread={handleShowUnread}
         onToggleSidebar={toggleSidebar}
@@ -2531,7 +2529,7 @@ function App(): React.JSX.Element {
                 }}
               />
             ) : view === 'settings' ? (
-              <SettingsScreen theme={theme} />
+              <SettingsScreen theme={theme} onOpenSetup={() => setSetupOpen(true)} />
             ) : view === 'gallery' ? (
               <PrimitivesGallery />
             ) : view === 'projects' ? (

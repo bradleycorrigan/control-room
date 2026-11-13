@@ -2219,7 +2219,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         await wait(600)
         {
           const items = (): string[] =>
-            $$('nav[aria-label="Settings sections"] .projects-rail-item').map(
+            $$('nav[aria-label="Settings sections"] .settings-rail-items .projects-rail-item').map(
               (el) => el.textContent?.trim() ?? ''
             )
           await check(
@@ -2345,11 +2345,20 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         await click($('.session-detail-header [aria-label^="Close tab"]'))
         await wait(300)
 
-        // The setup dialog, from the title bar menu: three steps, and Done
-        // marks it finished.
+        // The title bar menu keeps only Settings and the data folder.
         await click($('.app-titlebar-menu-button'))
-        await until(() => Boolean(byText('.app-titlebar-menu-item', 'Set up Control Room')), 2000)
-        await click(byText('.app-titlebar-menu-item', 'Set up Control Room'))
+        await until(() => $$('.app-titlebar-menu-item').length > 0, 2000)
+        const menu = $$('.app-titlebar-menu-item').map((b) => b.textContent?.trim() ?? '')
+        await check(
+          'the title bar menu holds Settings and Open data folder, nothing else',
+          menu.join('|') === 'Settings|Open data folder',
+          menu.join('|')
+        )
+        await key('Escape')
+        // The setup dialog, from Settings: three steps, and Done marks it finished.
+        await ctx.goTo('settings')
+        await until(() => Boolean(byText('.settings-rail-foot button', 'Run setup again')), 2000)
+        await click(byText('.settings-rail-foot button', 'Run setup again'))
         await until(() => $$('.setup-tool').length > 0, 4000)
         const titles = $$('.setup-dialog .cr-step-title').map((t) => t.textContent ?? '')
         const tools = $$('.setup-tool-name').map((t) => t.textContent ?? '')
