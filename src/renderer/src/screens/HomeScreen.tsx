@@ -32,11 +32,10 @@ import {
   type JiraBoardData
 } from '../api'
 import { useProjects } from '../state/useProjects'
-import SessionCard from '../components/SessionCard'
+import { SessionCard } from './SessionsScreen'
 import { useTicketKeys } from '../state/useTicketKeys'
 import { useAttachments } from '../components/useAttachments'
 import AttachmentChips from '../components/AttachmentChips'
-import { useSessionActions } from '../components/useSessionActions'
 import { useWorktreeChoice } from '../state/useWorktreeChoice'
 import { useStoredState } from '../state/useStoredState'
 import { useDevContainer } from '../state/useDevContainer'
@@ -44,6 +43,7 @@ import { Picker } from './backlog/Picker'
 import './home.css'
 import HomeTickets from './HomeTickets'
 import { type ComposerSeed } from './backlog/ticketSessions'
+import '../components/session-card.css'
 
 type Model = 'opus' | 'sonnet' | 'haiku'
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -428,11 +428,6 @@ export default function HomeScreen({
       onClick: onViewTickets || showsTickets ? showTickets : undefined
     })
   }
-
-  const [sessionActionNode, sessionActions] = useSessionActions({
-    pushToast,
-    onChanged: () => onSessionsChanged?.()
-  })
 
   const hasPendingAttachments = attach.pending
 
@@ -1026,12 +1021,12 @@ export default function HomeScreen({
                   session={session}
                   onOpen={(background) => onOpenSession?.(session.key, background)}
                   projectName={
-                    projects.find((p) => p.id === session.record?.projectId)?.name ?? undefined
+                    projects.find((p) => p.id === session.record?.projectId)?.name ?? null
                   }
                   ticketKey={ticketKeyOf(session.record)}
-                  // The same menu a session gets anywhere else — see
-                  // useSessionActions. Home used to offer "Mark as done" alone.
-                  actions={sessionActions(session)}
+                  onOpenTicket={onOpenTicket}
+                  onChanged={() => onSessionsChanged?.()}
+                  pushToast={pushToast}
                 />
               ))}
             </div>
@@ -1047,7 +1042,6 @@ export default function HomeScreen({
             onOpenTicket={onOpenTicket}
           />
         )}
-        {sessionActionNode}
       </div>
     </div>
   )

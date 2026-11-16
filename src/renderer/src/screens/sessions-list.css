@@ -215,11 +215,16 @@
 }
 
 .session-card-title {
-  font-size: var(--text-body-size);
+  font-size: var(--text-card-size);
+  line-height: var(--text-card-line);
+  font-weight: var(--text-label-weight);
   color: var(--text);
+  /* Two lines before an ellipsis: one line cut most real names off mid-word. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .session-card-branch {
@@ -1089,4 +1094,17 @@
 /* A project's name over its sessions, in the display face. */
 .sessions-project-name {
   font-family: var(--font-display);
+}
+
+/* What Claude last said: two quiet lines under a card's title. */
+.session-card-said {
+  margin: 0;
+  font-size: var(--text-label-size);
+  line-height: var(--text-body-line);
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
 }

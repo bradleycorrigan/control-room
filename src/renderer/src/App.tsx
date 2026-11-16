@@ -569,7 +569,7 @@ function App(): React.JSX.Element {
     registerShotScreen('project-detail-card-menu', async () => {
       await landOnProjectDetail(undefined)
       await new Promise((resolve) => setTimeout(resolve, 400))
-      document.querySelector<HTMLButtonElement>('.cr-session-card-menu button')?.click()
+      document.querySelector<HTMLButtonElement>('.session-card .overflow-menu-button')?.click()
       await new Promise((resolve) => setTimeout(resolve, 150))
     })
     registerShotScreen('project-detail-files', () => landOnProjectDetail('files'))
@@ -1491,7 +1491,7 @@ function App(): React.JSX.Element {
       setPaletteOpen(false)
       await new Promise((resolve) => setTimeout(resolve, 500))
       const titles = (): string[] =>
-        Array.from(document.querySelectorAll('.cr-session-card-title')).map(
+        Array.from(document.querySelectorAll('.session-card-title')).map(
           (el) => el.textContent?.trim() ?? ''
         )
       const before = titles()
@@ -1507,8 +1507,8 @@ function App(): React.JSX.Element {
       // Through the card's own menu, not the API behind it: the point of this
       // check is that the control on Home works, and calling archiveSession
       // directly would pass even with no menu on the card at all.
-      const card = Array.from(document.querySelectorAll('.cr-session-card-wrap')).find((el) =>
-        el.querySelector('.cr-session-card-title')?.textContent?.includes(marked)
+      const card = Array.from(document.querySelectorAll('.session-card')).find((el) =>
+        el.querySelector('.session-card-title')?.textContent?.includes(marked)
       )
       card?.querySelector<HTMLButtonElement>('.cr-icon-button')?.click()
       await new Promise((resolve) => setTimeout(resolve, 200))
@@ -1553,7 +1553,7 @@ function App(): React.JSX.Element {
       setPaletteOpen(false)
       await new Promise((resolve) => setTimeout(resolve, 600))
       document
-        .querySelector('.cr-session-card-wrap')
+        .querySelector('.session-card')
         ?.querySelector<HTMLButtonElement>('.cr-icon-button')
         ?.click()
       await new Promise((resolve) => setTimeout(resolve, 300))
@@ -1565,8 +1565,8 @@ function App(): React.JSX.Element {
       setView('home')
       setPaletteOpen(false)
       await new Promise((resolve) => setTimeout(resolve, 600))
-      const card = document.querySelector('.cr-session-card-wrap')
-      const was = card?.querySelector('.cr-session-card-title')?.textContent?.trim() ?? '?'
+      const card = document.querySelector('.session-card')
+      const was = card?.querySelector('.session-card-title')?.textContent?.trim() ?? '?'
       card?.querySelector<HTMLButtonElement>('.cr-icon-button')?.click()
       await new Promise((resolve) => setTimeout(resolve, 200))
       Array.from(document.querySelectorAll<HTMLButtonElement>('.cr-popover-item'))
@@ -1589,7 +1589,7 @@ function App(): React.JSX.Element {
         .find((el) => el.textContent?.trim() === 'Rename')
         ?.click()
       await new Promise((resolve) => setTimeout(resolve, 800))
-      const now = document.querySelector('.cr-session-card-title')?.textContent?.trim() ?? '?'
+      const now = document.querySelector('.session-card-title')?.textContent?.trim() ?? '?'
       pushToast(`"${was}" -> "${now}"`)
       await new Promise((resolve) => setTimeout(resolve, 200))
     })
@@ -1632,7 +1632,7 @@ function App(): React.JSX.Element {
       }
       scroller.scrollTop = scroller.scrollHeight
       await new Promise((resolve) => setTimeout(resolve, 200))
-      const cards = document.querySelectorAll('.cr-session-card')
+      const cards = document.querySelectorAll('.session-card')
       const last = cards[cards.length - 1]
       const gap = last
         ? Math.round(scroller.getBoundingClientRect().bottom - last.getBoundingClientRect().bottom)
@@ -1856,8 +1856,8 @@ function App(): React.JSX.Element {
       // Delete, from a card menu on the Active board.
       scroller?.scrollTo(0, 0)
       await new Promise((resolve) => setTimeout(resolve, 400))
-      const card = document.querySelector('.cr-session-card-wrap')
-      const title = card?.querySelector('.cr-session-card-title')?.textContent?.trim() ?? '?'
+      const card = document.querySelector('.session-card')
+      const title = card?.querySelector('.session-card-title')?.textContent?.trim() ?? '?'
       card?.querySelector<HTMLButtonElement>('.cr-icon-button')?.click()
       await new Promise((resolve) => setTimeout(resolve, 250))
       Array.from(document.querySelectorAll<HTMLButtonElement>('.cr-popover-item'))
@@ -2023,7 +2023,7 @@ function App(): React.JSX.Element {
     registerShotScreen('open-from-project', async () => {
       await landOnProjectDetail(undefined)
       await new Promise((resolve) => setTimeout(resolve, 400))
-      document.querySelector<HTMLButtonElement>('.cr-session-card')?.click()
+      document.querySelector<HTMLButtonElement>('.session-card')?.click()
       await new Promise((resolve) => setTimeout(resolve, 400))
     })
     registerShotScreen('confirm-remove-project', async () => {
@@ -2039,13 +2039,13 @@ function App(): React.JSX.Element {
     registerShotScreen('session-menu', async () => {
       await landOnProjectDetail(undefined)
       await new Promise((resolve) => setTimeout(resolve, 400))
-      document.querySelector<HTMLButtonElement>('.cr-session-card-menu button')?.click()
+      document.querySelector<HTMLButtonElement>('.session-card .overflow-menu-button')?.click()
       await new Promise((resolve) => setTimeout(resolve, 300))
     })
     registerShotScreen('confirm-dialog', async () => {
       await landOnProjectDetail(undefined)
       await new Promise((resolve) => setTimeout(resolve, 400))
-      document.querySelector<HTMLButtonElement>('.cr-session-card-menu button')?.click()
+      document.querySelector<HTMLButtonElement>('.session-card .overflow-menu-button')?.click()
       await new Promise((resolve) => setTimeout(resolve, 150))
       const items = Array.from(document.querySelectorAll<HTMLButtonElement>('.cr-popover-item'))
       items.find((el) => /delete/i.test(el.textContent ?? ''))?.click()

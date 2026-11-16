@@ -225,9 +225,7 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
   // --- Home cards, close others, close to the right
   await ctx.goHome()
   await wait(600)
-  const cards = (): HTMLElement[] => [
-    ...document.querySelectorAll<HTMLElement>('.cr-session-card:not(.cr-session-card--new)')
-  ]
+  const cards = (): HTMLElement[] => [...document.querySelectorAll<HTMLElement>('.session-card')]
   const storedBefore = stored().length
   // By session, not position: opening one in the background can re-order
   // the cards, and the second click then landed on one already open.
@@ -276,7 +274,7 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
       .map(keyOf)
       .find((k): k is string => Boolean(k) && !stored().includes(k as string)) ?? null
   const titleOf = (k: string | null): string =>
-    cardFor(k)?.querySelector('.cr-session-card-title')?.textContent ?? '?'
+    cardFor(k)?.querySelector('.session-card-title')?.textContent ?? '?'
   const picked: string[] = []
   for (let i = 0; i < 2; i++) {
     const k = unopenedKey()

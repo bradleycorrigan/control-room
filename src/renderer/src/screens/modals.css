@@ -34,7 +34,7 @@
   background: transparent;
   color: var(--text);
   font-family: var(--font-ui);
-  
+
   outline: none;
 }
 
@@ -56,7 +56,7 @@
 .command-palette-empty {
   padding: var(--space-16);
   color: var(--text-faint);
-  
+
   text-align: center;
 }
 
@@ -71,7 +71,7 @@
   background: transparent;
   color: var(--text);
   font-family: var(--font-ui);
-  
+
   text-align: left;
   cursor: pointer;
 }
@@ -99,7 +99,7 @@
 .command-palette-item-sublabel {
   flex: none;
   font-family: var(--font-mono);
-  
+
   color: var(--text-faint);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -133,13 +133,12 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  
 }
 
 .keyboard-help-combo {
   flex: none;
   font-family: var(--font-mono);
-  
+
   color: var(--text);
   background: var(--bg-sunken);
   border: 1px solid var(--border);
@@ -159,10 +158,8 @@
   background: var(--surface-raised);
   color: var(--text);
   cursor: pointer;
-  
 }
 .new-skill-dialog-warning {
-  
   color: var(--status-error);
   margin: -6px 0 0;
 }
@@ -174,7 +171,6 @@
 }
 
 .add-rule-diff-label {
-  
   opacity: 0.8;
 }
 
@@ -182,7 +178,7 @@
   background: var(--color-background);
   border-radius: var(--radius-md);
   padding: 8px 10px;
-  
+
   font-family: var(--font-mono, monospace);
   max-height: 140px;
   overflow-y: auto;
@@ -199,7 +195,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  
+
   opacity: 0.9;
 }
 
@@ -218,7 +214,7 @@
   border: 1px solid var(--ev-c-gray-3);
   background: var(--color-background);
   color: var(--color-text);
-  
+
   font-family: inherit;
 }
 
@@ -226,12 +222,11 @@
   flex-direction: row;
   align-items: center;
   gap: 6px;
-  
 }
 
 .new-session-investigate-hint {
   margin: -4px 0 0;
-  
+
   color: var(--text-faint);
 }
 
@@ -239,7 +234,6 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  
 }
 
 .new-session-basedon label {
@@ -249,7 +243,6 @@
 }
 
 .new-session-steps {
-  
   background: var(--color-background);
   border-radius: var(--radius-md);
   padding: 8px 10px;
@@ -285,5 +278,4 @@
   background: var(--ev-c-gray-3);
   color: var(--color-text);
   cursor: pointer;
-  
 }

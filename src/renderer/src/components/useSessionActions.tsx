@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
-import type { SessionCardAction } from './SessionCard'
+import type { MenuItem as SessionCardAction } from './MenuItems'
 import DeleteSessionDialog from './DeleteSessionDialog'
 import RenameSessionDialog from './RenameSessionDialog'
 import HandoffNoteDialog from './HandoffNoteDialog'

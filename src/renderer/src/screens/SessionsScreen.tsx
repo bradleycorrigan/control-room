@@ -47,6 +47,7 @@ import { sessionTitle } from '../lib/session-title'
 import './sessions-list.css'
 import { PrChips, type PrChipProps } from '../components/PrChip'
 import { getAllLinkedPullRequests } from '../api-sessions'
+import { useLastSaid } from '../state/useLastSaid'
 import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
 import type { PrPanelTarget } from '../components/prPanelTarget'
 
@@ -241,9 +242,20 @@ const SessionTickets = createContext<{
 }>({ ticketOf: () => null, list: [] })
 
 /** The ticket key, as in the session header: a button that opens the ticket. */
-function TicketPill({ session }: { session: LiveSession }): React.JSX.Element | null {
-  const { ticketOf, open, list } = useContext(SessionTickets)
-  const key = ticketOf(session)
+function TicketPill({
+  session,
+  ticketKey,
+  onOpenTicket
+}: {
+  session: LiveSession
+  /** Where there's no list to ask (Home, a project's page): the key and how to open it. */
+  ticketKey?: string | null
+  onOpenTicket?: (key: string) => void
+}): React.JSX.Element | null {
+  const ctx = useContext(SessionTickets)
+  const key = ctx.ticketOf(session) ?? ticketKey ?? null
+  const list = ctx.list
+  const open = ctx.open ?? (onOpenTicket ? (k: string) => onOpenTicket(k) : undefined)
   if (!key || !open) return null
   return (
     <button
@@ -536,7 +548,7 @@ const SessionSelection = createContext<{
   selected: Set<string>
   /** `range`: everything on screen between the last one picked and this. */
   toggle: (recordId: string, range?: boolean) => void
-}>({ selected: new Set(), toggle: () => {} })
+} | null>(null)
 
 /**
  * Picking a session for a bulk action, the same way wherever it's shown (a
@@ -567,8 +579,18 @@ function usePick(
   check: React.ReactNode
   onClick: (e: React.MouseEvent, open: (background?: boolean) => void) => void
 } {
+  // Outside the Sessions list (Home, a project's page) there is nothing to
+  // pick into, so no check: a click just opens.
   const selection = useContext(SessionSelection)
   const recordId = session.record?.id ?? null
+  if (!selection)
+    return {
+      recordId,
+      picked: false,
+      picking: false,
+      check: null,
+      onClick: (e, open) => open(e.metaKey || e.ctrlKey)
+    }
   const picked = recordId !== null && selection.selected.has(recordId)
   const picking = selection.selected.size > 0
   return {
@@ -1178,29 +1200,37 @@ function SessionGroupBody({
   )
 }
 
-interface SessionCardProps {
+export interface SessionCardProps {
   session: LiveSession
-  projectName: string | null
+  projectName?: string | null
   /** After an action from its menu changed something, so the list refreshes. */
   onChanged?: () => void
   /** `background`: ⌘- or middle-click — open it in a tab without switching. */
   onOpen: (background?: boolean) => void
   onAdopt?: () => void
   prs?: SessionPr[]
+  /** Its ticket, where the surface knows it and there's no list to ask. */
+  ticketKey?: string | null
+  onOpenTicket?: (key: string) => void
+  pushToast?: (message: string) => void
 }
 
-// Plan 2.4 — "sessions as cards in a responsive grid, same card as the
-// ACTIVE grid" (2.3). The full ACTIVE-grid card (context-usage bar) belongs
-// to ProjectDetail's own milestone; this is that card's shape — status,
-// title, branch in mono, project, elapsed time — scoped to what this
-// milestone owns. Still used by the Grid view (untouched by plan 5).
-function SessionCard({
+/**
+ * One session as a card: the one card for a session wherever you meet it, on
+ * Home, a project's page and the Sessions grid. Its status and how long it has
+ * waited, its title, what Claude last said, its branch, ticket, pull requests
+ * and project; the session menu, with Mark as done to hand on hover.
+ */
+export function SessionCard({
   session,
   projectName,
   onOpen,
   onAdopt,
   prs,
-  onChanged
+  onChanged,
+  ticketKey,
+  onOpenTicket,
+  pushToast
 }: SessionCardProps): React.JSX.Element {
   const title = sessionTitle(session)
   const branch = branchLine(session)
@@ -1208,97 +1238,111 @@ function SessionCard({
   const openPr = useContext(SessionPrOpen)
   // The same menu as a list row, and its most-used action on its own: on
   // hover, in place of the time, so the card needn't be opened to do it.
-  const [sessionActionNode, sessionActions] = useSessionActions({ onChanged: () => onChanged?.() })
+  const [sessionActionNode, sessionActions] = useSessionActions({
+    pushToast,
+    onChanged: () => onChanged?.()
+  })
   const actions: OverflowAction[] = sessionActions(session)
   const quick = actions.find((a) => a.label === 'Mark as done' && !a.disabled)
+  const said = useLastSaid(session)
   return (
-    <div
-      className={[
-        'session-card',
-        session.unread ? 'session-card-unread' : '',
-        picked ? 'session-card--picked' : '',
-        picking ? 'session-card--picking' : ''
-      ]
-        .filter(Boolean)
-        .join(' ')}
-      role="button"
-      tabIndex={0}
-      data-session-item
-      data-record-id={recordId ?? undefined}
-      onClick={(e) => onClick(e, onOpen)}
-      onAuxClick={(e) => {
-        if (e.button === 1) onOpen(true)
-      }}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onOpen()
-        }
-      }}
-    >
-      <div className="session-card-top">
-        <span className="session-card-lead">
-          {check}
-          <Badge status={session.status} />
-        </span>
-        {activityLabel(session) && (
-          <span className="session-card-time">{activityLabel(session)}</span>
-        )}
-        {actions.length > 0 && (
-          <span className="session-card-actions" onClick={(e) => e.stopPropagation()}>
-            {quick && (
-              <Tooltip label="Mark as done">
-                <button
-                  type="button"
-                  className="overflow-menu-button"
-                  aria-label={`Mark ${title} as done`}
-                  onClick={quick.onClick}
-                >
-                  <Icon name="CircleCheck" size={16} />
-                </button>
-              </Tooltip>
-            )}
-            <OverflowMenu actions={actions} label={`${title} actions`} />
+    <>
+      <div
+        className={[
+          'session-card',
+          session.unread ? 'session-card-unread' : '',
+          picked ? 'session-card--picked' : '',
+          picking ? 'session-card--picking' : ''
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        role="button"
+        tabIndex={0}
+        data-session-item
+        data-session-key={session.key}
+        data-record-id={recordId ?? undefined}
+        onClick={(e) => onClick(e, onOpen)}
+        onAuxClick={(e) => {
+          if (e.button === 1) onOpen(true)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onOpen()
+          }
+        }}
+      >
+        <div className="session-card-top">
+          <span className="session-card-lead">
+            {check}
+            <Badge status={session.status} />
           </span>
-        )}
-      </div>
-      <div className="session-card-title" title={title}>
-        {title}
-        {session.record?.pinned && (
-          <span className="sessions-row-pinned" aria-label="Pinned">
-            <Icon name="Pin" size={12} />
-          </span>
-        )}
-      </div>
-      {branch && (
-        <div className="session-card-branch" title={branch}>
-          {branch}
-        </div>
-      )}
-      <div className="session-card-bottom">
-        <TicketPill session={session} />
-        {/* Everything else sits on the right, ticket or no ticket, so a PR
-            never takes the ticket's place on the left. */}
-        <div className="session-card-bottom-end">
-          <PrChips prs={prs ?? []} onOpen={openPr ? (pr) => openPr(session, pr) : undefined} />
-          {projectName && <span className="cr-project-pill">{projectName}</span>}
-          {onAdopt && (
-            <button
-              type="button"
-              className="session-card-adopt"
-              title={ADOPT_HINT}
-              onClick={(e) => {
-                e.stopPropagation()
-                onAdopt()
-              }}
-            >
-              {ADOPT_LABEL}
-            </button>
+          {activityLabel(session) && (
+            <span className="session-card-time">{activityLabel(session)}</span>
+          )}
+          {actions.length > 0 && (
+            <span className="session-card-actions" onClick={(e) => e.stopPropagation()}>
+              {quick && (
+                <Tooltip label="Mark as done">
+                  <button
+                    type="button"
+                    className="overflow-menu-button"
+                    aria-label={`Mark ${title} as done`}
+                    onClick={quick.onClick}
+                  >
+                    <Icon name="CircleCheck" size={16} />
+                  </button>
+                </Tooltip>
+              )}
+              <OverflowMenu actions={actions} label={`${title} actions`} />
+            </span>
           )}
         </div>
+        <div className="session-card-title" title={title}>
+          {title}
+          {session.record?.pinned && (
+            <span className="sessions-row-pinned" aria-label="Pinned">
+              <Icon name="Pin" size={12} />
+            </span>
+          )}
+        </div>
+        {said && (
+          <p className="session-card-said" title={said}>
+            {said}
+          </p>
+        )}
+        {branch && (
+          <div className="session-card-branch" title={branch}>
+            {branch}
+          </div>
+        )}
+        <div className="session-card-bottom">
+          <TicketPill session={session} ticketKey={ticketKey} onOpenTicket={onOpenTicket} />
+          {/* Everything else sits on the right, ticket or no ticket, so a PR
+            never takes the ticket's place on the left. */}
+          <div className="session-card-bottom-end">
+            <PrChips prs={prs ?? []} onOpen={openPr ? (pr) => openPr(session, pr) : undefined} />
+            {projectName && <span className="cr-project-pill">{projectName}</span>}
+            {onAdopt && (
+              <button
+                type="button"
+                className="session-card-adopt"
+                title={ADOPT_HINT}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onAdopt()
+                }}
+              >
+                {ADOPT_LABEL}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
+      {/* Outside the card: a click inside a dialog it opens (Rename, Delete)
+          would otherwise reach the card and open the session. */}
       {sessionActionNode}
-    </div>
+    </>
   )
 }
 

@@ -1,5 +1,4 @@
-/* The session card, shared by the project page's Active board and Home's
-   recent sessions.
+/* Grids of cards on Home and a project page, and the ticket cards on Home.
 
    It lived in project-detail.css, which Home does not load — so the moment a
    second surface used the card it came out unstyled. Styles travel with the
@@ -238,41 +237,6 @@
 
 .cr-ticket-card-pr--merged .cr-ticket-card-pr-dot {
   background: var(--accent);
-}
-
-/* When it last moved, or how long it has waited on you: top right. */
-.cr-session-card-when {
-  margin-left: auto;
-  font-size: var(--text-meta-size);
-  line-height: var(--text-meta-line);
-  color: var(--text-meta-color);
-  white-space: nowrap;
-}
-
-/* What Claude last said: two quiet lines under the title. */
-.cr-session-card-said {
-  margin: 0;
-  font-size: var(--text-label-size);
-  line-height: var(--text-body-line);
-  color: var(--text-muted);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
-
-.cr-session-card-ticket {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: var(--text-caption-size);
-  color: var(--text-muted);
-}
-
-/* The menu appears over the corner on hover: the time steps aside for it. */
-.cr-session-card-wrap:has(.cr-session-card-menu):hover .cr-session-card-when,
-.cr-session-card-wrap:has(.cr-session-card-menu):focus-within .cr-session-card-when {
-  visibility: hidden;
 }
 
 /* A ticket card's details under its summary: status, epic, estimate, when it changed. */

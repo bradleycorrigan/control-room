@@ -15,6 +15,17 @@ type Modifier = 'meta' | 'shift' | 'alt' | 'control'
 
 async function click(el: Element | null | undefined, modifiers: Modifier[] = []): Promise<boolean> {
   if (!el) return false
+  // A control that only shows while you point at its card or row: point at
+  // that first, as a person would, so the control is there to click.
+  if (el.getBoundingClientRect().width === 0) {
+    const host = el.closest<HTMLElement>('.session-card, .sessions-row')
+    if (host) {
+      host.scrollIntoView({ block: 'center' })
+      const h = host.getBoundingClientRect()
+      await input({ type: 'mouseMove', x: Math.round(h.left + 24), y: Math.round(h.top + 24) })
+      await settle()
+    }
+  }
   // Real input lands where the pointer is: bring the target on screen first
   // (a tall panel puts its lower controls below the fold).
   // Only wait for a scroll that actually happened.
@@ -1836,9 +1847,9 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       run: async () => {
         await ctx.goTo('home')
         await wait(600)
-        const cards = $$('.cr-session-card:not(.cr-session-card--new)')
+        const cards = $$('.session-card')
         await check('Home shows recent session cards', cards.length > 0, `${cards.length}`)
-        const titleStyle = cards[0]?.querySelector('.cr-session-card-title')
+        const titleStyle = cards[0]?.querySelector('.session-card-title')
         await check(
           'card titles wrap to two lines rather than cutting off at one',
           Boolean(titleStyle) && getComputedStyle(titleStyle!).webkitLineClamp === '2'
@@ -4133,8 +4144,10 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           }
           await ctx.goTo('home')
           await click(byText('.home-recent-filters .cr-pill', 'Unread'))
-          await until(() => Boolean($('[aria-label="Actions for fixture-cursor"]')), 4000)
-          const cardLabels = await menuLabels($('[aria-label="Actions for fixture-cursor"]'))
+          await until(() => Boolean($('.session-card [aria-label="fixture-cursor actions"]')), 4000)
+          const cardLabels = await menuLabels(
+            $('.session-card [aria-label="fixture-cursor actions"]')
+          )
           await check(
             'Home and the Sessions list offer a session in another terminal the same actions',
             rowLabels.length > 0 &&
@@ -4143,12 +4156,12 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
               rowLabels.includes('End session…'),
             `row: ${rowLabels.join(', ')}; card: ${cardLabels.join(', ')}`
           )
-          await click($('[aria-label="Actions for fixture-cursor"]'))
+          await click($('.session-card [aria-label="fixture-cursor actions"]'))
           await click(byText('[role="menuitem"]', 'Hide'))
           await wait(3000) // a poll or more: hidden must survive the list being rebuilt
           await check(
             'Hide removes it, and it stays gone after the list refreshes',
-            !$('[aria-label="Actions for fixture-cursor"]'),
+            !$('.session-card [aria-label="fixture-cursor actions"]'),
             'still on Home'
           )
           // Home's filter is remembered: put it back to everything.
@@ -5167,22 +5180,22 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         {
           await ctx.goTo('home')
           await wait(600)
-          const cardsBefore = $$('.cr-session-card:not(.cr-session-card--new)')
+          const cardsBefore = $$('.session-card')
           await check(
             'Home has at least two recent sessions to pin against',
             cardsBefore.length >= 2
           )
 
           const wrapOf = (card: Element): HTMLElement | null =>
-            card.closest<HTMLElement>('.cr-session-card-wrap')
+            card.closest<HTMLElement>('.session-card')
           const titleOf = (card: Element): string =>
-            card.querySelector('.cr-session-card-title')?.textContent?.trim() ?? ''
+            card.querySelector('.session-card-title')?.textContent?.trim() ?? ''
           const keyOf = (card: Element): string | null =>
             wrapOf(card)?.getAttribute('data-session-key') ?? null
           const findByKey = (key: string): Element | undefined =>
-            $$('.cr-session-card:not(.cr-session-card--new)').find((c) => keyOf(c) === key)
+            $$('.session-card').find((c) => keyOf(c) === key)
           const isPinned = (card: Element): boolean =>
-            Boolean(wrapOf(card)?.querySelector('.cr-session-card-pinned'))
+            Boolean(wrapOf(card)?.querySelector('.sessions-row-pinned'))
 
           const target = cardsBefore[1]
           const targetTitle = titleOf(target)
@@ -5193,19 +5206,21 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
 
           const openMenuFor = async (card: Element): Promise<HTMLElement | undefined> => {
             const button =
-              wrapOf(card)?.querySelector<HTMLElement>('[aria-label^="Actions for"]') ?? undefined
+              wrapOf(card)?.querySelector<HTMLElement>(
+                '.overflow-menu-button[aria-label$=" actions"]'
+              ) ?? undefined
             await click(button)
             return button
           }
 
           try {
             await openMenuFor(target)
-            const pinItem = byText('.cr-session-card-menu-list .cr-popover-item', 'Pin')
+            const pinItem = byText('.overflow-menu-list .cr-popover-item', 'Pin')
             await check('the session card menu offers Pin', Boolean(pinItem))
             await click(pinItem)
             await until(() => (targetKey ? isPinned(findByKey(targetKey) ?? target) : true), 3000)
 
-            const cardsAfterPin = $$('.cr-session-card:not(.cr-session-card--new)')
+            const cardsAfterPin = $$('.session-card')
             await check(
               'pinning a session moves it to the front of Home',
               titleOf(cardsAfterPin[0]) === targetTitle,
@@ -5219,7 +5234,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             const stillThere = targetKey ? findByKey(targetKey) : undefined
             if (stillThere && isPinned(stillThere)) {
               await openMenuFor(stillThere)
-              const unpinItem = byText('.cr-session-card-menu-list .cr-popover-item', 'Unpin')
+              const unpinItem = byText('.overflow-menu-list .cr-popover-item', 'Unpin')
               if (unpinItem) {
                 await click(unpinItem)
                 await until(() => !isPinned(findByKey(targetKey!) ?? stillThere), 3000)
@@ -5234,10 +5249,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
               // itself isn't left pinned.
               await api.invoke('sessions:setPinned', targetId, false)
             }
-            await check(
-              'unpinning removes the mark',
-              !$$('.cr-session-card:not(.cr-session-card--new)').some(isPinned)
-            )
+            await check('unpinning removes the mark', !$$('.session-card').some(isPinned))
           }
         }
 
@@ -5636,7 +5648,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         // Home's cards have no title to edit in place: the rename dialog.
         await ctx.goTo('home')
         const cardMenu = (): HTMLElement | undefined =>
-          $$<HTMLElement>('[aria-label^="Actions for "]').find(
+          $$<HTMLElement>('.session-card .overflow-menu-button[aria-label$=" actions"]').find(
             (el) => !/fixture-cursor/.test(el.getAttribute('aria-label') ?? '')
           )
         await until(() => Boolean(cardMenu()), 4000)

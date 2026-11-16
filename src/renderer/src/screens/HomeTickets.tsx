@@ -1,4 +1,5 @@
 import type { LiveSession } from '../../../main/store/types'
+import '../components/session-card.css'
 import { loadTicketPullRequests, openExternal, type JiraIssue } from '../api'
 import { IconButton, StatusDot } from '../components/primitives'
 import { STATUS_WORDS } from '../components/primitives/Badge'

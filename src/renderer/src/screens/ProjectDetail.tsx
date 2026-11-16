@@ -17,12 +17,12 @@ import FilesTab from './tabs/FilesTab'
 import SkillsTab from './tabs/SkillsTab'
 import RulesTab from './tabs/RulesTab'
 import HistoryPanel from './HistoryPanel'
-import { useSessionActions } from '../components/useSessionActions'
 import HomeScreen from './HomeScreen'
 import { useDevContainer } from '../state/useDevContainer'
-import SessionCard from '../components/SessionCard'
+import { SessionCard } from './SessionsScreen'
 import WorktreeCleanupDialog from '../components/WorktreeCleanupDialog'
 import WorktreeOverlay from '../components/WorktreeOverlay'
+import '../components/session-card.css'
 import { useWorktreeChoice } from '../state/useWorktreeChoice'
 import { useHomeDir } from '../state/useHomeDir'
 import { useTicketKeys } from '../state/useTicketKeys'
@@ -209,13 +209,6 @@ function OverviewTab({
   initialHistoryTab?: 'recent' | 'cli'
 }): React.JSX.Element {
   const worktreeHomeDir = useHomeDir()
-  const [sessionActionNode, sessionActions] = useSessionActions({
-    pushToast,
-    onChanged: () => {
-      onSessionsChanged()
-      refreshRecords()
-    }
-  })
   const [confirmNode, confirm] = useConfirm()
   const [worktreeMode] = useWorktreeChoice()
   const [busy, setBusy] = useState(false)
@@ -417,9 +410,11 @@ function OverviewTab({
                 key={session.key}
                 session={session}
                 onOpen={(background) => onOpenSession(session.key, background)}
-                // The same menu a session gets on Home and anywhere else —
-                // see useSessionActions.
-                actions={sessionActions(session)}
+                onChanged={() => {
+                  onSessionsChanged()
+                  refreshRecords()
+                }}
+                pushToast={pushToast}
               />
             ))}
             <QuickEmptyTile onClick={handleStartEmpty} disabled={busy} />
@@ -428,7 +423,6 @@ function OverviewTab({
       </section>
 
       {confirmNode}
-      {sessionActionNode}
 
       <section className="overview-section">
         <Disclosure
