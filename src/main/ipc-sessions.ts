@@ -11,6 +11,7 @@ import {
 import { listTranscriptPrLinks, listTranscriptArtifacts, listUserPrompts } from './exec/transcripts'
 import { resolveClaudeBinary } from './exec/claude'
 import { addArtifact, listArtifacts, removeArtifact, renameArtifact } from './exec/artifacts'
+import { artifactPreview } from './exec/artifactPreview'
 import { run } from './exec/run'
 import {
   buildTicketDraftPrompt,
@@ -141,6 +142,10 @@ export function registerSessionsIpc(): void {
   })
   // ---- Artifacts: every one sessions made or read, plus links you added ----
   ipcMain.handle('artifacts:list', () => listArtifacts())
+  // A picture of the page, as a data: URL, or null when there's no local copy.
+  ipcMain.handle('artifacts:preview', (_evt, url: unknown) =>
+    typeof url === 'string' ? artifactPreview(url) : null
+  )
   ipcMain.handle('artifacts:add', (_evt, link: unknown, title: unknown) =>
     typeof link === 'string'
       ? addArtifact(link, typeof title === 'string' ? title : '')

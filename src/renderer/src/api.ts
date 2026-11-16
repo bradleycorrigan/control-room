@@ -1132,6 +1132,11 @@ export function addArtifact(
   return window.api.invoke('artifacts:add', link, title)
 }
 
+/** A picture of the artifact's page (a data: URL), or null when none can be drawn. */
+export function getArtifactPreview(url: string): Promise<string | null> {
+  return window.api.invoke<string | null>('artifacts:preview', url)
+}
+
 export function removeArtifact(url: string): Promise<ArtifactRow[]> {
   return window.api.invoke<ArtifactRow[]>('artifacts:remove', url)
 }

@@ -1,6 +1,134 @@
-/* The Artifacts screen. Rows, header, filters and search are the Sessions
-   list's own (sessions-list.css); only what differs lives here. Every colour
-   is a token. */
+/* The Artifacts screen. Header, filters, search and list rows are the
+   Sessions list's own (sessions-list.css); only what differs lives here.
+   Every colour is a token. */
+
+/* ---- grid: a card per artifact, its page's picture on top ---- */
+
+.artifacts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-16);
+}
+
+.artifacts-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color var(--motion-fast) var(--motion-easing);
+}
+
+.artifacts-card:hover,
+.artifacts-card:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+}
+
+.artifacts-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.artifacts-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-16) var(--space-16);
+  min-width: 0;
+}
+
+.artifacts-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+}
+
+.artifacts-card-glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+.artifacts-card .sessions-row-overflow {
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--motion-easing);
+}
+
+.artifacts-card:hover .sessions-row-overflow,
+.artifacts-card:focus-within .sessions-row-overflow {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifacts-card,
+  .artifacts-card .sessions-row-overflow {
+    transition: none;
+  }
+}
+
+/* ---- the page's picture, or its icon while there's none ---- */
+
+.artifacts-thumb {
+  aspect-ratio: 16 / 10;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.artifacts-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+}
+
+.artifacts-thumb-blank {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-8);
+  color: var(--text-muted);
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+}
+
+.artifacts-thumb--large {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.artifacts-emoji {
+  line-height: 1;
+}
+
+.artifacts-description {
+  margin: 0;
+  font-size: var(--text-label-size);
+  line-height: var(--text-body-line);
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.artifacts-facts {
+  flex-wrap: wrap;
+  row-gap: var(--space-4);
+  min-width: 0;
+}
+
+/* ---- list rows ---- */
 
 .artifacts-list {
   display: flex;
@@ -13,21 +141,15 @@
   padding-left: var(--space-16);
 }
 
-.artifacts-row .sessions-row-line1 > svg {
-  flex: none;
-  color: var(--text-muted);
+.artifacts-row .artifacts-description {
+  -webkit-line-clamp: 1;
+  padding-left: calc(14px + var(--space-8));
 }
 
 .artifacts-row .sessions-row-line2 {
   gap: var(--space-12);
   padding-left: calc(14px + var(--space-8));
-}
-
-.artifacts-row-meta {
-  font-size: var(--text-meta-size);
-  line-height: var(--text-meta-line);
-  color: var(--text-meta-color);
-  white-space: nowrap;
+  flex-wrap: wrap;
 }
 
 .artifacts-row-session {
@@ -56,6 +178,73 @@
   text-decoration: underline;
 }
 
+.artifacts-muted {
+  color: var(--text-muted);
+}
+
+/* ---- one artifact up close ---- */
+
+.artifacts-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+.artifacts-preview-picture {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+  border-radius: var(--radius-md);
+}
+
+.artifacts-preview-picture:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.artifacts-preview-description {
+  margin: 0;
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  color: var(--text);
+}
+
+.artifacts-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.artifacts-preview-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-12) var(--space-16);
+}
+
+.artifacts-preview-facts dt {
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  color: var(--text-meta-color);
+}
+
+.artifacts-preview-facts dd {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-label-size);
+  color: var(--text);
+}
+
+.artifacts-preview-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+/* ---- adding a link ---- */
+
 .artifacts-add {
   display: flex;
   flex-direction: column;
@@ -80,4 +269,16 @@
   display: flex;
   justify-content: flex-end;
   gap: var(--space-8);
+}
+
+/* Meta items default to the code font, which suits a branch name, not
+   "Published 3d ago" beside a title. */
+.artifacts-facts .cr-meta-item {
+  font-family: inherit;
+}
+
+/* Up close, the picture leaves room for what's below it. */
+.artifacts-thumb--large {
+  aspect-ratio: auto;
+  height: min(46vh, 420px);
 }

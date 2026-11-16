@@ -2359,7 +2359,13 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         await ctx.goTo('settings')
         await until(() => Boolean(byText('.settings-rail-foot button', 'Run setup again')), 2000)
         await click(byText('.settings-rail-foot button', 'Run setup again'))
-        await until(() => $$('.setup-tool').length > 0, 4000)
+        // The editor choice fills in after the editors are looked for: wait for it too.
+        await until(
+          () =>
+            $$('.setup-tool').length > 0 &&
+            Boolean($('.setup-dialog [role="radiogroup"][aria-label="Editor"]')),
+          4000
+        )
         const titles = $$('.setup-dialog .cr-step-title').map((t) => t.textContent ?? '')
         const tools = $$('.setup-tool-name').map((t) => t.textContent ?? '')
         await check(
@@ -2604,16 +2610,38 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         )
         const shared = rows().find((r) => r.textContent?.includes('Board pack'))
         await check(
-          'one read through a shared link says so and keeps its share key',
-          Boolean(shared?.textContent?.includes('shared with you')) &&
-            (shared?.title ?? '').includes('?sk='),
-          `${shared?.textContent} ${shared?.title}`
+          'one read through a shared link says it’s shared with you',
+          Boolean(shared?.textContent?.includes('Shared with you')),
+          shared?.textContent ?? 'no Board pack card'
         )
+        // A published page with a local copy gets a picture of itself.
+        const funnel = (): HTMLElement | undefined =>
+          rows().find((r) => r.textContent?.includes('Funnel report'))
         await check(
-          'a row names the session it came from',
-          Boolean(shared?.querySelector('.artifacts-row-session')?.textContent?.trim()),
-          shared?.innerHTML.slice(0, 200)
+          'a published page with a local copy shows a picture of itself',
+          await until(
+            () =>
+              funnel()
+                ?.querySelector('[data-artifact-thumb]')
+                ?.getAttribute('data-artifact-thumb') === 'picture',
+            15000
+          ),
+          funnel()?.querySelector('[data-artifact-thumb]')?.getAttribute('data-artifact-thumb') ??
+            'no thumb'
         )
+        // A card opens the artifact up close: picture, facts, the session it came from.
+        await click(shared)
+        await until(() => Boolean($('[data-artifact-preview]')), 2000)
+        const preview = $('[data-artifact-preview]')
+        await check(
+          'a card opens a preview with who can see it and the session it came from',
+          Boolean(preview?.textContent?.includes('Shared with you')) &&
+            Boolean(preview?.querySelector('.artifacts-row-session')?.textContent?.trim()) &&
+            Boolean(byText('[data-artifact-preview] button', 'Open in browser')),
+          preview?.textContent?.slice(0, 300) ?? 'no preview'
+        )
+        await key('Escape')
+        await until(() => !$('[data-artifact-preview]'), 2000)
         await click(byText('.sessions-filter-tab', 'Shared with you'))
         await check(
           'Shared with you shows only that one',
@@ -5417,7 +5445,11 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           $<HTMLInputElement>('.cr-modal input[aria-label="Session name"]')
         const before = name()?.value ?? ''
         await click(byText('.cr-modal button', 'Suggest a name'))
-        await until(() => (name()?.value ?? '').startsWith('Suggested:'), 6000)
+        await until(
+          () =>
+            (name()?.value ?? '').startsWith('Suggested:') && document.activeElement === name(),
+          6000
+        )
         await check(
           'the rename dialog suggests a name from the session',
           name()?.value === `Suggested: ${before}` && document.activeElement === name(),

@@ -837,8 +837,19 @@ function App(): React.JSX.Element {
       await new Promise((r) => setTimeout(r, 800))
     })
     registerShotScreen('artifacts', async () => {
+      localStorage.setItem('cr.artifacts.view', JSON.stringify('grid'))
       setPaletteOpen(false)
       setView('artifacts')
+      await new Promise((r) => setTimeout(r, 4000))
+    })
+    registerShotScreen('artifacts-preview', async () => {
+      localStorage.setItem('cr.artifacts.view', JSON.stringify('grid'))
+      setPaletteOpen(false)
+      setView('artifacts')
+      await new Promise((r) => setTimeout(r, 4000))
+      document
+        .querySelectorAll<HTMLElement>('[data-artifact-row]')
+        .forEach((el) => el.textContent?.includes('Funnel report') && el.click())
       await new Promise((r) => setTimeout(r, 800))
     })
     registerShotScreen('backlog', async () => {
@@ -2536,6 +2547,7 @@ function App(): React.JSX.Element {
               />
             ) : view === 'artifacts' ? (
               <ArtifactsScreen
+                onOpenTicket={(key) => openPeek(key)}
                 onOpenSession={(key) => {
                   setView('sessions')
                   openSessionByKey(key)

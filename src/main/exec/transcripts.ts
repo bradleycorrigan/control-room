@@ -544,16 +544,46 @@ export interface TranscriptArtifact {
   owned?: boolean | null
 }
 
+/** All a transcript says about one artifact. Every field but url is optional. */
+interface ArtifactFacts extends TranscriptArtifact {
+  /** The link with a share key, when one was used. */
+  link?: string
+  /** When it was first published or seen. */
+  firstAt?: string | null
+  /** The icon word its publisher gave (chart, calculator…) or an emoji. */
+  icon?: string | null
+  /** owner: only you. org: your organisation. Others as claude.ai says them. */
+  audience?: string | null
+  /** How many times it has been published (its version number). */
+  versions?: number | null
+  /** The one-line description given when it was published. */
+  description?: string | null
+  /** A local copy of its HTML: the file it was published from, or the copy a read saved. */
+  html?: string | null
+  /** Its Artifact type (Design System, Slides…), when it was made from one. */
+  kind?: string | null
+}
+
 interface ArtifactScan {
   offset: number
   /** Pages the session published, by link. */
-  found: Map<string, TranscriptArtifact>
+  found: Map<string, ArtifactFacts>
   /** Pages the session read or opened (Artifact read/open), by link. */
-  opened: Map<string, TranscriptArtifact & { link: string }>
+  opened: Map<string, ArtifactFacts>
+  /** Pages an Artifact list showed: claude.ai's own list, yours and shared. */
+  listed: Map<string, ArtifactFacts>
   pending: Map<
     string,
-    | { kind: 'publish'; title: string; typeUrl: string; updates: string }
+    | {
+        kind: 'publish'
+        title: string
+        typeUrl: string
+        updates: string
+        description: string
+        file: string
+      }
     | { kind: 'open'; link: string }
+    | { kind: 'list' }
   >
 }
 
@@ -589,17 +619,6 @@ function artifactTitle(input: Record<string, unknown>): string {
   return base || 'Artifact'
 }
 
-/**
- * What a read's result calls the page: its <title> when the HTML came back
- * inline, else the name of the Artifact type it was made from. A large or
- * shared page's HTML is saved to a file instead; that file isn't opened.
- */
-function pageTitle(text: string): string {
-  const inline = /<title>([^<]{1,120})<\/title>/i.exec(text)?.[1]?.trim()
-  if (inline) return inline
-  return /Artifact of type "([^"]{1,60})"/.exec(text)?.[1]?.trim() ?? ''
-}
-
 /** The text of a tool result, however it was stored. */
 function resultText(content: unknown): string {
   if (typeof content === 'string') return content
@@ -609,10 +628,24 @@ function resultText(content: unknown): string {
     .join('\n')
 }
 
+const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '')
+const obj = (v: unknown): Record<string, unknown> => {
+  if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>
+  if (typeof v === 'string') {
+    try {
+      const parsed = JSON.parse(v) as unknown
+      if (parsed && typeof parsed === 'object') return parsed as Record<string, unknown>
+    } catch {
+      // Not JSON.
+    }
+  }
+  return {}
+}
+
 function scanArtifacts(jsonlPath: string): ArtifactScan {
   let scan = artifactScans.get(jsonlPath)
   if (!scan) {
-    scan = { offset: 0, found: new Map(), opened: new Map(), pending: new Map() }
+    scan = { offset: 0, found: new Map(), opened: new Map(), listed: new Map(), pending: new Map() }
     artifactScans.set(jsonlPath, scan)
   }
   let fd: number
@@ -627,6 +660,7 @@ function scanArtifacts(jsonlPath: string): ArtifactScan {
       scan.offset = 0
       scan.found.clear()
       scan.opened.clear()
+      scan.listed.clear()
       scan.pending.clear()
     }
     if (size > scan.offset) {
@@ -655,71 +689,123 @@ function scanArtifacts(jsonlPath: string): ArtifactScan {
   return scan
 }
 
+/** Adds what a line says about one artifact to what's known, newest wins. */
+function note(map: Map<string, ArtifactFacts>, facts: ArtifactFacts): void {
+  const had = map.get(facts.url)
+  map.delete(facts.url)
+  if (!had) {
+    map.set(facts.url, { ...facts, firstAt: facts.firstAt ?? facts.at ?? null })
+    return
+  }
+  const merged: ArtifactFacts = { ...had }
+  for (const [k, v] of Object.entries(facts) as [keyof ArtifactFacts, unknown][]) {
+    if (v !== undefined && v !== null && v !== '')
+      (merged as unknown as Record<string, unknown>)[k] = v
+  }
+  // A share key, once seen, is kept: someone else's page needs it to open.
+  if (had.link?.includes('?') && !facts.link?.includes('?')) merged.link = had.link
+  merged.firstAt = had.firstAt ?? had.at ?? facts.at ?? null
+  map.set(facts.url, merged)
+}
+
 function artifactLine(scan: ArtifactScan, raw: string): void {
-  const parsed = JSON.parse(raw) as { message?: { content?: unknown }; timestamp?: unknown }
+  const parsed = JSON.parse(raw) as {
+    message?: { content?: unknown }
+    timestamp?: unknown
+    toolUseResult?: unknown
+  }
   const blocks = parsed.message?.content
   if (!Array.isArray(blocks)) return
   const at = typeof parsed.timestamp === 'string' ? parsed.timestamp : null
+  // Claude Code keeps the tool's own structured answer beside the text: the
+  // real title, icon, who can see it, its version. A line carries one result.
+  const result = obj(parsed.toolUseResult)
   for (const b of blocks as Record<string, unknown>[]) {
     if (b?.type === 'tool_use' && b.name === 'Artifact' && typeof b.id === 'string') {
       const input = (b.input ?? {}) as Record<string, unknown>
       const action = input.action ?? 'publish'
-      if (action === 'publish' && input.asset !== true) {
-        const typeUrl = typeof input.type_url === 'string' ? input.type_url : ''
+      if (action === 'publish' && input.asset !== true && !input.edits_only) {
+        const typeUrl = text(input.type_url)
         scan.pending.set(b.id, {
           kind: 'publish',
           // A data file published into an artifact already listed
           // keeps that artifact's name, not the file's.
-          title: typeUrl
-            ? typeof input.title === 'string' && input.title.trim()
-              ? input.title.trim()
-              : 'Artifact'
-            : artifactTitle(input),
+          title: typeUrl ? text(input.title) || 'Artifact' : artifactTitle(input),
           typeUrl,
-          updates: typeof input.url === 'string' ? input.url : ''
+          updates: text(input.url),
+          description: text(input.description),
+          file: text(input.file_path)
         })
       } else if (
         (action === 'read' || action === 'open') &&
         typeof input.url === 'string' &&
-        !input.path &&
-        !input.paths &&
         ARTIFACT_URL.test(input.url)
       ) {
         scan.pending.set(b.id, { kind: 'open', link: input.url })
+      } else if (action === 'list' && !input.url) {
+        scan.pending.set(b.id, { kind: 'list' })
       }
     } else if (b?.type === 'tool_result' && typeof b.tool_use_id === 'string') {
       const pending = scan.pending.get(b.tool_use_id)
       if (pending === undefined) continue
       scan.pending.delete(b.tool_use_id)
       if (b.is_error === true) continue
-      const text = resultText(b.content)
+      const said = resultText(b.content)
+      if (pending.kind === 'list') {
+        const list = Array.isArray(result.artifacts) ? result.artifacts : []
+        for (const item of list as Record<string, unknown>[]) {
+          const url = ARTIFACT_URL.exec(text(item?.url))?.[0]
+          if (!url) continue
+          note(scan.listed, {
+            url,
+            title: text(item.title),
+            at: text(item.updatedAt) || null,
+            owned: item.rel === 'mine' ? true : item.rel === 'shared' ? false : null,
+            icon: text(item.favicon) || null
+          })
+        }
+        continue
+      }
       if (pending.kind === 'open') {
         const url = ARTIFACT_URL.exec(pending.link)?.[0]
         if (!url) continue
-        // A read gives the page's HTML (or a summary of someone else's),
-        // and says who owns it.
-        const title = pageTitle(text)
-        const owner = /— (owned by you|owned by|shared with you)/.exec(text)?.[1]
-        const before = scan.opened.get(url)
-        scan.opened.delete(url)
-        scan.opened.set(url, {
-          url,
-          // Keep a share key (?sk=) if any read had one: someone else's page needs it.
-          link: pending.link.includes('?') ? pending.link : (before?.link ?? pending.link),
-          title: title || before?.title || '',
-          at,
-          owned: owner ? owner === 'owned by you' : (before?.owned ?? null)
-        })
+        const read = obj(result.read)
+        const file = obj(result.file_read)
+        const title =
+          text(read.title) ||
+          text(result.title) ||
+          text(file.title) ||
+          /<title>([^<]{1,120})<\/title>/i.exec(said)?.[1]?.trim() ||
+          ''
+        const owner = /— (owned by you|owned by|shared with you)/.exec(said)?.[1]
+        const owned =
+          typeof result.owned === 'boolean' ? result.owned : owner ? owner === 'owned by you' : null
+        const saved = /HTML saved to (\/\S+?\.html)\b/.exec(said)?.[1] ?? null
+        const kind = /Artifact of type "([^"]{1,60})"/.exec(said)?.[1] ?? null
+        note(scan.opened, { url, link: pending.link, title, at, owned, html: saved, kind })
         continue
       }
-      // The first artifact link that isn't the type's own.
-      const links = text.match(new RegExp(ARTIFACT_URL.source, 'g')) ?? []
-      const url = links.find((l) => !pending.typeUrl.startsWith(l))
+      // A publish: the first artifact link that isn't the type's own.
+      const links = said.match(new RegExp(ARTIFACT_URL.source, 'g')) ?? []
+      const url =
+        ARTIFACT_URL.exec(text(result.url))?.[0] ??
+        links.find((l) => !pending.typeUrl.startsWith(l))
       if (!url) continue
       const known = scan.found.get(url)
-      const title = known && pending.updates ? known.title : pending.title
-      scan.found.delete(url)
-      scan.found.set(url, { url, title, at, owned: true })
+      const title = text(result.title) || (known && pending.updates ? known.title : pending.title)
+      const seq = typeof result.seq === 'number' ? result.seq : null
+      note(scan.found, {
+        url,
+        link: url,
+        title,
+        at,
+        owned: true,
+        icon: text(result.icon) || null,
+        audience: text(result.audience) || null,
+        versions: seq,
+        description: pending.description || null,
+        html: text(result.path) || pending.file || null
+      })
     }
   }
 }
@@ -737,7 +823,12 @@ function artifactLine(scan: ArtifactScan, raw: string): void {
 export function listTranscriptArtifacts(sessionId: string): TranscriptArtifact[] {
   const jsonlPath = findSessionTranscriptPath(sessionId)
   if (!jsonlPath) return []
-  return [...scanArtifacts(jsonlPath).found.values()]
+  return [...scanArtifacts(jsonlPath).found.values()].map((a) => ({
+    url: a.url,
+    title: a.title,
+    at: a.at,
+    owned: a.owned
+  }))
 }
 
 export interface IndexedArtifact {
@@ -745,19 +836,33 @@ export interface IndexedArtifact {
   /** The link to open: the one with a share key, when a read used one. */
   link: string
   title: string
-  /** made: a session published it. opened: a session only read or opened it. */
-  source: 'made' | 'opened'
+  /**
+   * made: a session published it. opened: a session read or opened it.
+   * listed: only seen in claude.ai's own list (made on the web, or shared).
+   */
+  source: 'made' | 'opened' | 'listed'
   owned: boolean | null
-  /** Last published or read, across every session. */
+  /** Last published, read or updated, across every session. */
   at: string | null
+  /** First published or seen. */
+  firstAt: string | null
+  icon: string | null
+  audience: string | null
+  versions: number | null
+  description: string | null
+  /** A local copy of its HTML, for a preview. Main process only: never sent to the page. */
+  html: string | null
+  kind: string | null
   /** Claude sessions that published or read it, newest last. */
   claudeSessionIds: string[]
 }
 
+const RANK = { made: 3, opened: 2, listed: 1 } as const
+
 /**
- * Every artifact any Claude Code session published or read, across all of
- * ~/.claude/projects, newest first. Each transcript is read once and then
- * only from where it was left, so a refresh costs only new lines.
+ * Every artifact any Claude Code session published, read or listed, across
+ * all of ~/.claude/projects, newest first. Each transcript is read once and
+ * then only from where it was left, so a refresh costs only new lines.
  */
 export function listAllTranscriptArtifacts(): IndexedArtifact[] {
   const out = new Map<string, IndexedArtifact>()
@@ -771,6 +876,8 @@ export function listAllTranscriptArtifacts(): IndexedArtifact[] {
   }
   const later = (a: string | null, b: string | null | undefined): string | null =>
     !b ? a : !a || b > a ? b : a
+  const earlier = (a: string | null, b: string | null | undefined): string | null =>
+    !b ? a : !a || b < a ? b : a
   for (const dir of dirs) {
     let files: string[]
     try {
@@ -780,36 +887,50 @@ export function listAllTranscriptArtifacts(): IndexedArtifact[] {
     }
     for (const f of files) {
       const scan = scanArtifacts(join(CLAUDE_PROJECTS_DIR, dir, f))
-      if (scan.found.size === 0 && scan.opened.size === 0) continue
+      if (scan.found.size === 0 && scan.opened.size === 0 && scan.listed.size === 0) continue
       const sid = f.replace(/\.jsonl$/, '')
-      const add = (a: TranscriptArtifact, link: string, source: 'made' | 'opened'): void => {
+      const add = (a: ArtifactFacts, source: IndexedArtifact['source']): void => {
         const had = out.get(a.url)
         if (!had) {
           out.set(a.url, {
             url: a.url,
-            link,
+            link: a.link ?? a.url,
             title: a.title,
             source,
             owned: a.owned ?? null,
             at: a.at ?? null,
-            claudeSessionIds: [sid]
+            firstAt: a.firstAt ?? a.at ?? null,
+            icon: a.icon ?? null,
+            audience: a.audience ?? null,
+            versions: a.versions ?? null,
+            description: a.description ?? null,
+            html: a.html ?? null,
+            kind: a.kind ?? null,
+            claudeSessionIds: source === 'listed' ? [] : [sid]
           })
           return
         }
-        if (source === 'made') {
-          had.source = 'made'
-          had.owned = true
-          if (a.title && (!had.title || (a.at ?? '') >= (had.at ?? ''))) had.title = a.title
-        } else {
-          if (!had.title && a.title) had.title = a.title
-          if (had.owned === null) had.owned = a.owned ?? null
-        }
-        if (link.includes('?') && !had.link.includes('?')) had.link = link
+        const newer = (a.at ?? '') >= (had.at ?? '')
+        if (RANK[source] > RANK[had.source]) had.source = source
+        // A publish's own title is the page's name; otherwise the newest wins.
+        if (a.title && (!had.title || (newer && source !== 'listed') || source === 'made'))
+          had.title = a.title
+        if (had.owned === null || source === 'made') had.owned = a.owned ?? had.owned
+        if (a.link?.includes('?') && !had.link.includes('?')) had.link = a.link
         had.at = later(had.at, a.at)
-        if (!had.claudeSessionIds.includes(sid)) had.claudeSessionIds.push(sid)
+        had.firstAt = earlier(had.firstAt, a.firstAt ?? a.at)
+        had.icon = had.icon ?? a.icon ?? null
+        if (a.audience && (newer || !had.audience)) had.audience = a.audience
+        if (a.versions && a.versions > (had.versions ?? 0)) had.versions = a.versions
+        if (a.description && (newer || !had.description)) had.description = a.description
+        if (a.html && (source === 'made' || !had.html)) had.html = a.html
+        had.kind = had.kind ?? a.kind ?? null
+        if (source !== 'listed' && !had.claudeSessionIds.includes(sid))
+          had.claudeSessionIds.push(sid)
       }
-      for (const a of scan.found.values()) add(a, a.url, 'made')
-      for (const a of scan.opened.values()) add(a, a.link, 'opened')
+      for (const a of scan.found.values()) add(a, 'made')
+      for (const a of scan.opened.values()) add(a, 'opened')
+      for (const a of scan.listed.values()) add(a, 'listed')
     }
   }
   return [...out.values()].sort((x, y) => (y.at ?? '').localeCompare(x.at ?? ''))

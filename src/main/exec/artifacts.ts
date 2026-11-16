@@ -16,6 +16,8 @@ export interface ArtifactSession {
   /** Control Room's session record, to open it. */
   recordId: string
   title: string
+  /** The project it ran in. */
+  project: string | null
 }
 
 export interface Artifact {
@@ -24,12 +26,29 @@ export interface Artifact {
   /** The link to open, with a share key when one was used. */
   link: string
   title: string
-  /** made: a session published it. opened: a session read it. added: you added the link. */
-  source: 'made' | 'opened' | 'added'
+  /**
+   * made: a session published it. opened: a session read it. listed: only
+   * seen in claude.ai's own list. added: you added the link.
+   */
+  source: 'made' | 'opened' | 'listed' | 'added'
   /** False when claude.ai said someone else owns it; null when nothing said. */
   owned: boolean | null
-  /** Last published, read or added. */
+  /** Last published, read, updated or added. */
   at: string | null
+  /** First published or seen. */
+  firstAt: string | null
+  /** Its publisher's icon word (chart, calculator…) or an emoji. */
+  icon: string | null
+  /** Who can see it, as claude.ai says: owner (only you), org… */
+  audience: string | null
+  /** How many versions it has been published in. */
+  versions: number | null
+  /** The one line written when it was published. */
+  description: string | null
+  /** Its Artifact type (Design System, Slides…), when made from one. */
+  kind: string | null
+  /** A local copy of its page exists, so a preview can be drawn. */
+  preview: boolean
   /** Control Room sessions that published or read it, newest last. */
   sessions: ArtifactSession[]
 }
@@ -69,9 +88,10 @@ export function artifactUrl(link: string): string | null {
 export function listArtifacts(): Artifact[] {
   const saved = readSaved()
   const records = getState().sessions.filter((r) => !r.deletedAt)
+  const projects = new Map(getState().projects.map((p) => [p.id, p.name]))
   const byClaudeId = new Map<string, ArtifactSession>()
   for (const r of records) {
-    const s = { recordId: r.id, title: r.title }
+    const s = { recordId: r.id, title: r.title, project: projects.get(r.projectId) ?? null }
     if (r.originalClaudeSessionId) byClaudeId.set(r.originalClaudeSessionId, s)
     if (r.claudeSessionId) byClaudeId.set(r.claudeSessionId, s)
   }
@@ -89,6 +109,13 @@ export function listArtifacts(): Artifact[] {
       source: a.source,
       owned: a.owned,
       at: a.at,
+      firstAt: a.firstAt,
+      icon: a.icon,
+      audience: a.audience,
+      versions: a.versions,
+      description: a.description,
+      kind: a.kind,
+      preview: !!a.html && existsSync(a.html),
       sessions
     })
   }
@@ -106,6 +133,13 @@ export function listArtifacts(): Artifact[] {
       source: 'added',
       owned: null,
       at: a.at,
+      firstAt: a.at,
+      icon: null,
+      audience: null,
+      versions: null,
+      description: null,
+      kind: null,
+      preview: false,
       sessions: []
     })
   }
@@ -147,4 +181,10 @@ export function renameArtifact(url: string, title: string): void {
   if (title.trim()) saved.names[url] = title.trim()
   else delete saved.names[url]
   writeSaved(saved)
+}
+
+/** The local copy of an artifact's page, for its preview. Never sent to the page. */
+export function artifactHtmlPath(url: string): string | null {
+  const a = listAllTranscriptArtifacts().find((x) => x.url === url)
+  return a?.html && existsSync(a.html) ? a.html : null
 }

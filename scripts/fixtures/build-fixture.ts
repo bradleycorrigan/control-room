@@ -43,6 +43,15 @@ function gitQuiet(args: string[], cwd: string): ReturnType<typeof spawnSync> {
 
 console.log('fixture: wiping', fixtureRoot)
 rmSync(fixtureRoot, { recursive: true, force: true })
+// A real page for one published artifact, so its preview can be drawn.
+const funnelPage = join(fixtureRoot, 'artifacts', 'funnel-report.html')
+mkdirSync(join(fixtureRoot, 'artifacts'), { recursive: true })
+writeFileSync(
+  funnelPage,
+  '<!doctype html><html><head><title>Funnel report</title></head>' +
+    '<body style="margin:0;background:royalblue;color:white;font:48px sans-serif">' +
+    '<h1 style="padding:40px">Funnel report</h1></body></html>'
+)
 mkdirSync(repoPath, { recursive: true })
 mkdirSync(worktreeRoot, { recursive: true })
 mkdirSync(sessionsDir, { recursive: true })
@@ -666,7 +675,7 @@ cliTranscript('fixture-working', [
           type: 'tool_use',
           id: 'toolu_fixture_artifact',
           name: 'Artifact',
-          input: { file_path: '/nonexistent/fixture/funnel-report.html', title: 'Funnel report' }
+          input: { file_path: funnelPage, title: 'Funnel report' }
         },
         {
           type: 'tool_use',
