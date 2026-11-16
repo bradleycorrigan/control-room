@@ -2597,6 +2597,10 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
       run: async () => {
         await ctx.goTo('home')
         await click(byText('.app-titlebar-no-drag .cr-segmented__option', 'Artifacts'))
+        // Start from the whole library, in the grid, whatever an earlier run left.
+        await until(() => Boolean($('[data-artifacts-rail]')), 3000)
+        await click(byText('[data-artifacts-rail] .projects-rail-item', 'All artifacts'))
+        await click($('.artifacts-screen [aria-label="Grid view"]'))
         const rows = (): HTMLElement[] => $$('[data-artifact-row]')
         const titles = (): string[] =>
           rows().map((r) => r.querySelector('.sessions-row-title')?.textContent?.trim() ?? '')
@@ -2687,12 +2691,128 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           `typed "${typed}", now "${$<HTMLInputElement>('[data-artifact-row] [aria-label="Artifact name"]')?.value ?? '(closed)'}"; ${titles().join(' | ')}`
         )
 
+        // ---- Organising: a side panel like a small file explorer ----
+        const rail = (text: string): HTMLElement | undefined =>
+          byText('[data-artifacts-rail] .projects-rail-item', text)
+        const menuOf = async (title: string, item: string): Promise<void> => {
+          const card = rows().find((r) => r.textContent?.includes(title))
+          await click(card?.querySelector('.overflow-menu-button'))
+          await until(() => Boolean(byText('.overflow-menu-item', item)), 1500)
+          await click(byText('.overflow-menu-item', item))
+        }
+        await click($('.artifacts-screen [aria-label="Grid view"]'))
+
+        // Hide one: it leaves the list and waits under Hidden.
+        await menuOf('Churn plan', 'Hide')
+        await check(
+          'Hide takes it off the list and puts it under Hidden',
+          await until(() => !titles().includes('Churn plan') && Boolean(rail('Hidden')), 3000),
+          titles().join(' | ')
+        )
+        await click(rail('Hidden'))
+        await until(() => titles().join() === 'Churn plan', 2000)
+        await menuOf('Churn plan', 'Show again')
+        await click(rail('All artifacts'))
+        await check(
+          'Show again brings it back',
+          await until(() => titles().includes('Churn plan') && !rail('Hidden'), 3000),
+          titles().join(' | ')
+        )
+
+        // A new folder from the panel: named in place, then opened.
+        await click($('[data-artifacts-rail] [aria-label="New folder"]'))
+        await until(() => Boolean($('[data-artifacts-rail] [aria-label="Folder name"]')), 1500)
+        await typeText('Reports')
+        await key('Enter')
+        await check(
+          'a new folder is named in place and opened, empty',
+          await until(
+            () =>
+              Boolean(rail('Reports')?.classList.contains('projects-rail-item-selected')) &&
+              /Nothing in this folder yet/.test(document.body.textContent ?? ''),
+            3000
+          ),
+          $('[data-artifacts-rail]')?.textContent?.slice(0, 200)
+        )
+        await click(rail('All artifacts'))
+        await until(() => rows().length >= 4, 2000)
+
+        // Into it from the card's menu…
+        await menuOf('Gap report', 'Move to folder…')
+        await until(() => Boolean($('.backlog-picker-input')), 1500)
+        await typeText('Reports')
+        await until(() => Boolean(byText('.backlog-picker .backlog-menu-item', 'Reports')), 1500)
+        await click(byText('.backlog-picker .backlog-menu-item', 'Reports'))
+        // …and by dragging a card onto the folder.
+        {
+          const card = rows().find((r) => r.textContent?.includes('Funnel report'))
+          const target = rail('Reports')?.closest('.projects-rail-row')
+          const dt = new DataTransfer()
+          card?.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }))
+          target?.dispatchEvent(
+            new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt })
+          )
+          target?.dispatchEvent(
+            new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })
+          )
+        }
+        await check(
+          'Move to folder and dragging a card both file it, and the folder counts them',
+          await until(
+            () =>
+              rail('Reports')?.querySelector('.projects-rail-count')?.textContent?.trim() === '2',
+            3000
+          ),
+          rail('Reports')?.textContent ?? 'no folder'
+        )
+        await click(rail('Reports'))
+        await check(
+          'the folder shows what was filed in it',
+          await until(() => titles().sort().join('|') === 'Funnel report|Gap report', 2000),
+          titles().join(' | ')
+        )
+
+        // A tag: typed in the Tags chooser, shown on the card and in the panel.
+        await click(rail('All artifacts'))
+        await until(() => rows().length >= 4, 2000)
+        await menuOf('Board pack', 'Tags…')
+        await until(() => Boolean($('.backlog-picker-input')), 1500)
+        await typeText('q4')
+        await key('Enter')
+        await check(
+          'a new tag shows on the card and in the side panel',
+          await until(
+            () =>
+              Boolean(
+                rows()
+                  .find((r) => r.textContent?.includes('Board pack'))
+                  ?.querySelector('[data-artifact-chip-tag="q4"]')
+              ) && Boolean($('[data-artifacts-rail] [data-artifact-tag="q4"]')),
+            3000
+          ),
+          $('[data-artifacts-rail]')?.textContent?.slice(0, 300)
+        )
+        await click(rail('q4'))
+        await check(
+          'a tag in the panel shows only what carries it',
+          await until(() => titles().join() === 'Board pack', 2000),
+          titles().join(' | ')
+        )
+        await click(rail('All artifacts'))
+
         // On a ticket, beside its sessions and PRs, as a Jira web link
         await ctx.goTo('backlog')
         await until(() => $$('.backlog-row').length > 0, 4000)
         await click($$('.backlog-row')[0])
         await until(() => Boolean($('.backlog-drawer [data-artifact-picker] button')), 3000)
-        await click($('.backlog-drawer [data-artifact-picker] button'))
+        const addBtn = $('.backlog-drawer [data-artifact-picker] button')
+        // A toast from the steps above can sit over it for a few seconds.
+        await until(() => {
+          const r = addBtn?.getBoundingClientRect()
+          const hit = r && document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+          return Boolean(hit && addBtn?.contains(hit))
+        }, 8000)
+        await click(addBtn)
         await until(() => Boolean($('.backlog-picker-input')), 2000)
         await typeText('Gap')
         await key('Enter')
@@ -5446,8 +5566,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         const before = name()?.value ?? ''
         await click(byText('.cr-modal button', 'Suggest a name'))
         await until(
-          () =>
-            (name()?.value ?? '').startsWith('Suggested:') && document.activeElement === name(),
+          () => (name()?.value ?? '').startsWith('Suggested:') && document.activeElement === name(),
           6000
         )
         await check(

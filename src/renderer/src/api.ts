@@ -1117,7 +1117,8 @@ export function linkSessionToTicket(
 }
 
 // ---- Artifacts --------------------------------------------------------------
-export type { Artifact, ArtifactSession } from '../../main/exec/artifacts'
+export type { Artifact, ArtifactSession, ArtifactFolder } from '../../main/exec/artifacts'
+import type { ArtifactFolder as FolderRow } from '../../main/exec/artifacts'
 import type { Artifact as ArtifactRow } from '../../main/exec/artifacts'
 
 /** Every artifact sessions made or read, plus the links you added; newest first. */
@@ -1143,4 +1144,34 @@ export function removeArtifact(url: string): Promise<ArtifactRow[]> {
 
 export function renameArtifact(url: string, title: string): Promise<ArtifactRow[]> {
   return window.api.invoke<ArtifactRow[]>('artifacts:rename', url, title)
+}
+
+export function listArtifactFolders(): Promise<FolderRow[]> {
+  return window.api.invoke<FolderRow[]>('artifacts:folders')
+}
+/** Hides an artifact (hide true) or shows it again. */
+export function hideArtifact(url: string, hide: boolean): Promise<void> {
+  return window.api.invoke('artifacts:hide', url, hide)
+}
+export function createArtifactFolder(
+  name: string,
+  parent: string | null
+): Promise<FolderRow | null> {
+  return window.api.invoke<FolderRow | null>('artifacts:folder:create', name, parent)
+}
+export function renameArtifactFolder(id: string, name: string): Promise<void> {
+  return window.api.invoke('artifacts:folder:rename', id, name)
+}
+export function moveArtifactFolder(id: string, parent: string | null): Promise<void> {
+  return window.api.invoke('artifacts:folder:move', id, parent)
+}
+export function deleteArtifactFolder(id: string): Promise<void> {
+  return window.api.invoke('artifacts:folder:delete', id)
+}
+/** Files artifacts in a folder, or (null) takes them out of any. */
+export function fileArtifacts(urls: string[], folder: string | null): Promise<void> {
+  return window.api.invoke('artifacts:file', urls, folder)
+}
+export function setArtifactTags(url: string, tags: string[]): Promise<void> {
+  return window.api.invoke('artifacts:tags', url, tags)
 }

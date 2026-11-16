@@ -60,9 +60,11 @@ async function draw(url: string): Promise<string | null> {
   } catch {
     return null
   }
-  const key = createHash('sha1').update(`${url}\n${html}\n${mtime}`).digest('hex').slice(0, 20)
+  const key = createHash('sha1').update(`v2\n${url}\n${html}\n${mtime}`).digest('hex').slice(0, 20)
   const out = join(dir(), `${key}.png`)
   if (existsSync(out)) return `data:image/png;base64,${readFileSync(out).toString('base64')}`
+  // Drawn before and came out blank: don't draw it again until the page changes.
+  if (existsSync(`${out}.blank`)) return null
 
   const pageUrl = pathToFileURL(html).toString()
   lockSession()
@@ -91,6 +93,13 @@ async function draw(url: string): Promise<string | null> {
     await new Promise((r) => setTimeout(r, SETTLE_MS))
     const image = await win.webContents.capturePage()
     if (image.isEmpty()) return null
+    // A page that needs claude.ai to draw itself comes out one flat colour
+    // (or a lone "Loading…"): no picture beats a blank one.
+    if (looksBlank(image)) {
+      mkdirSync(dir(), { recursive: true })
+      writeFileSync(`${out}.blank`, '')
+      return null
+    }
     const small = image.resize({ width: 640 })
     mkdirSync(dir(), { recursive: true })
     writeFileSync(out, small.toPNG())
@@ -102,4 +111,33 @@ async function draw(url: string): Promise<string | null> {
     allowed.delete(pageUrl)
     win.destroy()
   }
+}
+
+/**
+ * Whether a picture is nearly one colour: 1,000 points across it, and at
+ * least 98% of them within a few shades of the most common one.
+ */
+export function looksBlank(image: Electron.NativeImage): boolean {
+  const { width, height } = image.getSize()
+  const bmp = image.toBitmap()
+  if (!width || !height || bmp.length < width * height * 4) return false
+  const counts = new Map<string, number>()
+  const points: [number, number, number][] = []
+  for (let y = 0; y < 25; y++) {
+    for (let x = 0; x < 40; x++) {
+      const px = Math.floor(((x + 0.5) / 40) * width)
+      const py = Math.floor(((y + 0.5) / 25) * height)
+      const i = (py * width + px) * 4
+      const c: [number, number, number] = [bmp[i], bmp[i + 1], bmp[i + 2]]
+      points.push(c)
+      const k = c.map((v) => v >> 4).join(',')
+      counts.set(k, (counts.get(k) ?? 0) + 1)
+    }
+  }
+  const top = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])[0][0]
+    .split(',')
+    .map(Number)
+  const near = points.filter((c) => c.every((v, j) => Math.abs((v >> 4) - top[j]) <= 1)).length
+  return near / points.length >= 0.98
 }

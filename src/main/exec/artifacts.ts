@@ -49,6 +49,12 @@ export interface Artifact {
   kind: string | null
   /** A local copy of its page exists, so a preview can be drawn. */
   preview: boolean
+  /** You hid it: it shows only under Hidden. */
+  hidden: boolean
+  /** The folder you filed it in; null when unfiled. */
+  folder: string | null
+  /** Your tags on it, in the order added. */
+  tags: string[]
   /** Control Room sessions that published or read it, newest last. */
   sessions: ArtifactSession[]
 }
@@ -57,7 +63,32 @@ interface Saved {
   added: { url: string; link: string; title: string; at: string }[]
   /** Names you gave artifacts, by url. */
   names: Record<string, string>
+  /** Artifacts you hid, by url. */
+  hidden: string[]
+  folders: ArtifactFolder[]
+  /** Folder id by url. */
+  folderOf: Record<string, string>
+  /** Tags by url. */
+  tags: Record<string, string[]>
 }
+
+/** A folder of artifacts. Folders nest: parent is another folder's id, or null at the top. */
+export interface ArtifactFolder {
+  id: string
+  name: string
+  parent: string | null
+}
+
+const EMPTY = (): Saved => ({
+  added: [],
+  names: {},
+  hidden: [],
+  folders: [],
+  folderOf: {},
+  tags: {}
+})
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v)
 
 export const ARTIFACT_LINK = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]{8,}/
 
@@ -65,14 +96,22 @@ const savedPath = (): string => join(app.getPath('userData'), 'artifacts.json')
 
 function readSaved(): Saved {
   try {
-    if (!existsSync(savedPath())) return { added: [], names: {} }
+    if (!existsSync(savedPath())) return EMPTY()
     const raw = JSON.parse(readFileSync(savedPath(), 'utf8')) as Partial<Saved>
     return {
       added: Array.isArray(raw.added) ? raw.added : [],
-      names: raw.names && typeof raw.names === 'object' ? raw.names : {}
+      names: raw.names && typeof raw.names === 'object' ? raw.names : {},
+      hidden: Array.isArray(raw.hidden) ? raw.hidden.filter((u) => typeof u === 'string') : [],
+      folders: Array.isArray(raw.folders)
+        ? raw.folders.filter(
+            (f) => isRecord(f) && typeof f.id === 'string' && typeof f.name === 'string'
+          )
+        : [],
+      folderOf: isRecord(raw.folderOf) ? (raw.folderOf as Record<string, string>) : {},
+      tags: isRecord(raw.tags) ? (raw.tags as Record<string, string[]>) : {}
     }
   } catch {
-    return { added: [], names: {} }
+    return EMPTY()
   }
 }
 
@@ -115,7 +154,10 @@ export function listArtifacts(): Artifact[] {
       versions: a.versions,
       description: a.description,
       kind: a.kind,
-      preview: !!a.html && existsSync(a.html),
+      preview: previewable(a),
+      hidden: saved.hidden.includes(a.url),
+      folder: folderOf(saved, a.url),
+      tags: saved.tags[a.url] ?? [],
       sessions
     })
   }
@@ -140,6 +182,9 @@ export function listArtifacts(): Artifact[] {
       description: null,
       kind: null,
       preview: false,
+      hidden: saved.hidden.includes(a.url),
+      folder: folderOf(saved, a.url),
+      tags: saved.tags[a.url] ?? [],
       sessions: []
     })
   }
@@ -186,5 +231,116 @@ export function renameArtifact(url: string, title: string): void {
 /** The local copy of an artifact's page, for its preview. Never sent to the page. */
 export function artifactHtmlPath(url: string): string | null {
   const a = listAllTranscriptArtifacts().find((x) => x.url === url)
-  return a?.html && existsSync(a.html) ? a.html : null
+  return a && previewable(a) ? a.html : null
+}
+
+/**
+ * Whether a picture can be drawn here: a local page, not the data of one
+ * made from an Artifact type (Slides, Docs…), which only claude.ai can draw.
+ */
+function previewable(a: {
+  html: string | null
+  typed: boolean
+}): a is { html: string; typed: boolean } {
+  return !a.typed && !!a.html && /\.html?$/i.test(a.html) && existsSync(a.html)
+}
+
+/** Hides an artifact from the list, or (hide false) shows it again. */
+export function hideArtifact(url: string, hide: boolean): void {
+  const saved = readSaved()
+  saved.hidden = saved.hidden.filter((u) => u !== url)
+  if (hide) saved.hidden.push(url)
+  writeSaved(saved)
+}
+
+/** The folder an artifact is filed in, if that folder still exists. */
+function folderOf(saved: Saved, url: string): string | null {
+  const id = saved.folderOf[url]
+  return id && saved.folders.some((f) => f.id === id) ? id : null
+}
+
+export function listArtifactFolders(): ArtifactFolder[] {
+  return readSaved().folders
+}
+
+/** A new folder, at the top or inside another. */
+export function createArtifactFolder(name: string, parent: string | null): ArtifactFolder | null {
+  const clean = name.trim().slice(0, 80)
+  if (!clean) return null
+  const saved = readSaved()
+  const folder: ArtifactFolder = {
+    id: `f${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+    name: clean,
+    parent: parent && saved.folders.some((f) => f.id === parent) ? parent : null
+  }
+  saved.folders.push(folder)
+  writeSaved(saved)
+  return folder
+}
+
+export function renameArtifactFolder(id: string, name: string): void {
+  const clean = name.trim().slice(0, 80)
+  if (!clean) return
+  const saved = readSaved()
+  const f = saved.folders.find((x) => x.id === id)
+  if (!f) return
+  f.name = clean
+  writeSaved(saved)
+}
+
+/**
+ * Moves a folder inside another (or to the top, parent null). Refused when
+ * the new parent is the folder itself or inside it.
+ */
+export function moveArtifactFolder(id: string, parent: string | null): void {
+  const saved = readSaved()
+  const f = saved.folders.find((x) => x.id === id)
+  if (!f) return
+  for (let p = parent; p; p = saved.folders.find((x) => x.id === p)?.parent ?? null) {
+    if (p === id) return
+  }
+  f.parent = parent
+  writeSaved(saved)
+}
+
+/**
+ * Deletes a folder. What was in it (artifacts and folders) moves up to its
+ * parent: deleting a folder never loses an artifact.
+ */
+export function deleteArtifactFolder(id: string): void {
+  const saved = readSaved()
+  const f = saved.folders.find((x) => x.id === id)
+  if (!f) return
+  for (const child of saved.folders) if (child.parent === id) child.parent = f.parent
+  for (const [url, fid] of Object.entries(saved.folderOf)) {
+    if (fid !== id) continue
+    if (f.parent) saved.folderOf[url] = f.parent
+    else delete saved.folderOf[url]
+  }
+  saved.folders = saved.folders.filter((x) => x.id !== id)
+  writeSaved(saved)
+}
+
+/** Files artifacts in a folder, or (folder null) takes them out of any. */
+export function fileArtifacts(urls: string[], folder: string | null): void {
+  const saved = readSaved()
+  const ok = folder && saved.folders.some((f) => f.id === folder)
+  for (const url of urls) {
+    if (ok) saved.folderOf[url] = folder
+    else delete saved.folderOf[url]
+  }
+  writeSaved(saved)
+}
+
+/** An artifact's tags, replaced: trimmed, de-duplicated, at most 20. */
+export function setArtifactTags(url: string, tags: string[]): void {
+  const saved = readSaved()
+  const clean: string[] = []
+  for (const t of tags) {
+    const c = t.trim().replace(/\s+/g, ' ').slice(0, 40)
+    if (c && !clean.some((x) => x.toLowerCase() === c.toLowerCase())) clean.push(c)
+  }
+  if (clean.length) saved.tags[url] = clean.slice(0, 20)
+  else delete saved.tags[url]
+  writeSaved(saved)
 }

@@ -10,7 +10,20 @@ import {
 } from './exec/pullRequests'
 import { listTranscriptPrLinks, listTranscriptArtifacts, listUserPrompts } from './exec/transcripts'
 import { resolveClaudeBinary } from './exec/claude'
-import { addArtifact, listArtifacts, removeArtifact, renameArtifact } from './exec/artifacts'
+import {
+  addArtifact,
+  createArtifactFolder,
+  deleteArtifactFolder,
+  fileArtifacts,
+  hideArtifact,
+  listArtifactFolders,
+  listArtifacts,
+  moveArtifactFolder,
+  removeArtifact,
+  renameArtifact,
+  renameArtifactFolder,
+  setArtifactTags
+} from './exec/artifacts'
 import { artifactPreview } from './exec/artifactPreview'
 import { run } from './exec/run'
 import {
@@ -142,6 +155,29 @@ export function registerSessionsIpc(): void {
   })
   // ---- Artifacts: every one sessions made or read, plus links you added ----
   ipcMain.handle('artifacts:list', () => listArtifacts())
+  ipcMain.handle('artifacts:folders', () => listArtifactFolders())
+  const str = (v: unknown): v is string => typeof v === 'string'
+  ipcMain.handle('artifacts:hide', (_evt, url: unknown, hide: unknown) => {
+    if (str(url)) hideArtifact(url, hide !== false)
+  })
+  ipcMain.handle('artifacts:folder:create', (_evt, name: unknown, parent: unknown) =>
+    str(name) ? createArtifactFolder(name, str(parent) ? parent : null) : null
+  )
+  ipcMain.handle('artifacts:folder:rename', (_evt, id: unknown, name: unknown) => {
+    if (str(id) && str(name)) renameArtifactFolder(id, name)
+  })
+  ipcMain.handle('artifacts:folder:move', (_evt, id: unknown, parent: unknown) => {
+    if (str(id)) moveArtifactFolder(id, str(parent) ? parent : null)
+  })
+  ipcMain.handle('artifacts:folder:delete', (_evt, id: unknown) => {
+    if (str(id)) deleteArtifactFolder(id)
+  })
+  ipcMain.handle('artifacts:file', (_evt, urls: unknown, folder: unknown) => {
+    if (Array.isArray(urls)) fileArtifacts(urls.filter(str), str(folder) ? folder : null)
+  })
+  ipcMain.handle('artifacts:tags', (_evt, url: unknown, tags: unknown) => {
+    if (str(url) && Array.isArray(tags)) setArtifactTags(url, tags.filter(str))
+  })
   // A picture of the page, as a data: URL, or null when there's no local copy.
   ipcMain.handle('artifacts:preview', (_evt, url: unknown) =>
     typeof url === 'string' ? artifactPreview(url) : null

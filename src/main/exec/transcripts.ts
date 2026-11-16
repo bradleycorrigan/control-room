@@ -562,6 +562,13 @@ interface ArtifactFacts extends TranscriptArtifact {
   html?: string | null
   /** Its Artifact type (Design System, Slides…), when it was made from one. */
   kind?: string | null
+  /**
+   * Made from an Artifact type (Slides, Docs, Design…): its local file is the
+   * type's data, drawn by claude.ai, so it can't be previewed here.
+   */
+  typed?: boolean
+  /** The type it was made from, by link, until its name is known. */
+  typeUrl?: string | null
 }
 
 interface ArtifactScan {
@@ -581,15 +588,19 @@ interface ArtifactScan {
         updates: string
         description: string
         file: string
+        typed: boolean
       }
     | { kind: 'open'; link: string }
     | { kind: 'list' }
+    | { kind: 'quickstart' }
   >
 }
 
 // The same incremental scan as the PR links: per transcript, how far it has
 // been read, what was found, and Artifact calls still waiting on their result.
 const artifactScans = new Map<string, ArtifactScan>()
+// Artifact types by link (Slides, Docs…), from any quickstart result seen.
+const typeNames = new Map<string, string>()
 const ARTIFACT_MARKER = Buffer.from('rtifact')
 const ARTIFACT_URL = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]{8,}/
 
@@ -734,7 +745,9 @@ function artifactLine(scan: ArtifactScan, raw: string): void {
           typeUrl,
           updates: text(input.url),
           description: text(input.description),
-          file: text(input.file_path)
+          file: text(input.file_path),
+          // From a type: named by one (type_url), or filled from a folder of its files.
+          typed: !!typeUrl || !!input.root || !!input.files
         })
       } else if (
         (action === 'read' || action === 'open') &&
@@ -744,6 +757,8 @@ function artifactLine(scan: ArtifactScan, raw: string): void {
         scan.pending.set(b.id, { kind: 'open', link: input.url })
       } else if (action === 'list' && !input.url) {
         scan.pending.set(b.id, { kind: 'list' })
+      } else if (action === 'quickstart') {
+        scan.pending.set(b.id, { kind: 'quickstart' })
       }
     } else if (b?.type === 'tool_result' && typeof b.tool_use_id === 'string') {
       const pending = scan.pending.get(b.tool_use_id)
@@ -751,6 +766,14 @@ function artifactLine(scan: ArtifactScan, raw: string): void {
       scan.pending.delete(b.tool_use_id)
       if (b.is_error === true) continue
       const said = resultText(b.content)
+      if (pending.kind === 'quickstart') {
+        const types = obj(result.quickstart).types
+        for (const t of (Array.isArray(types) ? types : []) as Record<string, unknown>[]) {
+          const u = ARTIFACT_URL.exec(text(t?.type_url))?.[0]
+          if (u && text(t.title)) typeNames.set(u, text(t.title))
+        }
+        continue
+      }
       if (pending.kind === 'list') {
         const list = Array.isArray(result.artifacts) ? result.artifacts : []
         for (const item of list as Record<string, unknown>[]) {
@@ -804,7 +827,9 @@ function artifactLine(scan: ArtifactScan, raw: string): void {
         audience: text(result.audience) || null,
         versions: seq,
         description: pending.description || null,
-        html: text(result.path) || pending.file || null
+        html: text(result.path) || pending.file || null,
+        typed: pending.typed || undefined,
+        typeUrl: ARTIFACT_URL.exec(pending.typeUrl)?.[0] ?? null
       })
     }
   }
@@ -853,6 +878,8 @@ export interface IndexedArtifact {
   /** A local copy of its HTML, for a preview. Main process only: never sent to the page. */
   html: string | null
   kind: string | null
+  /** Made from an Artifact type: no local preview. */
+  typed: boolean
   /** Claude sessions that published or read it, newest last. */
   claudeSessionIds: string[]
 }
@@ -878,6 +905,9 @@ export function listAllTranscriptArtifacts(): IndexedArtifact[] {
     !b ? a : !a || b > a ? b : a
   const earlier = (a: string | null, b: string | null | undefined): string | null =>
     !b ? a : !a || b < a ? b : a
+  // Every transcript is read before any is merged: a type's name can come
+  // from a different session than the artifact made from it.
+  const scans: { sid: string; scan: ArtifactScan }[] = []
   for (const dir of dirs) {
     let files: string[]
     try {
@@ -888,7 +918,11 @@ export function listAllTranscriptArtifacts(): IndexedArtifact[] {
     for (const f of files) {
       const scan = scanArtifacts(join(CLAUDE_PROJECTS_DIR, dir, f))
       if (scan.found.size === 0 && scan.opened.size === 0 && scan.listed.size === 0) continue
-      const sid = f.replace(/\.jsonl$/, '')
+      scans.push({ sid: f.replace(/\.jsonl$/, ''), scan })
+    }
+  }
+  {
+    for (const { sid, scan } of scans) {
       const add = (a: ArtifactFacts, source: IndexedArtifact['source']): void => {
         const had = out.get(a.url)
         if (!had) {
@@ -905,7 +939,8 @@ export function listAllTranscriptArtifacts(): IndexedArtifact[] {
             versions: a.versions ?? null,
             description: a.description ?? null,
             html: a.html ?? null,
-            kind: a.kind ?? null,
+            kind: a.kind ?? (a.typeUrl ? (typeNames.get(a.typeUrl) ?? null) : null),
+            typed: !!a.typed || !!a.kind,
             claudeSessionIds: source === 'listed' ? [] : [sid]
           })
           return
@@ -924,7 +959,8 @@ export function listAllTranscriptArtifacts(): IndexedArtifact[] {
         if (a.versions && a.versions > (had.versions ?? 0)) had.versions = a.versions
         if (a.description && (newer || !had.description)) had.description = a.description
         if (a.html && (source === 'made' || !had.html)) had.html = a.html
-        had.kind = had.kind ?? a.kind ?? null
+        had.kind = had.kind ?? a.kind ?? (a.typeUrl ? (typeNames.get(a.typeUrl) ?? null) : null)
+        had.typed = had.typed || !!a.typed || !!a.kind
         if (source !== 'listed' && !had.claudeSessionIds.includes(sid))
           had.claudeSessionIds.push(sid)
       }

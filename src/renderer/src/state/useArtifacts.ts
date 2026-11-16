@@ -1,30 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { listArtifacts, type Artifact } from '../api'
+import type { Artifact } from '../api'
 
 /** A claude.ai artifact link anywhere in some text. */
 export const ARTIFACT_LINK = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]{8,}/
-
-/**
- * Every artifact Control Room knows about, newest first: undefined until the
- * first read. Read again every 15 seconds while shown, and on `refresh()`,
- * so one a session just published turns up without a reload.
- */
-export function useArtifacts(): {
-  artifacts: Artifact[] | undefined
-  refresh: () => void
-  set: (next: Artifact[]) => void
-} {
-  const [artifacts, setArtifacts] = useState<Artifact[] | undefined>(undefined)
-  const refresh = useCallback(() => {
-    void listArtifacts().then((a) => setArtifacts(a ?? []))
-  }, [])
-  useEffect(() => {
-    refresh()
-    const t = setInterval(refresh, 15_000)
-    return () => clearInterval(t)
-  }, [refresh])
-  return { artifacts, refresh, set: setArtifacts }
-}
 
 /** What an artifact is called, or a stand-in naming its source. */
 export function artifactName(a: Pick<Artifact, 'title' | 'owned'>): string {

@@ -4,7 +4,7 @@ import type { IconName } from '../components/primitives'
 import { Meta, MetaItem } from '../components/primitives/Meta'
 import Modal from '../components/primitives/Modal'
 import type { MenuItem } from '../components/MenuItems'
-import { Picker } from './backlog/Picker'
+import { Picker, type PickerOption } from './backlog/Picker'
 import { OverflowMenu } from './SessionsScreen'
 import {
   addArtifact,
@@ -19,7 +19,8 @@ import {
   type Artifact
 } from '../api'
 import type { JiraIssue } from '../../../main/exec/jira'
-import { ARTIFACT_LINK, artifactName, useArtifacts } from '../state/useArtifacts'
+import { ARTIFACT_LINK, artifactName } from '../state/useArtifacts'
+import { DRAG_ARTIFACT, inPlace, useArtifactLibrary } from '../state/artifactLibrary'
 import { useStoredState } from '../state/useStoredState'
 import type { ComposerSeed } from './backlog/ticketSessions'
 import { relativeTime } from '../lib/format-time'
@@ -181,16 +182,24 @@ export default function ArtifactsScreen({
   onStartSession: (seed: ComposerSeed) => void
   pushToast: (message: string) => void
 }): React.JSX.Element {
-  const { artifacts, refresh, set } = useArtifacts()
+  const lib = useArtifactLibrary()
+  const { artifacts, refresh, place } = lib
+  const set = (): void => refresh()
   const [kind, setKind] = useState<Kind | null>(null)
   const [query, setQuery] = useState('')
   const [view, setView] = useStoredState<'grid' | 'list'>('cr.artifacts.view', 'grid')
   const [adding, setAdding] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
-  const [ticketFor, setTicketFor] = useState<{ artifact: Artifact; anchor: HTMLElement } | null>(
-    null
-  )
+  // One chooser at a time, at the row it acts on: a ticket, a folder, tags.
+  const [picker, setPicker] = useState<{
+    anchor: HTMLElement
+    title: string
+    options: PickerOption[]
+    onPick: (value: string) => void
+    custom?: (text: string) => string | null
+    emptyText?: string
+  } | null>(null)
   const [board, setBoard] = useState<JiraIssue[] | null>(null)
   const [jira, setJira] = useState(false)
   useEffect(() => {
@@ -214,16 +223,17 @@ export default function ArtifactsScreen({
     }
     return m
   }, [board])
+  const here = useMemo(() => all.filter((a) => inPlace(a, place, lib.within)), [all, place, lib])
   const counts = useMemo(() => {
     const m = new Map<Kind, number>()
-    for (const a of all) m.set(kindOf(a), (m.get(kindOf(a)) ?? 0) + 1)
+    for (const a of here) m.set(kindOf(a), (m.get(kindOf(a)) ?? 0) + 1)
     return m
-  }, [all])
-  const shown = all.filter((a) => {
+  }, [here])
+  const shown = here.filter((a) => {
     if (kind && kindOf(a) !== kind) return false
     const q = query.trim().toLowerCase()
     if (!q) return true
-    return [artifactName(a), a.url, a.description ?? '', a.kind ?? '']
+    return [artifactName(a), a.url, a.description ?? '', a.kind ?? '', ...a.tags]
       .concat(a.sessions.flatMap((s) => [s.title, s.project ?? '']))
       .concat(ticketsOf.get(a.url) ?? [])
       .some((t) => t.toLowerCase().includes(q))
@@ -250,7 +260,74 @@ export default function ArtifactsScreen({
     })
   }
   const addToTicket = (a: Artifact, anchor: HTMLElement | null): void => {
-    if (anchor) setTicketFor({ artifact: a, anchor })
+    if (!anchor) return
+    setPicker({
+      anchor,
+      title: 'Add to ticket',
+      emptyText: board === null ? 'Loading tickets…' : 'No match',
+      options: (board ?? []).map((t) => ({ value: t.key, label: `${t.key} ${t.summary}` })),
+      onPick: (key) =>
+        void addJiraArtifactLink(key, a.link, artifactName(a)).then((r) => {
+          pushToast(r.ok ? `Added to ${key}.` : `Jira: ${r.error}`)
+          if (r.ok) void loadJiraBoard().then((b) => b.ok && setBoard(b.value.issues))
+        })
+    })
+  }
+  const moveToFolder = (a: Artifact, anchor: HTMLElement | null): void => {
+    if (!anchor) return
+    setPicker({
+      anchor,
+      title: 'Move to folder',
+      options: [
+        {
+          value: '',
+          label: 'No folder',
+          icon: <Icon name="Inbox" size={14} />,
+          checked: !a.folder
+        },
+        ...lib.folders
+          .map((f) => ({ f, path: lib.pathOf(f.id) }))
+          .sort((x, y) => x.path.localeCompare(y.path))
+          .map(({ f, path }) => ({
+            value: f.id,
+            label: path,
+            icon: <Icon name="Folder" size={14} />,
+            checked: a.folder === f.id
+          }))
+      ],
+      custom: (text) => `New folder “${text}”`,
+      onPick: (value) => {
+        if (value === '' || lib.folders.some((f) => f.id === value)) {
+          void lib.file([a.url], value || null)
+          return
+        }
+        void lib.createFolder(value, null).then((f) => {
+          if (f) void lib.file([a.url], f.id)
+        })
+      }
+    })
+  }
+  const editTags = (a: Artifact, anchor: HTMLElement | null): void => {
+    if (!anchor) return
+    const known = lib.tags.map((t) => t.tag)
+    const options = [...new Set([...a.tags, ...known])].map((t) => ({
+      value: t,
+      label: t,
+      icon: <Icon name="Hash" size={14} />,
+      checked: a.tags.includes(t)
+    }))
+    setPicker({
+      anchor,
+      title: 'Tags',
+      options,
+      emptyText: 'Type a tag',
+      custom: (text) => `Add tag “${text}”`,
+      onPick: (tag) =>
+        void lib.setTags(
+          a.url,
+          a.tags.includes(tag) ? a.tags.filter((t) => t !== tag) : [...a.tags, tag]
+        )
+    })
   }
   const rowAnchor = (a: Artifact): HTMLElement | null =>
     document.querySelector<HTMLElement>(`[data-artifact-row="${CSS.escape(a.url)}"]`)
@@ -269,6 +346,18 @@ export default function ArtifactsScreen({
         ]
       : []),
     {
+      label: 'Move to folder…',
+      icon: 'FolderInput',
+      group: 'organise',
+      onClick: () => moveToFolder(a, rowAnchor(a))
+    },
+    {
+      label: 'Tags…',
+      icon: 'Hash',
+      group: 'organise',
+      onClick: () => editTags(a, rowAnchor(a))
+    },
+    {
       label: 'Rename',
       icon: 'Pencil',
       group: 'edit',
@@ -277,6 +366,22 @@ export default function ArtifactsScreen({
         setRenaming(a.url)
       }
     },
+    a.hidden
+      ? {
+          label: 'Show again',
+          icon: 'Eye',
+          group: 'edit',
+          onClick: () => void lib.hide(a.url, false)
+        }
+      : {
+          label: 'Hide',
+          icon: 'EyeOff',
+          group: 'edit',
+          onClick: () => {
+            void lib.hide(a.url, true)
+            pushToast(`Hid ${artifactName(a)}. It’s under Hidden in the side panel.`)
+          }
+        },
     ...(a.source === 'added'
       ? [
           {
@@ -293,10 +398,20 @@ export default function ArtifactsScreen({
     <div className="sessions-main artifacts-screen" data-artifacts-screen>
       <div className="sessions-main-header">
         <div className="sessions-main-heading">
-          <h1 className="sessions-main-title">Artifacts</h1>
+          <h1 className="sessions-main-title">
+            {place.type === 'folder'
+              ? lib.pathOf(place.id)
+              : place.type === 'tag'
+                ? `#${place.tag}`
+                : place.type === 'unfiled'
+                  ? 'Unfiled'
+                  : place.type === 'hidden'
+                    ? 'Hidden'
+                    : 'Artifacts'}
+          </h1>
           {(kind || query) && artifacts && (
             <p className="sessions-main-caption">
-              {shown.length} of {all.length} artifact{all.length === 1 ? '' : 's'}
+              {shown.length} of {here.length} artifact{here.length === 1 ? '' : 's'}
             </p>
           )}
         </div>
@@ -333,7 +448,7 @@ export default function ArtifactsScreen({
         </div>
       </div>
 
-      {all.length > 0 && (
+      {here.length > 0 && (
         <div className="sessions-filters">
           <div className="sessions-filter-tabs" role="group" aria-label="Filter artifacts">
             <button
@@ -347,7 +462,7 @@ export default function ArtifactsScreen({
               onClick={() => setKind(null)}
             >
               All
-              <Count className="sessions-filter-count" value={all.length} />
+              <Count className="sessions-filter-count" value={here.length} />
             </button>
             {KINDS.filter((k) => (counts.get(k.id) ?? 0) > 0 || kind === k.id).map((k) => (
               <button
@@ -395,6 +510,22 @@ export default function ArtifactsScreen({
           icon="AppWindow"
           title="No artifacts yet"
           body="Pages your sessions publish or open with Claude’s Artifact tool show up here. You can also add a link someone sent you."
+        />
+      ) : here.length === 0 ? (
+        <EmptyState
+          icon={place.type === 'folder' ? 'Folder' : place.type === 'hidden' ? 'EyeOff' : 'Hash'}
+          title={
+            place.type === 'folder'
+              ? 'Nothing in this folder yet'
+              : place.type === 'hidden'
+                ? 'Nothing hidden'
+                : 'Nothing here'
+          }
+          body={
+            place.type === 'folder'
+              ? 'Drag an artifact onto the folder in the side panel, or use Move to folder in its menu.'
+              : 'Artifacts you file, tag or hide show up here.'
+          }
         />
       ) : shown.length === 0 ? (
         <p className="sessions-list-empty">Nothing matches.</p>
@@ -452,20 +583,15 @@ export default function ArtifactsScreen({
         />
       )}
 
-      {ticketFor && (
+      {picker && (
         <Picker
-          anchor={ticketFor.anchor}
-          title="Add to ticket"
-          emptyText={board === null ? 'Loading tickets…' : 'No match'}
-          options={(board ?? []).map((t) => ({ value: t.key, label: `${t.key} ${t.summary}` }))}
-          onClose={() => setTicketFor(null)}
-          onPick={(key) => {
-            const a = ticketFor.artifact
-            void addJiraArtifactLink(key, a.link, artifactName(a)).then((r) => {
-              pushToast(r.ok ? `Added to ${key}.` : `Jira: ${r.error}`)
-              if (r.ok) void loadJiraBoard().then((b) => b.ok && setBoard(b.value.issues))
-            })
-          }}
+          anchor={picker.anchor}
+          title={picker.title}
+          options={picker.options}
+          custom={picker.custom}
+          emptyText={picker.emptyText}
+          onClose={() => setPicker(null)}
+          onPick={picker.onPick}
         />
       )}
 
@@ -544,7 +670,12 @@ function ArtifactCard({
       className="artifacts-card"
       role="button"
       tabIndex={0}
+      draggable
       data-artifact-row={a.url}
+      onDragStart={(e) => {
+        e.dataTransfer.setData(DRAG_ARTIFACT, a.url)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
       onClick={onOpen}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -568,8 +699,48 @@ function ArtifactCard({
         </div>
         {a.description && <p className="artifacts-description">{a.description}</p>}
         <Facts a={a} tickets={tickets} onOpenTicket={onOpenTicket} />
+        <Filing a={a} />
       </div>
     </div>
+  )
+}
+
+/** Its folder and tags, as chips that take you there. */
+function Filing({ a }: { a: Artifact }): React.JSX.Element | null {
+  const lib = useArtifactLibrary()
+  if (!a.folder && a.tags.length === 0) return null
+  const go = (e: React.MouseEvent, p: Parameters<typeof lib.setPlace>[0]): void => {
+    e.stopPropagation()
+    lib.setPlace(p)
+  }
+  return (
+    <span className="artifacts-filing">
+      {a.folder && (
+        <button
+          type="button"
+          className="sessions-ticket-pill artifacts-chip"
+          title="Open this folder"
+          onClick={(e) => go(e, { type: 'folder', id: a.folder! })}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          <Icon name="Folder" size={11} />
+          {lib.pathOf(a.folder)}
+        </button>
+      )}
+      {a.tags.map((t) => (
+        <button
+          key={t}
+          type="button"
+          className="sessions-ticket-pill artifacts-chip"
+          data-artifact-chip-tag={t}
+          title={`Everything tagged ${t}`}
+          onClick={(e) => go(e, { type: 'tag', tag: t })}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
+          #{t}
+        </button>
+      ))}
+    </span>
   )
 }
 
@@ -600,7 +771,12 @@ function ArtifactRow({
       className="sessions-row sessions-row-clickable artifacts-row"
       role="button"
       tabIndex={0}
+      draggable={!renaming}
       data-artifact-row={a.url}
+      onDragStart={(e) => {
+        e.dataTransfer.setData(DRAG_ARTIFACT, a.url)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
       title={a.link}
       onClick={() => !renaming && onOpen()}
       onKeyDown={(e) => {
@@ -653,6 +829,7 @@ function ArtifactRow({
       {a.description && <p className="artifacts-description">{a.description}</p>}
       <div className="sessions-row-line2">
         <Facts a={a} tickets={tickets} onOpenTicket={onOpenTicket} />
+        <Filing a={a} />
         {session && (
           <button
             type="button"
@@ -760,6 +937,14 @@ function ArtifactPreview({
                     {s.project && <span className="artifacts-muted">· {s.project}</span>}
                   </button>
                 ))}
+              </dd>
+            </div>
+          )}
+          {(a.folder || a.tags.length > 0) && (
+            <div>
+              <dt>Filed under</dt>
+              <dd>
+                <Filing a={a} />
               </dd>
             </div>
           )}
