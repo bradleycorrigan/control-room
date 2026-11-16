@@ -266,7 +266,8 @@ const PAGE_SHARDS = [
     'Skills and rules',
     'Pull requests opened in another repo',
     'Ship ticks',
-    'Rename suggestions'
+    'Rename suggestions',
+    'Artifacts'
   ],
   [
     'Switching',

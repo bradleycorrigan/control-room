@@ -10,6 +10,7 @@ import {
 } from './exec/pullRequests'
 import { listTranscriptPrLinks, listTranscriptArtifacts, listUserPrompts } from './exec/transcripts'
 import { resolveClaudeBinary } from './exec/claude'
+import { addArtifact, listArtifacts, removeArtifact, renameArtifact } from './exec/artifacts'
 import { run } from './exec/run'
 import {
   buildTicketDraftPrompt,
@@ -137,6 +138,21 @@ export function registerSessionsIpc(): void {
     const byUrl = new Map<string, ReturnType<typeof listTranscriptArtifacts>[number]>()
     for (const sid of ids) for (const a of listTranscriptArtifacts(sid)) byUrl.set(a.url, a)
     return [...byUrl.values()]
+  })
+  // ---- Artifacts: every one sessions made or read, plus links you added ----
+  ipcMain.handle('artifacts:list', () => listArtifacts())
+  ipcMain.handle('artifacts:add', (_evt, link: unknown, title: unknown) =>
+    typeof link === 'string'
+      ? addArtifact(link, typeof title === 'string' ? title : '')
+      : { ok: false, error: 'bad request' }
+  )
+  ipcMain.handle('artifacts:remove', (_evt, url: unknown) => {
+    if (typeof url === 'string') removeArtifact(url)
+    return listArtifacts()
+  })
+  ipcMain.handle('artifacts:rename', (_evt, url: unknown, title: unknown) => {
+    if (typeof url === 'string' && typeof title === 'string') renameArtifact(url, title)
+    return listArtifacts()
   })
   ipcMain.handle('sessions:linkedPrs', async (_evt, id: string) => {
     const record = getState().sessions.find((s) => s.id === id)

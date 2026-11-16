@@ -717,6 +717,39 @@ cliTranscript('fixture-working', [
       ]
     }
   },
+  // Someone else's page the agent read through a shared link: the Artifacts
+  // screen lists it as shared with you, by the <title> the read returned.
+  {
+    type: 'assistant',
+    timestamp: new Date(now - 7.5 * 60_000).toISOString(),
+    message: {
+      content: [
+        {
+          type: 'tool_use',
+          id: 'toolu_fixture_artifact_read',
+          name: 'Artifact',
+          input: {
+            action: 'read',
+            url: 'https://claude.ai/artifact/FixtureSharedPack01?sk=fixture-share-key'
+          }
+        }
+      ]
+    }
+  },
+  {
+    type: 'user',
+    timestamp: new Date(now - 7.5 * 60_000).toISOString(),
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'toolu_fixture_artifact_read',
+          content:
+            '[Artifact 0f1e2d3c-fixture-shared — shared with you (visible to your organization); raw HTML follows]\n<html><head><title>Board pack</title></head></html>'
+        }
+      ]
+    }
+  },
   // What it last said: the Sessions rows and cards show it under the title.
   {
     type: 'assistant',

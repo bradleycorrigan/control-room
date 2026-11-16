@@ -1,5 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ChatEntry, QueuedMessage } from '../../../main/exec/chatTranscript'
+import { ArtifactPicker } from './ArtifactPicker'
+import { withArtifact } from '../state/useArtifacts'
 import type { PendingPrompt, PromptAnswer } from '../../../main/engine/prompts'
 import MarkdownText from './MarkdownText'
 import { Button, EmptyState, Icon, IconButton, Modal } from './primitives'
@@ -1298,6 +1300,11 @@ function Composer({
             variant="ghost"
             disabled={!paneId}
             onClick={() => void attach.pick()}
+          />
+          <ArtifactPicker
+            look="icon"
+            disabled={!paneId}
+            onPick={(a) => setText(withArtifact(text, a))}
           />
           {error ? (
             <span className="cr-chat-prompt-error" role="alert">

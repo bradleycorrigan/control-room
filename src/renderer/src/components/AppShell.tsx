@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
 import { SegmentedControl, IconButton, Icon, Popover, Tooltip } from './primitives'
 
-export type MainView = 'home' | 'projects' | 'sessions' | 'backlog'
+export type MainView = 'home' | 'projects' | 'sessions' | 'backlog' | 'artifacts'
 // 'gallery' is a dev-only route (the primitives gallery, plan 3 milestone
 // V1) reached only via the shot harness — never a MainView, so it never
 // appears in normal navigation.
@@ -103,7 +103,8 @@ export default function AppShell({
               { value: 'home' as MainView, label: 'Home' },
               { value: 'projects' as MainView, label: 'Projects' },
               { value: 'sessions' as MainView, label: 'Sessions' },
-              { value: 'backlog' as MainView, label: 'Tickets' }
+              { value: 'backlog' as MainView, label: 'Tickets' },
+              { value: 'artifacts' as MainView, label: 'Artifacts' }
             ]}
             // Home is where the app starts, and until now nothing could get
             // back to it — the switcher offered only the other two, so the
@@ -112,7 +113,11 @@ export default function AppShell({
             // lighting up Sessions — the switcher was claiming you were
             // somewhere you were not.
             value={
-              view === 'home' || view === 'projects' || view === 'sessions' || view === 'backlog'
+              view === 'home' ||
+              view === 'projects' ||
+              view === 'sessions' ||
+              view === 'backlog' ||
+              view === 'artifacts'
                 ? view
                 : ('' as MainView)
             }

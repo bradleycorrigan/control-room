@@ -23,6 +23,7 @@ import {
   addJiraComment,
   addJiraBlockLink,
   addJiraSlackLink,
+  addJiraArtifactLink,
   removeJiraBlockLink,
   loadTicketPullRequests,
   type TicketPullRequest,
@@ -89,6 +90,8 @@ import { CompleteCycle } from './backlog/CompleteCycle'
 import { hoursToDays, parseEstimateHours } from './backlog/cyclePlan'
 import { ESTIMATES } from '../../../main/exec/ticketDraft'
 import { Picker, type PickerOption } from './backlog/Picker'
+import { ArtifactPicker } from '../components/ArtifactPicker'
+import { ARTIFACT_LINK } from '../state/useArtifacts'
 import {
   branchFor,
   seedFor,
@@ -4793,6 +4796,7 @@ function IssueDrawer({
 
   const links = detail?.links ?? issue.links
   const slack = links.find((l) => isSlack(l.url))
+  const artifactLinks = links.filter((l) => ARTIFACT_LINK.test(l.url))
   const linkable = sessions.filter(
     (s) => s.record && !s.record.deletedAt && !linkedSessions.some((l) => l.session.key === s.key)
   )
@@ -5348,7 +5352,24 @@ function IssueDrawer({
                 ))}
               </Select>
             )
-            return linkedSessions.length > 0 || prs.rows.length > 0 ? (
+            const artifactAdd = (
+              <ArtifactPicker
+                look="button"
+                label="Add artifact"
+                exclude={artifactLinks.map((l) => ARTIFACT_LINK.exec(l.url)?.[0] ?? l.url)}
+                onPick={(a) => {
+                  void write(() => addJiraArtifactLink(issue.key, a.link, a.title)).then((ok) => {
+                    if (ok)
+                      setDetail((d) =>
+                        d && !d.links.some((l) => l.url === a.link)
+                          ? { ...d, links: [...d.links, { url: a.link, title: a.title }] }
+                          : d
+                      )
+                  })
+                }}
+              />
+            )
+            return linkedSessions.length > 0 || prs.rows.length > 0 || artifactLinks.length > 0 ? (
               <div className="backlog-drawer-section-head">
                 <h3>
                   Work{' '}
@@ -5362,6 +5383,7 @@ function IssueDrawer({
                     Start session
                   </Button>
                   {linkSelect}
+                  {artifactAdd}
                 </div>
               </div>
             ) : (
@@ -5374,11 +5396,15 @@ function IssueDrawer({
                     Start session
                   </Button>
                   {linkSelect}
+                  {artifactAdd}
                 </div>
               </>
             )
           })()}
-          {(linkedSessions.length > 0 || prs.rows.length > 0 || prs.jiraError) && (
+          {(linkedSessions.length > 0 ||
+            prs.rows.length > 0 ||
+            prs.jiraError ||
+            artifactLinks.length > 0) && (
             <div className="backlog-work">
               {linkedSessions.map(({ session, linked }) => (
                 <div key={session.key} className="backlog-work-item">
@@ -5418,6 +5444,32 @@ function IssueDrawer({
                 </div>
               ))}
               <TicketPullRequests prs={prs} show="all" onComment={noteWithLink} />
+              {artifactLinks.map((l) => (
+                <div key={l.url} className="backlog-work-item" data-ticket-artifact>
+                  <div className="backlog-work-row">
+                    <button
+                      type="button"
+                      className="backlog-work-open"
+                      title={`Open ${l.title} in your browser`}
+                      onClick={() => void openExternal(l.url)}
+                    >
+                      <Icon name="AppWindow" size={14} />
+                      <span className="backlog-work-title">{l.title}</span>
+                      <span className="backlog-state-chip">Artifact</span>
+                    </button>
+                    <span className="backlog-work-tools">
+                      <IconButton
+                        icon="Link"
+                        label="Copy link"
+                        tooltip="Copy link"
+                        size={28}
+                        variant="ghost"
+                        onClick={() => copy(l.url, 'Artifact link')}
+                      />
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </section>

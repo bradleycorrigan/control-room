@@ -477,7 +477,7 @@ type OverflowAction = MenuItem
 // "hover-revealed overflow menu". Renders nothing (not even the button)
 // when there's nothing it can do: a control that can't act on anything
 // isn't a control, it's clutter.
-function OverflowMenu({
+export function OverflowMenu({
   actions,
   label,
   className

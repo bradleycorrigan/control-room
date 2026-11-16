@@ -2195,6 +2195,47 @@ export async function addSlackLink(key: string, url: string): Promise<JiraResult
   })
 }
 
+/**
+ * Puts a Claude artifact on a ticket as a web link, beside its PRs and Slack
+ * thread, so teammates see it in Jira and Control Room reads it back. The
+ * link's own url is its id, so adding it twice keeps one.
+ */
+export async function addArtifactLink(
+  key: string,
+  url: string,
+  title: string
+): Promise<JiraResult<JiraIssue>> {
+  if (!/^https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]{8,}/.test(url))
+    return { ok: false, error: 'that isn’t a claude.ai artifact link' }
+  const link = { url, title: title.trim() || 'Claude artifact' }
+  if (fixtureStore()) {
+    const store = fixtureStore()!
+    const add = (links: JiraLink[]): JiraLink[] =>
+      links.some((l) => l.url === url) ? links : [...links, link]
+    if (store.details[key]) store.details[key].links = add(store.details[key].links)
+    return fixtureUpdate(key, (i) => {
+      i.links = add(i.links)
+    })
+  }
+  const conn = connection()
+  if ('error' in conn) return { ok: false, error: conn.error }
+  return attempt(async () => {
+    await callJson(conn, `/rest/api/3/issue/${encodeURIComponent(key)}/remotelink`, {
+      method: 'POST',
+      body: {
+        globalId: url,
+        object: {
+          url,
+          title: link.title,
+          icon: { url16x16: 'https://claude.ai/favicon.ico', title: 'Claude artifact' }
+        }
+      }
+    })
+    linksCache.delete(key)
+    return loadIssue(conn, key)
+  })
+}
+
 /** Into a cycle, or (sprintId null) out of it and back to the backlog. */
 export async function moveToSprint(
   key: string,

@@ -126,6 +126,7 @@ import {
   removeBlockLink,
   setEstimate,
   addSlackLink,
+  addArtifactLink,
   ticketPullRequests,
   issueTypes,
   createIssue,
@@ -846,6 +847,11 @@ export function registerIpcHandlers(): void {
     setEstimate(key, estimate)
   )
   ipcMain.handle('jira:slackLink', (_evt, key: string, url: string) => addSlackLink(key, url))
+  ipcMain.handle('jira:artifactLink', (_evt, key: unknown, url: unknown, title: unknown) =>
+    typeof key === 'string' && typeof url === 'string'
+      ? addArtifactLink(key, url, typeof title === 'string' ? title : '')
+      : { ok: false, error: 'bad request' }
+  )
   ipcMain.handle('jira:pullRequests', (_evt, key: string) => ticketPullRequests(key))
   ipcMain.handle('jira:issueTypes', (_evt, project: string) => issueTypes(project))
   ipcMain.handle('jira:create', (_evt, input: JiraCreateInput) => createIssue(input))

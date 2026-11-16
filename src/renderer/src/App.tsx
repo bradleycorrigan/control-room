@@ -35,6 +35,7 @@ import {
 import SessionTabs from './components/SessionTabs'
 import ScreenBoundary from './components/ScreenBoundary'
 import BacklogScreen, { type ComposerSeed } from './screens/BacklogScreen'
+import ArtifactsScreen from './screens/ArtifactsScreen'
 import { useStoredState } from './state/useStoredState'
 import { initShotListener, registerShotScreen, registerShotReset } from './dev/shot'
 import { runTabsCheck } from './dev/tabsCheck'
@@ -833,6 +834,11 @@ function App(): React.JSX.Element {
       setPaletteOpen(false)
       setJiraSetupPreview(true)
       setView('backlog')
+      await new Promise((r) => setTimeout(r, 800))
+    })
+    registerShotScreen('artifacts', async () => {
+      setPaletteOpen(false)
+      setView('artifacts')
       await new Promise((r) => setTimeout(r, 800))
     })
     registerShotScreen('backlog', async () => {
@@ -2528,6 +2534,18 @@ function App(): React.JSX.Element {
                   setShowNewSessionForm(true)
                 }}
               />
+            ) : view === 'artifacts' ? (
+              <ArtifactsScreen
+                onOpenSession={(key) => {
+                  setView('sessions')
+                  openSessionByKey(key)
+                }}
+                onStartSession={(seed) => {
+                  setComposerSeed(seed)
+                  setShowNewSessionForm(true)
+                }}
+                pushToast={pushToast}
+              />
             ) : view === 'settings' ? (
               <SettingsScreen theme={theme} onOpenSetup={() => setSetupOpen(true)} />
             ) : view === 'gallery' ? (
@@ -2753,7 +2771,7 @@ function App(): React.JSX.Element {
             initialTitle={composerSeed?.title}
             onSessionCreated={(record) => {
               // Next time, an issue from this Jira project starts in this repo.
-              if (composerSeed) {
+              if (composerSeed?.jiraProject) {
                 setRepoForJiraProject({
                   ...repoForJiraProject,
                   [composerSeed.jiraProject]: record.projectId

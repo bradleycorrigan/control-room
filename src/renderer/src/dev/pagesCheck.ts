@@ -111,7 +111,7 @@ async function openSettingsSection(name: string): Promise<void> {
 }
 
 export interface PagesCheckContext {
-  goTo: (view: 'home' | 'sessions' | 'backlog' | 'settings') => Promise<void>
+  goTo: (view: 'home' | 'sessions' | 'backlog' | 'settings' | 'artifacts') => Promise<void>
   openFirstSession: () => Promise<void>
   /** Makes the current screen throw, to check the error catcher. */
   crashScreen: () => Promise<void>
@@ -2581,6 +2581,115 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             `${warnings} WebGL warnings, ${canvases.length} canvases, lost=${lost}`
           )
         }
+      }
+    },
+    // ---- Artifacts ----
+    // Every artifact sessions published or read, plus links you add: a screen
+    // of its own, a chooser in the message boxes, and a row on a ticket.
+    {
+      name: 'Artifacts',
+      run: async () => {
+        await ctx.goTo('home')
+        await click(byText('.app-titlebar-no-drag .cr-segmented__option', 'Artifacts'))
+        const rows = (): HTMLElement[] => $$('[data-artifact-row]')
+        const titles = (): string[] =>
+          rows().map((r) => r.querySelector('.sessions-row-title')?.textContent?.trim() ?? '')
+        await until(() => rows().length >= 4, 4000)
+        await check(
+          'the Artifacts tab lists what the session published and what it read',
+          ['Gap report', 'Churn plan', 'Funnel report', 'Board pack'].every((t) =>
+            titles().includes(t)
+          ),
+          titles().join(' | ')
+        )
+        const shared = rows().find((r) => r.textContent?.includes('Board pack'))
+        await check(
+          'one read through a shared link says so and keeps its share key',
+          Boolean(shared?.textContent?.includes('shared with you')) &&
+            (shared?.title ?? '').includes('?sk='),
+          `${shared?.textContent} ${shared?.title}`
+        )
+        await check(
+          'a row names the session it came from',
+          Boolean(shared?.querySelector('.artifacts-row-session')?.textContent?.trim()),
+          shared?.innerHTML.slice(0, 200)
+        )
+        await click(byText('.sessions-filter-tab', 'Shared with you'))
+        await check(
+          'Shared with you shows only that one',
+          await until(() => titles().join() === 'Board pack', 1500),
+          titles().join(' | ')
+        )
+        await click(byText('.sessions-filter-tab', 'All'))
+
+        // Adding a link someone sent you
+        await click(byText('.artifacts-screen button', 'Add link'))
+        await until(() => Boolean($('[aria-label="Artifact link"]')), 2000)
+        $<HTMLInputElement>('[aria-label="Artifact link"]')?.focus()
+        await typeText('https://example.com/x')
+        await check(
+          'a link that isn’t an artifact is refused before it’s added',
+          Boolean(byText('.artifacts-add-error', 'That isn’t a claude.ai artifact link')) &&
+            Boolean(byText('.artifacts-add-actions button', 'Add')?.hasAttribute('disabled'))
+        )
+        $<HTMLInputElement>('[aria-label="Artifact link"]')?.select()
+        await typeText('https://claude.ai/artifact/FixtureAddedLink9')
+        $<HTMLInputElement>('.artifacts-add [aria-label="Artifact name"]')?.focus()
+        await typeText('Pricing model')
+        await click(byText('.artifacts-add-actions button', 'Add'))
+        await check(
+          'an added link joins the list by the name you gave it',
+          await until(() => titles().includes('Pricing model'), 3000),
+          titles().join(' | ')
+        )
+
+        // Renaming one from its menu
+        const added = rows().find((r) => r.textContent?.includes('Pricing model'))
+        await click(added?.querySelector('.overflow-menu-button'))
+        await until(() => Boolean(byText('.overflow-menu-item', 'Rename')), 1500)
+        await click(byText('.overflow-menu-item', 'Rename'))
+        await until(() => Boolean($('[data-artifact-row] [aria-label="Artifact name"]')), 1500)
+        $<HTMLInputElement>('[data-artifact-row] [aria-label="Artifact name"]')?.select()
+        await typeText('Lead pricing')
+        const typed = $<HTMLInputElement>('[data-artifact-row] [aria-label="Artifact name"]')?.value
+        await key('Enter')
+        await check(
+          'Rename gives it your name',
+          await until(() => titles().includes('Lead pricing'), 3000),
+          `typed "${typed}", now "${$<HTMLInputElement>('[data-artifact-row] [aria-label="Artifact name"]')?.value ?? '(closed)'}"; ${titles().join(' | ')}`
+        )
+
+        // On a ticket, beside its sessions and PRs, as a Jira web link
+        await ctx.goTo('backlog')
+        await until(() => $$('.backlog-row').length > 0, 4000)
+        await click($$('.backlog-row')[0])
+        await until(() => Boolean($('.backlog-drawer [data-artifact-picker] button')), 3000)
+        await click($('.backlog-drawer [data-artifact-picker] button'))
+        await until(() => Boolean($('.backlog-picker-input')), 2000)
+        await typeText('Gap')
+        await key('Enter')
+        await check(
+          'Add artifact puts it on the ticket as a row of its own',
+          await until(
+            () => Boolean(byText('.backlog-drawer [data-ticket-artifact]', 'Gap report')),
+            3000
+          ),
+          $('.backlog-drawer .backlog-work')?.textContent?.slice(0, 200) ?? 'no work list'
+        )
+
+        // In the new-session box: the link goes into the message
+        await ctx.goTo('home')
+        await until(() => Boolean($('.home-composer-card [data-artifact-picker] button')), 3000)
+        await click($('.home-composer-card [data-artifact-picker] button'))
+        await until(() => Boolean($('.backlog-picker-input')), 2000)
+        await typeText('Board')
+        await key('Enter')
+        const prompt = $<HTMLTextAreaElement>('.home-composer-input')?.value ?? ''
+        await check(
+          'choosing one in the message box adds its name and link',
+          prompt.includes('Board pack: https://claude.ai/artifact/FixtureSharedPack01?sk='),
+          prompt
+        )
       }
     },
     // ---- Scrolling a full-screen agent ----

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { Icon, IconButton, Popover } from './primitives'
 import { MenuItems, type MenuItem } from './MenuItems'
 import { PillFolder } from './PillFolder'
-import { addJiraComment, copyText, openExternal } from '../api'
+import { addJiraArtifactLink, copyText, openExternal } from '../api'
 import type { TranscriptArtifact } from '../api-sessions'
 import './pr-chip.css'
 
@@ -32,15 +32,13 @@ function artifactActions(
     ...(ticketKey
       ? [
           {
-            label: `Add link to ${ticketKey}`,
-            icon: 'MessageSquarePlus' as const,
+            label: `Add to ${ticketKey}`,
+            icon: 'Ticket' as const,
             group: 'ticket',
             onClick: () =>
-              void addJiraComment(
-                ticketKey,
-                `Artifact: [${artifact.title}|${artifact.url}]`,
-                true
-              ).then((r) => pushToast?.(r.ok ? `Link added to ${ticketKey}.` : `Jira: ${r.error}`))
+              void addJiraArtifactLink(ticketKey, artifact.url, artifact.title).then((r) =>
+                pushToast?.(r.ok ? `Added to ${ticketKey}.` : `Jira: ${r.error}`)
+              )
           }
         ]
       : [])

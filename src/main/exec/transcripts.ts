@@ -538,18 +538,28 @@ export function listTranscriptPrLinks(sessionId: string): TranscriptPrLink[] {
 export interface TranscriptArtifact {
   url: string
   title: string
+  /** When it was last published (or, for one only opened, last read). */
+  at?: string | null
+  /** False when claude.ai said someone else owns it; null when nothing said. */
+  owned?: boolean | null
+}
+
+interface ArtifactScan {
+  offset: number
+  /** Pages the session published, by link. */
+  found: Map<string, TranscriptArtifact>
+  /** Pages the session read or opened (Artifact read/open), by link. */
+  opened: Map<string, TranscriptArtifact & { link: string }>
+  pending: Map<
+    string,
+    | { kind: 'publish'; title: string; typeUrl: string; updates: string }
+    | { kind: 'open'; link: string }
+  >
 }
 
 // The same incremental scan as the PR links: per transcript, how far it has
 // been read, what was found, and Artifact calls still waiting on their result.
-const artifactScans = new Map<
-  string,
-  {
-    offset: number
-    found: Map<string, TranscriptArtifact>
-    pending: Map<string, { title: string; typeUrl: string; updates: string }>
-  }
->()
+const artifactScans = new Map<string, ArtifactScan>()
 const ARTIFACT_MARKER = Buffer.from('rtifact')
 const ARTIFACT_URL = /https:\/\/claude\.ai\/(?:code\/)?artifact\/[A-Za-z0-9-]{8,}/
 
@@ -580,34 +590,43 @@ function artifactTitle(input: Record<string, unknown>): string {
 }
 
 /**
- * Every page a session published with the Artifact tool, oldest first, by its
- * claude.ai link. Only publishes of a page: asset uploads, reads and lists
- * are left out. Republishing the same page keeps one entry.
- *
- * An artifact made from a type (a sheet, a deck, a doc) counts too: its first
- * publish names the type (`type_url`) and the result gives the new artifact's
- * link before the type's. Its rows or slides then often arrive through its
- * data store, not more publishes, so that first call is the only sign of it.
+ * What a read's result calls the page: its <title> when the HTML came back
+ * inline, else the name of the Artifact type it was made from. A large or
+ * shared page's HTML is saved to a file instead; that file isn't opened.
  */
-export function listTranscriptArtifacts(sessionId: string): TranscriptArtifact[] {
-  const jsonlPath = findSessionTranscriptPath(sessionId)
-  if (!jsonlPath) return []
+function pageTitle(text: string): string {
+  const inline = /<title>([^<]{1,120})<\/title>/i.exec(text)?.[1]?.trim()
+  if (inline) return inline
+  return /Artifact of type "([^"]{1,60})"/.exec(text)?.[1]?.trim() ?? ''
+}
+
+/** The text of a tool result, however it was stored. */
+function resultText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return (content as { type?: string; text?: unknown }[])
+    .map((c) => (c?.type === 'text' && typeof c.text === 'string' ? c.text : ''))
+    .join('\n')
+}
+
+function scanArtifacts(jsonlPath: string): ArtifactScan {
   let scan = artifactScans.get(jsonlPath)
   if (!scan) {
-    scan = { offset: 0, found: new Map(), pending: new Map() }
+    scan = { offset: 0, found: new Map(), opened: new Map(), pending: new Map() }
     artifactScans.set(jsonlPath, scan)
   }
   let fd: number
   try {
     fd = openSync(jsonlPath, 'r')
   } catch {
-    return [...scan.found.values()]
+    return scan
   }
   try {
     const size = fstatSync(fd).size
     if (size < scan.offset) {
       scan.offset = 0
       scan.found.clear()
+      scan.opened.clear()
       scan.pending.clear()
     }
     if (size > scan.offset) {
@@ -621,45 +640,7 @@ export function listTranscriptArtifacts(sessionId: string): TranscriptArtifact[]
         start = nl + 1
         if (line.indexOf(ARTIFACT_MARKER) === -1) continue
         try {
-          const parsed = JSON.parse(line.toString('utf8')) as {
-            message?: { content?: unknown }
-          }
-          const blocks = parsed.message?.content
-          if (!Array.isArray(blocks)) continue
-          for (const b of blocks as Record<string, unknown>[]) {
-            if (b?.type === 'tool_use' && b.name === 'Artifact' && typeof b.id === 'string') {
-              const input = (b.input ?? {}) as Record<string, unknown>
-              const action = input.action ?? 'publish'
-              if (action === 'publish' && input.asset !== true) {
-                const typeUrl = typeof input.type_url === 'string' ? input.type_url : ''
-                scan.pending.set(b.id, {
-                  // A data file published into an artifact already listed
-                  // keeps that artifact's name, not the file's.
-                  title: typeUrl
-                    ? typeof input.title === 'string' && input.title.trim()
-                      ? input.title.trim()
-                      : 'Artifact'
-                    : artifactTitle(input),
-                  typeUrl,
-                  updates: typeof input.url === 'string' ? input.url : ''
-                })
-              }
-            } else if (b?.type === 'tool_result' && typeof b.tool_use_id === 'string') {
-              const pending = scan.pending.get(b.tool_use_id)
-              if (pending === undefined) continue
-              scan.pending.delete(b.tool_use_id)
-              if (b.is_error === true) continue
-              // The first artifact link that isn't the type's own.
-              const text = JSON.stringify(b.content ?? '')
-              const links = text.match(new RegExp(ARTIFACT_URL.source, 'g')) ?? []
-              const url = links.find((l) => !pending.typeUrl.startsWith(l))
-              if (!url) continue
-              const known = scan.found.get(url)
-              const title = known && pending.updates ? known.title : pending.title
-              scan.found.delete(url)
-              scan.found.set(url, { url, title })
-            }
-          }
+          artifactLine(scan, line.toString('utf8'))
         } catch {
           // A malformed line is skipped, never fatal.
         }
@@ -671,7 +652,167 @@ export function listTranscriptArtifacts(sessionId: string): TranscriptArtifact[]
   } finally {
     closeSync(fd)
   }
-  return [...scan.found.values()]
+  return scan
+}
+
+function artifactLine(scan: ArtifactScan, raw: string): void {
+  const parsed = JSON.parse(raw) as { message?: { content?: unknown }; timestamp?: unknown }
+  const blocks = parsed.message?.content
+  if (!Array.isArray(blocks)) return
+  const at = typeof parsed.timestamp === 'string' ? parsed.timestamp : null
+  for (const b of blocks as Record<string, unknown>[]) {
+    if (b?.type === 'tool_use' && b.name === 'Artifact' && typeof b.id === 'string') {
+      const input = (b.input ?? {}) as Record<string, unknown>
+      const action = input.action ?? 'publish'
+      if (action === 'publish' && input.asset !== true) {
+        const typeUrl = typeof input.type_url === 'string' ? input.type_url : ''
+        scan.pending.set(b.id, {
+          kind: 'publish',
+          // A data file published into an artifact already listed
+          // keeps that artifact's name, not the file's.
+          title: typeUrl
+            ? typeof input.title === 'string' && input.title.trim()
+              ? input.title.trim()
+              : 'Artifact'
+            : artifactTitle(input),
+          typeUrl,
+          updates: typeof input.url === 'string' ? input.url : ''
+        })
+      } else if (
+        (action === 'read' || action === 'open') &&
+        typeof input.url === 'string' &&
+        !input.path &&
+        !input.paths &&
+        ARTIFACT_URL.test(input.url)
+      ) {
+        scan.pending.set(b.id, { kind: 'open', link: input.url })
+      }
+    } else if (b?.type === 'tool_result' && typeof b.tool_use_id === 'string') {
+      const pending = scan.pending.get(b.tool_use_id)
+      if (pending === undefined) continue
+      scan.pending.delete(b.tool_use_id)
+      if (b.is_error === true) continue
+      const text = resultText(b.content)
+      if (pending.kind === 'open') {
+        const url = ARTIFACT_URL.exec(pending.link)?.[0]
+        if (!url) continue
+        // A read gives the page's HTML (or a summary of someone else's),
+        // and says who owns it.
+        const title = pageTitle(text)
+        const owner = /— (owned by you|owned by|shared with you)/.exec(text)?.[1]
+        const before = scan.opened.get(url)
+        scan.opened.delete(url)
+        scan.opened.set(url, {
+          url,
+          // Keep a share key (?sk=) if any read had one: someone else's page needs it.
+          link: pending.link.includes('?') ? pending.link : (before?.link ?? pending.link),
+          title: title || before?.title || '',
+          at,
+          owned: owner ? owner === 'owned by you' : (before?.owned ?? null)
+        })
+        continue
+      }
+      // The first artifact link that isn't the type's own.
+      const links = text.match(new RegExp(ARTIFACT_URL.source, 'g')) ?? []
+      const url = links.find((l) => !pending.typeUrl.startsWith(l))
+      if (!url) continue
+      const known = scan.found.get(url)
+      const title = known && pending.updates ? known.title : pending.title
+      scan.found.delete(url)
+      scan.found.set(url, { url, title, at, owned: true })
+    }
+  }
+}
+
+/**
+ * Every page a session published with the Artifact tool, oldest first, by its
+ * claude.ai link. Only publishes of a page: asset uploads, reads and lists
+ * are left out. Republishing the same page keeps one entry.
+ *
+ * An artifact made from a type (a sheet, a deck, a doc) counts too: its first
+ * publish names the type (`type_url`) and the result gives the new artifact's
+ * link before the type's. Its rows or slides then often arrive through its
+ * data store, not more publishes, so that first call is the only sign of it.
+ */
+export function listTranscriptArtifacts(sessionId: string): TranscriptArtifact[] {
+  const jsonlPath = findSessionTranscriptPath(sessionId)
+  if (!jsonlPath) return []
+  return [...scanArtifacts(jsonlPath).found.values()]
+}
+
+export interface IndexedArtifact {
+  url: string
+  /** The link to open: the one with a share key, when a read used one. */
+  link: string
+  title: string
+  /** made: a session published it. opened: a session only read or opened it. */
+  source: 'made' | 'opened'
+  owned: boolean | null
+  /** Last published or read, across every session. */
+  at: string | null
+  /** Claude sessions that published or read it, newest last. */
+  claudeSessionIds: string[]
+}
+
+/**
+ * Every artifact any Claude Code session published or read, across all of
+ * ~/.claude/projects, newest first. Each transcript is read once and then
+ * only from where it was left, so a refresh costs only new lines.
+ */
+export function listAllTranscriptArtifacts(): IndexedArtifact[] {
+  const out = new Map<string, IndexedArtifact>()
+  let dirs: string[]
+  try {
+    dirs = readdirSync(CLAUDE_PROJECTS_DIR, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+  } catch {
+    return []
+  }
+  const later = (a: string | null, b: string | null | undefined): string | null =>
+    !b ? a : !a || b > a ? b : a
+  for (const dir of dirs) {
+    let files: string[]
+    try {
+      files = readdirSync(join(CLAUDE_PROJECTS_DIR, dir)).filter((f) => f.endsWith('.jsonl'))
+    } catch {
+      continue
+    }
+    for (const f of files) {
+      const scan = scanArtifacts(join(CLAUDE_PROJECTS_DIR, dir, f))
+      if (scan.found.size === 0 && scan.opened.size === 0) continue
+      const sid = f.replace(/\.jsonl$/, '')
+      const add = (a: TranscriptArtifact, link: string, source: 'made' | 'opened'): void => {
+        const had = out.get(a.url)
+        if (!had) {
+          out.set(a.url, {
+            url: a.url,
+            link,
+            title: a.title,
+            source,
+            owned: a.owned ?? null,
+            at: a.at ?? null,
+            claudeSessionIds: [sid]
+          })
+          return
+        }
+        if (source === 'made') {
+          had.source = 'made'
+          had.owned = true
+          if (a.title && (!had.title || (a.at ?? '') >= (had.at ?? ''))) had.title = a.title
+        } else {
+          if (!had.title && a.title) had.title = a.title
+          if (had.owned === null) had.owned = a.owned ?? null
+        }
+        if (link.includes('?') && !had.link.includes('?')) had.link = link
+        had.at = later(had.at, a.at)
+        if (!had.claudeSessionIds.includes(sid)) had.claudeSessionIds.push(sid)
+      }
+      for (const a of scan.found.values()) add(a, a.url, 'made')
+      for (const a of scan.opened.values()) add(a, a.link, 'opened')
+    }
+  }
+  return [...out.values()].sort((x, y) => (y.at ?? '').localeCompare(x.at ?? ''))
 }
 
 /**

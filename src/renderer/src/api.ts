@@ -1046,6 +1046,15 @@ export function addJiraSlackLink(key: string, url: string): Promise<JiraResult<J
   return window.api.invoke<JiraResult<JiraIssue>>('jira:slackLink', key, url)
 }
 
+/** Puts a Claude artifact on a ticket as a Jira web link. */
+export function addJiraArtifactLink(
+  key: string,
+  url: string,
+  title: string
+): Promise<JiraResult<JiraIssue>> {
+  return window.api.invoke<JiraResult<JiraIssue>>('jira:artifactLink', key, url, title)
+}
+
 /** A ticket's pull requests, as Jira's development panel has them. */
 export function loadTicketPullRequests(
   key: string
@@ -1105,4 +1114,28 @@ export function linkSessionToTicket(
   issueKey: string | null
 ): Promise<Record<string, string>> {
   return window.api.invoke<Record<string, string>>('jira:link', recordId, issueKey)
+}
+
+// ---- Artifacts --------------------------------------------------------------
+export type { Artifact, ArtifactSession } from '../../main/exec/artifacts'
+import type { Artifact as ArtifactRow } from '../../main/exec/artifacts'
+
+/** Every artifact sessions made or read, plus the links you added; newest first. */
+export function listArtifacts(): Promise<ArtifactRow[]> {
+  return window.api.invoke<ArtifactRow[]>('artifacts:list')
+}
+
+export function addArtifact(
+  link: string,
+  title: string
+): Promise<{ ok: true; artifact: ArtifactRow } | { ok: false; error: string }> {
+  return window.api.invoke('artifacts:add', link, title)
+}
+
+export function removeArtifact(url: string): Promise<ArtifactRow[]> {
+  return window.api.invoke<ArtifactRow[]>('artifacts:remove', url)
+}
+
+export function renameArtifact(url: string, title: string): Promise<ArtifactRow[]> {
+  return window.api.invoke<ArtifactRow[]>('artifacts:rename', url, title)
 }

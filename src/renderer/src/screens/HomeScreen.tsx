@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ArtifactPicker } from '../components/ArtifactPicker'
+import { withArtifact } from '../state/useArtifacts'
 import {
   attentionRank,
   wantsYou,
@@ -660,6 +662,7 @@ export default function HomeScreen({
                 size={28}
                 onClick={() => void attach.pick()}
               />
+              <ArtifactPicker look="icon" onPick={(a) => setPrompt((p) => withArtifact(p, a))} />
 
               <div className="home-composer-menu" ref={modelMenuAnchor}>
                 <IconButton
