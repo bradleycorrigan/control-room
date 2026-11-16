@@ -20,7 +20,7 @@ import {
 } from '../api'
 import type { JiraIssue } from '../../../main/exec/jira'
 import { ARTIFACT_LINK, artifactName } from '../state/useArtifacts'
-import { DRAG_ARTIFACT, inPlace, useArtifactLibrary } from '../state/artifactLibrary'
+import { DRAG_ARTIFACT, dragChip, inPlace, useArtifactLibrary } from '../state/artifactLibrary'
 import { useStoredState } from '../state/useStoredState'
 import type { ComposerSeed } from './backlog/ticketSessions'
 import { relativeTime } from '../lib/format-time'
@@ -632,7 +632,7 @@ function Facts({
         </MetaItem>
       )}
       {a.versions && a.versions > 1 && <MetaItem icon="History">{a.versions} versions</MetaItem>}
-      {session?.project && <MetaItem icon="Folder">{session.project}</MetaItem>}
+      {session?.project && <MetaItem icon="FolderGit2">{session.project}</MetaItem>}
       {tickets.map((k) => (
         <button
           key={k}
@@ -674,6 +674,7 @@ function ArtifactCard({
       data-artifact-row={a.url}
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAG_ARTIFACT, a.url)
+        dragChip(e, artifactName(a), 'artifact')
         e.dataTransfer.effectAllowed = 'move'
       }}
       onClick={onOpen}
@@ -775,6 +776,7 @@ function ArtifactRow({
       data-artifact-row={a.url}
       onDragStart={(e) => {
         e.dataTransfer.setData(DRAG_ARTIFACT, a.url)
+        dragChip(e, artifactName(a), 'artifact')
         e.dataTransfer.effectAllowed = 'move'
       }}
       title={a.link}

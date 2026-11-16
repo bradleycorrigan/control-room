@@ -7,6 +7,7 @@ import type { ArtifactFolder } from '../api'
 import {
   DRAG_ARTIFACT,
   DRAG_FOLDER,
+  dragChip,
   useArtifactLibrary,
   type Place
 } from '../state/artifactLibrary'
@@ -206,6 +207,7 @@ export default function ArtifactsRail(): React.JSX.Element {
                     : undefined,
                 onDragStart: (e) => {
                   e.dataTransfer.setData(DRAG_FOLDER, f.id)
+                  dragChip(e, f.name, 'folder')
                   e.dataTransfer.effectAllowed = 'move'
                 }
               }

@@ -6,8 +6,8 @@
 
 .artifacts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--space-16);
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-12);
 }
 
 .artifacts-card {
@@ -38,7 +38,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
-  padding: var(--space-12) var(--space-16) var(--space-16);
+  padding: var(--space-12);
   min-width: 0;
 }
 
@@ -416,4 +416,35 @@
 /* Up close with no picture: a short strip, not a large empty box. */
 .artifacts-thumb--large[data-artifact-thumb='none'] {
   height: 120px;
+}
+
+/* Cards are small: their title reads at body size, not a row's. */
+.artifacts-card .sessions-row-title {
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+}
+
+.artifacts-card .artifacts-description {
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+}
+
+/* The chip under the pointer while dragging (dragChip). It is drawn once,
+   off screen, for the browser to take a picture of. */
+.artifacts-drag-chip {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  max-width: 260px;
+  padding: var(--space-4) var(--space-12);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--text-label-size);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }

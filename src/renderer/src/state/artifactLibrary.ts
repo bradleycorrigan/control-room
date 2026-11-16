@@ -51,3 +51,17 @@ export function inPlace(a: Artifact, place: Place, within: (id: string) => Set<s
   if (place.type === 'tag') return a.tags.includes(place.tag)
   return true
 }
+
+/**
+ * What follows the pointer while dragging: a small chip with the thing's
+ * name, not the browser's full-size copy of a card. Built for the one drag
+ * and removed straight after the browser has taken its picture.
+ */
+export function dragChip(e: React.DragEvent, label: string, kind: 'artifact' | 'folder'): void {
+  const chip = document.createElement('div')
+  chip.className = `artifacts-drag-chip artifacts-drag-chip--${kind}`
+  chip.textContent = label
+  document.body.appendChild(chip)
+  e.dataTransfer.setDragImage(chip, 14, 14)
+  requestAnimationFrame(() => chip.remove())
+}
