@@ -36,6 +36,8 @@ export default function ArtifactsRail(): React.JSX.Element {
     { kind: 'new'; parent: string | null } | { kind: 'rename'; id: string } | null
   >(null)
   const [dropOn, setDropOn] = useState<string | null>(null)
+  // Read out by screen readers after a move made from the keyboard.
+  const [said, say] = useState('')
 
   const directCount = (id: string): number => visible.filter((a) => a.folder === id).length
   const deepCount = (id: string): number => {
@@ -141,18 +143,48 @@ export default function ArtifactsRail(): React.JSX.Element {
       </div>
     ) : null
 
+  /** The folder just above this one at its level: where ⌘→ puts it. */
+  const above = (f: ArtifactFolder): ArtifactFolder | undefined => {
+    const siblings = children(f.parent)
+    return siblings[siblings.findIndex((x) => x.id === f.id) - 1]
+  }
+  const moveIn = (f: ArtifactFolder): void => {
+    const into = above(f)
+    if (!into) return say(`${f.name} is first here: nothing above to move it into.`)
+    if (!expanded.includes(into.id)) setExpanded([...expanded, into.id])
+    void lib.moveFolder(f.id, into.id).then(() => say(`Moved ${f.name} into ${into.name}.`))
+  }
+  const moveOut = (f: ArtifactFolder): void => {
+    if (!f.parent) return say(`${f.name} is already at the top.`)
+    const parent = lib.folders.find((x) => x.id === f.parent)
+    void lib
+      .moveFolder(f.id, parent?.parent ?? null)
+      .then(() => say(`Moved ${f.name} out of ${parent?.name ?? 'its folder'}.`))
+  }
+
   const folderRow = (f: ArtifactFolder, depth: number): React.JSX.Element => {
     const kids = children(f.id)
     const open = expanded.includes(f.id)
     const actions: MenuItem[] = [
       { label: 'New folder inside', icon: 'FolderPlus', onClick: () => startNew(f.id) },
       { label: 'Rename', icon: 'Pencil', onClick: () => setNaming({ kind: 'rename', id: f.id }) },
+      ...(above(f)
+        ? [
+            {
+              label: `Move into ${above(f)!.name}`,
+              icon: 'CornerDownRight' as const,
+              shortcut: '⌘→',
+              onClick: () => moveIn(f)
+            }
+          ]
+        : []),
       ...(f.parent
         ? [
             {
-              label: 'Move to the top',
-              icon: 'ArrowUpToLine' as const,
-              onClick: () => void lib.moveFolder(f.id, null)
+              label: 'Move out a level',
+              icon: 'CornerLeftUp' as const,
+              shortcut: '⌘←',
+              onClick: () => moveOut(f)
             }
           ]
         : []),
@@ -201,6 +233,17 @@ export default function ArtifactsRail(): React.JSX.Element {
               deepCount(f.id),
               {
                 draggable: true,
+                'aria-keyshortcuts': 'Meta+ArrowRight Meta+ArrowLeft',
+                onKeyDown: (e) => {
+                  if (!e.metaKey) return
+                  if (e.key === 'ArrowRight') {
+                    e.preventDefault()
+                    moveIn(f)
+                  } else if (e.key === 'ArrowLeft') {
+                    e.preventDefault()
+                    moveOut(f)
+                  }
+                },
                 title:
                   directCount(f.id) !== deepCount(f.id)
                     ? `${directCount(f.id)} here, ${deepCount(f.id)} with the folders inside`
@@ -232,6 +275,9 @@ export default function ArtifactsRail(): React.JSX.Element {
   const hidden = all.filter((a) => a.hidden).length
   return (
     <div className="projects-rail artifacts-rail" data-artifacts-rail>
+      <span className="cr-visually-hidden" role="status" aria-live="polite">
+        {said}
+      </span>
       <div className="projects-rail-header">
         <h2 className="projects-rail-title">Library</h2>
         <button

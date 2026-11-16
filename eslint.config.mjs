@@ -9,7 +9,7 @@ export default defineConfig(
   // `.dev` holds the generated fixture — a whole synthetic git repo with
   // worktrees. It is test data, not source, and linting it means the fixture
   // can fail the gate for code the app never runs.
-  { ignores: ['**/node_modules', '**/dist', '**/out', '.dev', 'release', '.claude'] },
+  { ignores: ['**/node_modules', '**/dist', '**/out', '.dev', 'release', '.claude', 'src/renderer/src/lib/vendor'] },
   tseslint.configs.recommended,
   eslintPluginReact.configs.flat.recommended,
   eslintPluginReact.configs.flat['jsx-runtime'],

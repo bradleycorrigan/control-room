@@ -1,6 +1,7 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatEntry, QueuedMessage } from '../../../main/exec/chatTranscript'
 import { ArtifactPicker } from './ArtifactPicker'
+import { useStickToBottom } from '../lib/useStickToBottom'
 import { withArtifact } from '../state/useArtifacts'
 import type { PendingPrompt, PromptAnswer } from '../../../main/engine/prompts'
 import MarkdownText from './MarkdownText'
@@ -145,8 +146,7 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
   const [entries, setEntries] = useState<ChatEntry[] | null | undefined>(undefined)
   const [prompts, setPrompts] = useState<PendingPrompt[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
-  const stickRef = useRef(true)
-  const [atBottom, setAtBottom] = useState(true)
+  const follow = useStickToBottom(scrollRef)
   // What you sent that the transcript hasn't caught up with yet: shown at
   // once, faded, so a message never seems to vanish for a second or two.
   const [sent, setSent] = useState<Outgoing[]>([])
@@ -235,32 +235,14 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
           )
       })
   }
-  const scrollToEnd = (): void => {
-    const el = scrollRef.current
-    if (!el) return
-    stickRef.current = true
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
-  }
-
-  // Follow the conversation while you're at the bottom; leave you be when
-  // you've scrolled up to read.
-  useLayoutEffect(() => {
-    const el = scrollRef.current
-    if (el && stickRef.current) el.scrollTop = el.scrollHeight
-  }, [items, mine, waiting.length, queued.length])
+  // Follows the conversation while you're at the bottom, as it grows (a long
+  // reply, a picture loading); leaves you be once you scroll up to read.
+  const scrollToEnd = follow.scrollToBottom
 
   return (
     <div className="cr-chat" data-chat-view>
       <FindBar scrollRef={scrollRef} />
-      <div
-        className="cr-chat-scroll"
-        ref={scrollRef}
-        onScroll={(e) => {
-          const el = e.currentTarget
-          stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-          setAtBottom(stickRef.current)
-        }}
-      >
+      <div className="cr-chat-scroll" ref={scrollRef}>
         <div className="cr-chat-column">
           {entries === undefined ? null : items.length === 0 ? (
             <EmptyState
@@ -322,10 +304,15 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
           {working && mine.length === 0 && <Working paneId={paneId} />}
         </div>
       </div>
-      {!atBottom && items.length > 0 && (
-        <button type="button" className="cr-chat-jump" onClick={scrollToEnd}>
+      {!follow.atBottom && items.length > 0 && (
+        <button
+          type="button"
+          className="cr-chat-jump"
+          data-unseen={follow.unseen || undefined}
+          onClick={scrollToEnd}
+        >
           <Icon name="ArrowDown" size={14} />
-          Latest
+          {follow.unseen ? 'New messages' : 'Latest'}
         </button>
       )}
       <Composer

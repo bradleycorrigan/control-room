@@ -2615,7 +2615,8 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         const shared = rows().find((r) => r.textContent?.includes('Board pack'))
         await check(
           'one read through a shared link says it’s shared with you',
-          Boolean(shared?.textContent?.includes('Shared with you')),
+          shared?.querySelector('.artifacts-card-audience')?.getAttribute('title') ===
+            'Shared with you',
           shared?.textContent ?? 'no Board pack card'
         )
         // A published page with a local copy gets a picture of itself.
@@ -2800,6 +2801,54 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         )
         await click(rail('All artifacts'))
 
+        // From the keyboard: ⌘→ puts a folder inside the one above it, ⌘← takes it out.
+        await click($('[data-artifacts-rail] [aria-label="New folder"]'))
+        await until(() => Boolean($('[data-artifacts-rail] [aria-label="Folder name"]')), 1500)
+        await typeText('Archive')
+        await key('Enter')
+        await until(() => Boolean(rail('Archive')), 2000)
+        const parentOf = (name: string): string | null =>
+          rail(name)
+            ?.closest('[data-artifact-folder]')
+            ?.parentElement?.closest('[data-artifact-folder]')
+            ?.getAttribute('data-artifact-folder') ?? null
+        const archiveId = rail('Archive')
+          ?.closest('[data-artifact-folder]')
+          ?.getAttribute('data-artifact-folder')
+        rail('Reports')?.focus()
+        await key('Right', ['meta'])
+        await check(
+          '⌘→ moves a folder into the one above it',
+          await until(() => !!archiveId && parentOf('Reports') === archiveId, 3000),
+          $('[data-artifacts-rail]')?.textContent?.slice(0, 200)
+        )
+        rail('Reports')?.focus()
+        await key('Left', ['meta'])
+        await check(
+          '⌘← takes it back out',
+          await until(() => Boolean(rail('Reports')) && parentOf('Reports') === null, 3000),
+          $('[data-artifacts-rail]')?.textContent?.slice(0, 200)
+        )
+
+        // A focused card's keys run its menu's actions: H hides it.
+        await click(rail('All artifacts'))
+        await until(() => rows().length >= 4, 2000)
+        rows()
+          .find((r) => r.textContent?.includes('Board pack'))
+          ?.focus()
+        await key('h')
+        await check(
+          'H on a focused card hides it',
+          await until(() => !titles().includes('Board pack'), 3000),
+          titles().join(' | ')
+        )
+        await click(rail('Hidden'))
+        await until(() => titles().join() === 'Board pack', 2000)
+        rows()[0]?.focus()
+        await key('h')
+        await click(rail('All artifacts'))
+        await until(() => titles().includes('Board pack'), 3000)
+
         // On a ticket, beside its sessions and PRs, as a Jira web link
         await ctx.goTo('backlog')
         await until(() => $$('.backlog-row').length > 0, 4000)
@@ -2852,6 +2901,40 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         await openSessionByTitle('Waiting session')
         await click(byText('.session-detail-actions .cr-segmented__option', 'Chat'))
         await until(() => Boolean($('[data-chat-view] [data-chat-you]')), 4000)
+        // Scrolled up to read, the view stays put and offers the way back.
+        {
+          const scroller = $<HTMLElement>('.cr-chat-scroll')
+          const prev = scroller?.style.maxHeight ?? ''
+          if (scroller) scroller.style.maxHeight = '160px'
+          await until(
+            () => (scroller?.scrollHeight ?? 0) > (scroller?.clientHeight ?? 0) + 40,
+            1500
+          )
+          await until(
+            () =>
+              !!scroller && scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop < 2,
+            1500
+          )
+          if (scroller) scroller.scrollTop = 0
+          await check(
+            'scrolling up stops following and shows Latest',
+            await until(() => Boolean($('.cr-chat-jump')), 1500),
+            `scrollTop ${scroller?.scrollTop} of ${scroller?.scrollHeight}`
+          )
+          await click($('.cr-chat-jump'))
+          await check(
+            'Latest goes back to the bottom',
+            await until(
+              () =>
+                !!scroller &&
+                scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop < 50 &&
+                !$('.cr-chat-jump'),
+              3000
+            ),
+            `scrollTop ${scroller?.scrollTop} of ${scroller?.scrollHeight}`
+          )
+          if (scroller) scroller.style.maxHeight = prev
+        }
         const you = $('[data-chat-you]')?.textContent ?? ''
         const work = $<HTMLElement>('[data-chat-work]')
         const summary = work?.querySelector<HTMLElement>('.cr-chat-work-summary')

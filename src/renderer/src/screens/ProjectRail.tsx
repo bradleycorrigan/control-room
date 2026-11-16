@@ -85,7 +85,7 @@ export default function ProjectRail({
           title="Add project"
           aria-label="Add project"
         >
-          +
+          <Icon name="Plus" size={16} />
         </button>
       </div>
       <div className="projects-rail-items">

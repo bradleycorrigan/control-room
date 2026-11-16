@@ -1636,11 +1636,6 @@
   min-width: 0;
 }
 
-.backlog-title {
-  font-size: var(--text-title-size);
-  line-height: var(--text-title-line);
-}
-
 .backlog-cycle {
   margin-top: 0;
 }

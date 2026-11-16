@@ -1,5 +1,6 @@
-import * as LucideIcons from 'lucide-react'
+import * as LucideIcons from './icons'
 
+/** One of the icons listed in icons.ts. */
 export type IconName = keyof typeof LucideIcons
 
 export interface IconProps {
@@ -42,7 +43,7 @@ export default function Icon({
   }>
 
   if (!IconComponent) {
-    console.warn(`Icon "${name}" not found in lucide-react`)
+    console.warn(`Icon "${name}" is not in icons.ts`)
     return <span className={className} {...rest} />
   }
 

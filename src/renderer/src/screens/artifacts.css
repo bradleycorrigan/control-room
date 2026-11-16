@@ -448,3 +448,195 @@
   text-overflow: ellipsis;
   pointer-events: none;
 }
+
+/* ---- the card cover: a band in the type's colour, the page set into it ---- */
+
+.artifacts-cover {
+  --tint: var(--status-idle);
+  position: relative;
+  height: 132px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--tint) 30%, var(--surface));
+  border-bottom: 1px solid var(--border);
+}
+
+.artifacts-cover[data-shape='docs'] {
+  --tint: var(--status-working);
+}
+.artifacts-cover[data-shape='slides'] {
+  --tint: var(--status-attention);
+}
+.artifacts-cover[data-shape='sheets'] {
+  --tint: var(--status-done);
+}
+.artifacts-cover[data-shape='design'] {
+  --tint: var(--accent);
+}
+.artifacts-cover[data-shape='data'] {
+  --tint: var(--status-error);
+}
+
+/* The page: a sheet set in from the sides and top, running off the bottom. */
+.artifacts-sheet {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  top: 18px;
+  bottom: -12px;
+  overflow: hidden;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: var(--surface-raised);
+  border: 1px solid color-mix(in srgb, var(--tint) 40%, var(--border));
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--surface) 60%, transparent);
+  transition: transform var(--motion-fast) var(--motion-easing);
+}
+
+/* Slides are wide and short; the rest read as a page. */
+.artifacts-sheet--slides {
+  left: 16%;
+  right: 16%;
+  top: 22px;
+  bottom: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+}
+
+.artifacts-card:hover .artifacts-sheet {
+  transform: translateY(-3px);
+}
+
+.artifacts-sheet img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.artifacts-sheet-outline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding: var(--space-12);
+  height: 100%;
+}
+
+.artifacts-sheet-title {
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  font-weight: var(--text-label-weight);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifacts-sheet-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.artifacts-sheet-lines i,
+.artifacts-sheet-grid i,
+.artifacts-sheet-blocks i,
+.artifacts-sheet-bars i {
+  display: block;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.artifacts-sheet-lines i {
+  height: 5px;
+}
+.artifacts-sheet-lines i:nth-child(2) {
+  width: 85%;
+}
+.artifacts-sheet-lines i:nth-child(4) {
+  width: 60%;
+}
+
+.artifacts-sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+}
+.artifacts-sheet-grid i {
+  height: 7px;
+}
+
+.artifacts-sheet-blocks {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  grid-template-rows: 28px 18px;
+  gap: 6px;
+}
+.artifacts-sheet-blocks i:first-child {
+  grid-row: span 2;
+}
+
+.artifacts-sheet-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  height: 44px;
+}
+.artifacts-sheet-bars i {
+  flex: 1;
+  background: color-mix(in srgb, var(--tint) 45%, transparent);
+}
+
+/* ---- under the cover: the name, then one quiet line ---- */
+
+.artifacts-card .artifacts-card-body {
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-12) var(--space-12);
+}
+
+.artifacts-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  font-size: var(--text-meta-size);
+  line-height: var(--text-meta-line);
+  color: var(--text-meta-color);
+}
+
+.artifacts-card-when {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifacts-card-audience {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.artifacts-card .artifacts-filing {
+  margin-top: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifacts-sheet {
+    transition: none;
+  }
+  .artifacts-card:hover .artifacts-sheet {
+    transform: none;
+  }
+}
+
+/* A picture that arrives after the card fades in rather than popping. */
+.artifacts-sheet img,
+.artifacts-thumb img {
+  animation: cr-fade-in var(--motion-enter) var(--motion-easing);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .artifacts-sheet img,
+  .artifacts-thumb img {
+    animation: none;
+  }
+}

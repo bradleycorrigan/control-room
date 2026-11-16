@@ -15,6 +15,8 @@ export interface MenuItem {
   icon?: IconName
   /** Items with the same group sit together; a line separates groups. */
   group?: string
+  /** The key that does the same from the keyboard, shown at the row's end. */
+  shortcut?: string
 }
 
 /**
@@ -64,6 +66,7 @@ export function MenuItems({
               </span>
             )}
             {item.label}
+            {item.shortcut && <kbd className="cr-popover-item-kbd">{item.shortcut}</kbd>}
           </button>
         </Fragment>
       ))}

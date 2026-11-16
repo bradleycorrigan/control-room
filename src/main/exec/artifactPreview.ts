@@ -42,12 +42,29 @@ function lockSession(): void {
 }
 const allowed = new Set<string>()
 
-// One page at a time: each is a whole renderer.
-let queue: Promise<unknown> = Promise.resolve()
+// Three pages at a time: each is a whole renderer, and most of a draw is
+// waiting for the page to settle, so a few overlap well. Asking twice for
+// one page shares the one draw.
+const AT_ONCE = 3
+let running = 0
+const waiting: (() => void)[] = []
+const inFlight = new Map<string, Promise<string | null>>()
 
 export function artifactPreview(url: string): Promise<string | null> {
-  const run = queue.then(() => draw(url))
-  queue = run.catch(() => null)
+  const had = inFlight.get(url)
+  if (had) return had
+  const run = (async () => {
+    if (running >= AT_ONCE) await new Promise<void>((r) => waiting.push(r))
+    running++
+    try {
+      return await draw(url)
+    } finally {
+      running--
+      waiting.shift()?.()
+      inFlight.delete(url)
+    }
+  })()
+  inFlight.set(url, run)
   return run
 }
 

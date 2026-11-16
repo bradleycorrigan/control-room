@@ -123,6 +123,73 @@ function usePreview(a: Artifact): string | null | undefined {
   return a.preview ? (src ?? drawn.get(a.url)) : null
 }
 
+/** What sort of page it is, for its cover's colour and shape. */
+type Shape = 'slides' | 'sheets' | 'docs' | 'design' | 'data' | 'page'
+function shapeOf(a: Artifact): Shape {
+  const k = `${a.kind ?? ''} ${a.icon ?? ''}`.toLowerCase()
+  if (/slide|deck|present/.test(k)) return 'slides'
+  if (/sheet|table|spreadsheet/.test(k)) return 'sheets'
+  if (/design|palette|whiteboard|motion/.test(k)) return 'design'
+  if (/data|dashboard|chart|graph|calculator|money/.test(k)) return 'data'
+  if (/doc|report|plan|book|list/.test(k)) return 'docs'
+  return 'page'
+}
+
+/**
+ * A card's cover, as Claude's own Artifacts page draws them: a short band in
+ * the colour of the page's type, with the page as a sheet set into it and cut
+ * off at the bottom. The sheet holds a picture of the page when there is one,
+ * else an outline in the shape of its type (slides, a table, lines of text),
+ * so a card without a picture still says what it is at a glance.
+ */
+function Cover({ a }: { a: Artifact }): React.JSX.Element {
+  const src = usePreview(a)
+  const shape = shapeOf(a)
+  return (
+    <div
+      className="artifacts-cover"
+      data-shape={shape}
+      data-artifact-thumb={src ? 'picture' : src === undefined ? 'drawing' : 'none'}
+    >
+      <div className={`artifacts-sheet artifacts-sheet--${shape}`}>
+        {src ? (
+          <img src={src} alt="" draggable={false} />
+        ) : (
+          <div className="artifacts-sheet-outline" aria-hidden>
+            <span className="artifacts-sheet-title">{artifactName(a)}</span>
+            {shape === 'sheets' ? (
+              <span className="artifacts-sheet-grid">
+                {Array.from({ length: 12 }, (_, i) => (
+                  <i key={i} />
+                ))}
+              </span>
+            ) : shape === 'design' ? (
+              <span className="artifacts-sheet-blocks">
+                <i />
+                <i />
+                <i />
+              </span>
+            ) : shape === 'data' ? (
+              <span className="artifacts-sheet-bars">
+                {[40, 70, 55, 90, 65].map((h, i) => (
+                  <i key={i} style={{ height: `${h}%` }} />
+                ))}
+              </span>
+            ) : (
+              <span className="artifacts-sheet-lines">
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function Thumb({ a, large }: { a: Artifact; large?: boolean }): React.JSX.Element {
   const src = usePreview(a)
   return (
@@ -140,6 +207,16 @@ function Thumb({ a, large }: { a: Artifact; large?: boolean }): React.JSX.Elemen
       )}
     </div>
   )
+}
+
+/** A focused card's keys: the menu action whose shortcut is the key pressed. */
+function runShortcut(e: React.KeyboardEvent, actions: MenuItem[]): void {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target !== e.currentTarget) return
+  const hit = actions.find((x) => x.shortcut && x.shortcut.toLowerCase() === e.key.toLowerCase())
+  if (!hit) return
+  e.preventDefault()
+  e.stopPropagation()
+  hit.onClick()
 }
 
 /** "Published 3d ago", "Opened 2h ago": what happened last, and when. */
@@ -349,12 +426,14 @@ export default function ArtifactsScreen({
       label: 'Move to folder…',
       icon: 'FolderInput',
       group: 'organise',
+      shortcut: 'M',
       onClick: () => moveToFolder(a, rowAnchor(a))
     },
     {
       label: 'Tags…',
       icon: 'Hash',
       group: 'organise',
+      shortcut: 'T',
       onClick: () => editTags(a, rowAnchor(a))
     },
     {
@@ -371,12 +450,14 @@ export default function ArtifactsScreen({
           label: 'Show again',
           icon: 'Eye',
           group: 'edit',
+          shortcut: 'H',
           onClick: () => void lib.hide(a.url, false)
         }
       : {
           label: 'Hide',
           icon: 'EyeOff',
           group: 'edit',
+          shortcut: 'H',
           onClick: () => {
             void lib.hide(a.url, true)
             pushToast(`Hid ${artifactName(a)}. It’s under Hidden in the side panel.`)
@@ -656,8 +737,7 @@ function ArtifactCard({
   artifact: a,
   tickets,
   actions,
-  onOpen,
-  onOpenTicket
+  onOpen
 }: {
   artifact: Artifact
   tickets: string[]
@@ -682,24 +762,40 @@ function ArtifactCard({
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           onOpen()
-        }
+        } else runShortcut(e, actions)
       }}
     >
-      <Thumb a={a} />
+      <Cover a={a} />
       <div className="artifacts-card-body">
         <div className="artifacts-card-title-row">
-          <span className="artifacts-card-glyph">
-            <ArtifactGlyph a={a} size={14} />
+          <span className="sessions-row-title" title={a.description ?? undefined}>
+            {artifactName(a)}
           </span>
-          <span className="sessions-row-title">{artifactName(a)}</span>
           <OverflowMenu
             actions={actions}
             label={`${artifactName(a)} actions`}
             className="sessions-row-overflow"
           />
         </div>
-        {a.description && <p className="artifacts-description">{a.description}</p>}
-        <Facts a={a} tickets={tickets} onOpenTicket={onOpenTicket} />
+        <div className="artifacts-card-meta">
+          <span className="artifacts-card-when">
+            {[
+              lastWords(a),
+              a.versions && a.versions > 1 ? `${a.versions} versions` : null,
+              ...tickets
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+          {audienceWords(a) && (
+            <span className="artifacts-card-audience" title={audienceWords(a) ?? undefined}>
+              <Icon
+                name={a.owned === false ? 'UserRound' : a.audience === 'owner' ? 'Lock' : 'Users'}
+                size={13}
+              />
+            </span>
+          )}
+        </div>
         <Filing a={a} />
       </div>
     </div>
@@ -782,10 +878,11 @@ function ArtifactRow({
       title={a.link}
       onClick={() => !renaming && onOpen()}
       onKeyDown={(e) => {
-        if (!renaming && (e.key === 'Enter' || e.key === ' ')) {
+        if (renaming) return
+        if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           onOpen()
-        }
+        } else runShortcut(e, actions)
       }}
     >
       <div className="sessions-row-line1">

@@ -1097,3 +1097,25 @@
     grid-column: 2;
   }
 }
+
+/* A menu row's keyboard shortcut, at its end (MenuItems). */
+.cr-popover-item-kbd {
+  margin-left: auto;
+  padding-left: var(--space-16);
+  font-family: var(--font-ui);
+  font-size: var(--text-meta-size);
+  color: var(--text-muted);
+}
+
+/* Read by screen readers, not drawn: live announcements, extra labels. */
+.cr-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

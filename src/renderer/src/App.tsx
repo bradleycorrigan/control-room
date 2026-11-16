@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { PrPanelTarget } from './components/prPanelTarget'
 import type { LiveSession } from '../../main/store/types'
 import ProjectRail from './screens/ProjectRail'
@@ -40,10 +40,10 @@ import ArtifactsRail from './screens/ArtifactsRail'
 import { ArtifactLibraryProvider } from './state/ArtifactLibraryProvider'
 import { useStoredState } from './state/useStoredState'
 import { initShotListener, registerShotScreen, registerShotReset } from './dev/shot'
-import { runTabsCheck } from './dev/tabsCheck'
-import { runPagesCheck } from './dev/pagesCheck'
 import { DEFAULT_TERMINAL_FONT_SIZE } from './components/Terminal'
-import PrimitivesGallery from './dev/PrimitivesGallery'
+// Test and gallery code loads only when a check or the gallery asks for it,
+// so the app people use doesn't carry it.
+const PrimitivesGallery = lazy(() => import('./dev/PrimitivesGallery'))
 import { useThemeProvider } from './theme/ThemeProvider'
 import { useKeyboardMap, isShortcutMod } from './keyboard'
 import { SetupDialog } from './components/SetupDialog'
@@ -991,6 +991,7 @@ function App(): React.JSX.Element {
     registerShotScreen('pages-interactions', async () => {
       setPaletteOpen(false)
       setOpenTabs([])
+      const { runPagesCheck } = await import('./dev/pagesCheck')
       await runPagesCheck({
         goTo: async (target) => {
           // A fresh start for each group of checks: whatever an earlier one
@@ -1025,6 +1026,7 @@ function App(): React.JSX.Element {
     registerShotScreen('tabs-interactions', async () => {
       setPaletteOpen(false)
       setOpenTabs([])
+      const { runTabsCheck } = await import('./dev/tabsCheck')
       await runTabsCheck({
         goToSessionsList: async () => {
           setOpenSessionKey(null)
@@ -2581,7 +2583,9 @@ function App(): React.JSX.Element {
               ) : view === 'settings' ? (
                 <SettingsScreen theme={theme} onOpenSetup={() => setSetupOpen(true)} />
               ) : view === 'gallery' ? (
-                <PrimitivesGallery />
+                <Suspense fallback={null}>
+                  <PrimitivesGallery />
+                </Suspense>
               ) : view === 'projects' ? (
                 openProjectId && projects.find((p) => p.id === openProjectId) ? (
                   <ProjectDetail
