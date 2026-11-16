@@ -1,5 +1,5 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ChatEntry } from '../../../main/exec/chatTranscript'
+import type { ChatEntry, QueuedMessage } from '../../../main/exec/chatTranscript'
 import type { PendingPrompt, PromptAnswer } from '../../../main/engine/prompts'
 import MarkdownText from './MarkdownText'
 import { Button, EmptyState, Icon, IconButton, Modal } from './primitives'
@@ -148,6 +148,9 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
   // What you sent that the transcript hasn't caught up with yet: shown at
   // once, faded, so a message never seems to vanish for a second or two.
   const [sent, setSent] = useState<Outgoing[]>([])
+  // Messages waiting in Claude Code's queue, from the transcript: there
+  // whether you sent them here or in the terminal, and after a reload.
+  const [queued, setQueued] = useState<QueuedMessage[]>([])
   // Messages there on first load appear as they are; later ones ease in.
   const [firstIds, setFirstIds] = useState<Set<string> | null>(null)
   const isNew = (id: string): true | undefined => (firstIds && !firstIds.has(id) ? true : undefined)
@@ -160,7 +163,7 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
     let version: string | undefined
     const load = (): void => {
       void window.api
-        .invoke<{ version: string; entries?: ChatEntry[] } | null>(
+        .invoke<{ version: string; entries?: ChatEntry[]; queued?: QueuedMessage[] } | null>(
           'chat:transcript',
           claudeSessionId,
           version
@@ -175,6 +178,7 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
           const e = r.entries
           if (!e) return
           setEntries(e)
+          setQueued(r.queued ?? [])
           setFirstIds((f) => f ?? new Set(e.map((x) => x.id)))
         })
     }
@@ -210,11 +214,15 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
       .map((e) => new Date((e as { at: string }).at).getTime())
     return times.length ? Math.max(...times) : 0
   }, [entries])
-  const waiting = sent.filter(
-    (m) =>
-      m.state === 'failed' ||
-      !(yours.some((t) => t.includes(m.text.trim().slice(0, 80))) || lastYours >= m.sentAt - 500)
-  )
+  const landed = (m: Outgoing): boolean => {
+    const head = m.text.trim().slice(0, 80)
+    return (
+      yours.some((t) => t.includes(head)) ||
+      queued.some((q) => q.text.includes(head)) ||
+      lastYours >= m.sentAt - 500
+    )
+  }
+  const waiting = sent.filter((m) => m.state === 'failed' || !landed(m))
   const deliver = (m: Outgoing): void => {
     void window.api
       .invoke<{ ok: boolean; error: string | null }>('chat:send', paneId, m.text, m.paths)
@@ -237,7 +245,7 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (el && stickRef.current) el.scrollTop = el.scrollHeight
-  }, [items, mine, waiting.length])
+  }, [items, mine, waiting.length, queued.length])
 
   return (
     <div className="cr-chat" data-chat-view>
@@ -283,6 +291,13 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
               )
             )
           )}
+          {queued.map((q, i) => (
+            <OutgoingMessage
+              key={`q${i}:${q.at}`}
+              message={{ id: '', text: q.text, paths: [], sentAt: 0, state: 'queued' }}
+              onRetry={() => {}}
+            />
+          ))}
           {waiting.map((m) => (
             <OutgoingMessage
               key={m.id}

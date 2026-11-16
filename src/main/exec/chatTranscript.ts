@@ -32,6 +32,12 @@ export type ChatEntry =
       failed: boolean
     }
 
+/** A message waiting in Claude Code's queue: sent mid-turn, not yet taken in. */
+export interface QueuedMessage {
+  text: string
+  at: string | null
+}
+
 const MAX_BYTES = 3_000_000
 const MAX_ENTRIES = 400
 
@@ -54,6 +60,8 @@ interface Line {
   isSidechain?: boolean
   message?: { role?: string; content?: string | Block[] }
   attachment?: { type?: string; prompt?: unknown; commandMode?: string }
+  operation?: string
+  content?: unknown
 }
 
 /** The words of a queued prompt: a string, or text blocks when it carried images. */
@@ -198,6 +206,16 @@ export class ChatParser {
   private partial = ''
   /** Pasted images, by key: a data: URL each. */
   readonly images = new Map<string, string>()
+  /**
+   * Claude Code's queue as the transcript tells it. Kept whole, Claude Code's
+   * own notices too, so a bare "dequeue" takes the right one off the front.
+   */
+  private queue: { raw: string; text: string | null; at: string | null }[] = []
+
+  /** Your messages still waiting in the queue, oldest first. */
+  queued(): QueuedMessage[] {
+    return this.queue.flatMap((q) => (q.text ? [{ text: q.text, at: q.at }] : []))
+  }
 
   push(text: string): void {
     const lines = (this.partial + text).split('\n')
@@ -226,6 +244,13 @@ export class ChatParser {
       return // a partial line at the start of the window
     }
     if (line.isSidechain || line.isMeta) return
+    // A message sent while Claude works waits in a queue, for a minute or
+    // more, before Claude takes it in. Until then the transcript has only
+    // these lines, so without them the message showed nowhere.
+    if (line.type === 'queue-operation') {
+      this.queueOp(line)
+      return
+    }
     const content = line.message?.content
     const id = line.uuid ?? `l${this.n++}`
     const at = typeof line.timestamp === 'string' ? line.timestamp : null
@@ -296,6 +321,28 @@ export class ChatParser {
       })
     }
   }
+
+  private queueOp(line: Line): void {
+    const raw = str(line.content)
+    const at = typeof line.timestamp === 'string' ? line.timestamp : null
+    switch (line.operation) {
+      case 'enqueue':
+        this.queue.push({ raw, text: raw ? userText(raw) : null, at })
+        return
+      case 'dequeue':
+        this.queue.shift()
+        return
+      case 'remove': {
+        const i = this.queue.findIndex((q) => q.raw === raw)
+        if (i >= 0) this.queue.splice(i, 1)
+        return
+      }
+      case 'popAll':
+        // Pulled back into the input box on Esc: not sent after all.
+        this.queue = []
+        return
+    }
+  }
 }
 
 export function parseChat(text: string): ChatEntry[] {
@@ -311,6 +358,7 @@ interface Cached {
   offset: number
   parser: ChatParser
   entries: ChatEntry[]
+  queued: QueuedMessage[]
 }
 const cache = new Map<string, Cached>()
 
@@ -326,6 +374,8 @@ export interface ChatRead {
   /** Changes whenever the transcript does; send it back to hear "unchanged". */
   version: string
   entries?: ChatEntry[]
+  /** Messages sent mid-turn that Claude hasn't taken in yet. */
+  queued?: QueuedMessage[]
 }
 
 /**
@@ -353,7 +403,8 @@ export function readChat(claudeSessionId: string | null, known?: string): ChatRe
           mtimeMs: st.mtimeMs,
           offset: st.size,
           parser,
-          entries: parser.entries()
+          entries: parser.entries(),
+          queued: parser.queued()
         }
         cache.set(path, hit)
       } else if (hit.size !== st.size || hit.mtimeMs !== st.mtimeMs) {
@@ -362,8 +413,9 @@ export function readChat(claudeSessionId: string | null, known?: string): ChatRe
         hit.size = st.size
         hit.mtimeMs = st.mtimeMs
         hit.entries = hit.parser.entries()
+        hit.queued = hit.parser.queued()
       }
-      return known === version ? { version } : { version, entries: hit.entries }
+      return known === version ? { version } : { version, entries: hit.entries, queued: hit.queued }
     } finally {
       closeSync(fd)
     }

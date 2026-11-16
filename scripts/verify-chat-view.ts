@@ -124,6 +124,49 @@ async function main(): Promise<void> {
     JSON.stringify(midTurn)
   )
 
+  // ---- Messages waiting in Claude Code's queue ----
+  const { ChatParser } = await import('../src/main/exec/chatTranscript')
+  const q = (operation: string, content?: string, extra: object = {}): string =>
+    line({
+      type: 'queue-operation',
+      operation,
+      timestamp: '2026-11-16T14:53:20.000Z',
+      content,
+      ...extra
+    })
+  const waitingParser = new ChatParser()
+  waitingParser.push(
+    [
+      q('enqueue', 'why wouldnt service be part of usage?'),
+      q('enqueue', '<task-notification>done</task-notification>'),
+      q('enqueue', 'or is service even the right name')
+    ].join('')
+  )
+  waitingParser.entries()
+  const before = waitingParser.queued().map((m) => m.text)
+  check(
+    'queued messages show while they wait; Claude Code notices stay out',
+    JSON.stringify(before) ===
+      JSON.stringify([
+        'why wouldnt service be part of usage?',
+        'or is service even the right name'
+      ]),
+    JSON.stringify(before)
+  )
+  waitingParser.push(
+    [
+      q('remove', 'why wouldnt service be part of usage?', { reason: 'absorbed_mid_turn' }),
+      q('dequeue'),
+      q('popAll', 'or is service even the right name')
+    ].join('')
+  )
+  waitingParser.entries()
+  check(
+    'taken in, dequeued or pulled back: the queue empties',
+    waitingParser.queued().length === 0,
+    JSON.stringify(waitingParser.queued())
+  )
+
   // ---- A pasted message ----
   const { userText } = await import('../src/main/exec/chatTranscript')
   const pasted = userText(
