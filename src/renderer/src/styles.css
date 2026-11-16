@@ -370,15 +370,6 @@
   transition: background 120ms ease-out;
 }
 
-.cr-session-card-title {
-  font-size: var(--text-title-size);
-  line-height: var(--text-title-line);
-  font-weight: var(--text-title-weight);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .cr-session-card-branch {
   font-family: var(--font-mono);
   font-size: var(--text-caption-size);

@@ -1,5 +1,7 @@
-import { useRef, useState } from 'react'
-import type { LiveSession } from '../../../main/store/types'
+import { useEffect, useRef, useState } from 'react'
+import { wantsYou, type LiveSession } from '../../../main/store/types'
+import { getLastSaid } from '../api-sessions'
+import { relativeTime } from '../lib/format-time'
 import { Badge, Icon, IconButton, Popover } from './primitives'
 import { MenuItems, type MenuItem } from './MenuItems'
 import './session-card.css'
@@ -14,6 +16,32 @@ export interface SessionCardProps {
   actions?: SessionCardAction[]
   /** The project's name, for surfaces that mix projects together. */
   projectName?: string
+  /** Its Jira ticket, when the surface knows it. */
+  ticketKey?: string | null
+}
+
+/** What Claude last said, read again whenever the session moves on. */
+function useLastSaid(session: LiveSession): string | null {
+  const [said, setSaid] = useState<string | null>(null)
+  const id = session.claudeSessionId
+  useEffect(() => {
+    if (!id) return
+    let live = true
+    void getLastSaid(id).then((t) => live && setSaid(t))
+    return () => {
+      live = false
+    }
+  }, [id, session.activityAt, session.status])
+  return id ? said : null
+}
+
+/** "waiting 2h" when it's your move, else when it last did something. */
+function whenWords(session: LiveSession): string | null {
+  const at = session.activityAt ?? session.lastEvent?.at ?? null
+  if (at === null) return null
+  return wantsYou(session.status)
+    ? `waiting ${relativeTime(at).replace(/ ago$/, '')}`
+    : relativeTime(at)
 }
 
 /**
@@ -27,7 +55,8 @@ export default function SessionCard({
   session,
   onOpen,
   actions,
-  projectName
+  projectName,
+  ticketKey
 }: SessionCardProps): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const anchor = useRef<HTMLDivElement>(null)
@@ -35,11 +64,12 @@ export default function SessionCard({
   // An investigate session runs in the repo itself; its recorded branch is
   // whatever the repo had checked out, or "(unknown)". Say what it is. A
   // detached one started from a branch but isn't on it.
-  const branch = session.record?.investigation
-    ? 'no worktree'
-    : session.record?.detached
-      ? `from ${session.record.branch}`
-      : session.record?.branch
+  // Only a branch of its own says anything: "no worktree" and "from main"
+  // were on most cards and told you nothing.
+  const branch =
+    session.record?.investigation || session.record?.detached ? null : session.record?.branch
+  const said = useLastSaid(session)
+  const when = whenWords(session)
 
   return (
     <div className="cr-session-card-wrap" data-session-key={session.key}>
@@ -54,6 +84,7 @@ export default function SessionCard({
       >
         <div className="cr-session-card-top">
           <Badge status={session.status} />
+          {when && <span className="cr-session-card-when">{when}</span>}
           {/* Quiet — the badge is the thing that has to be seen first. */}
           {session.record?.pinned && (
             <span className="cr-session-card-pinned" aria-label="Pinned">
@@ -62,10 +93,16 @@ export default function SessionCard({
           )}
         </div>
         <div className="cr-session-card-title">{title}</div>
-        {(branch || projectName) && (
+        {said && (
+          <p className="cr-session-card-said" title={said}>
+            {said}
+          </p>
+        )}
+        {(branch || projectName || ticketKey) && (
           <div className="cr-session-card-branch">
-            {branch && <span className="cr-session-card-branch-name">{branch}</span>}
+            {ticketKey && <span className="cr-session-card-ticket">{ticketKey}</span>}
             {projectName && <span className="cr-project-pill">{projectName}</span>}
+            {branch && <span className="cr-session-card-branch-name">{branch}</span>}
           </div>
         )}
       </button>

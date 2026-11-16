@@ -1,3 +1,4 @@
+import { statSync } from 'node:fs'
 import { ipcMain, BrowserWindow } from 'electron'
 import { log } from './log'
 import { getState } from './store/store'
@@ -8,7 +9,13 @@ import {
   isPullRequestUrl,
   forgetPullRequestDetails
 } from './exec/pullRequests'
-import { listTranscriptPrLinks, listTranscriptArtifacts, listUserPrompts } from './exec/transcripts'
+import {
+  findSessionTranscriptPath,
+  listTranscriptPrLinks,
+  listTranscriptArtifacts,
+  listUserPrompts,
+  plainOneLine
+} from './exec/transcripts'
 import { resolveClaudeBinary } from './exec/claude'
 import {
   addArtifact,
@@ -154,6 +161,29 @@ export function registerSessionsIpc(): void {
     return [...byUrl.values()]
   })
   // ---- Artifacts: every one sessions made or read, plus links you added ----
+  // What Claude last said in a session, as one plain line, for its card.
+  // Kept per transcript until the file changes, so a list of cards asking
+  // every few seconds costs a stat each.
+  const lastSaidCache = new Map<string, { stamp: string; text: string | null }>()
+  ipcMain.handle('sessions:lastSaid', (_evt, claudeSessionId: unknown) => {
+    if (typeof claudeSessionId !== 'string' || !/^[A-Za-z0-9-]{8,64}$/.test(claudeSessionId))
+      return null
+    const path = findSessionTranscriptPath(claudeSessionId)
+    if (!path) return null
+    let stamp = ''
+    try {
+      const st = statSync(path)
+      stamp = `${st.size}:${st.mtimeMs}`
+    } catch {
+      return null
+    }
+    const hit = lastSaidCache.get(claudeSessionId)
+    if (hit && hit.stamp === stamp) return hit.text
+    const said = lastAssistantMessage(claudeSessionId)
+    const text = said ? plainOneLine(said).slice(0, 280) || null : null
+    lastSaidCache.set(claudeSessionId, { stamp, text })
+    return text
+  })
   ipcMain.handle('artifacts:list', () => listArtifacts())
   ipcMain.handle('artifacts:folders', () => listArtifactFolders())
   const str = (v: unknown): v is string => typeof v === 'string'

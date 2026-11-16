@@ -33,6 +33,7 @@ import {
 } from '../api'
 import { useProjects } from '../state/useProjects'
 import SessionCard from '../components/SessionCard'
+import { useTicketKeys } from '../state/useTicketKeys'
 import { useAttachments } from '../components/useAttachments'
 import AttachmentChips from '../components/AttachmentChips'
 import { useSessionActions } from '../components/useSessionActions'
@@ -168,6 +169,7 @@ export default function HomeScreen({
   onOpenTicket,
   onViewTickets
 }: HomeScreenProps): React.JSX.Element {
+  const ticketKeyOf = useTicketKeys()
   const { projects } = useProjects()
   const [prompt, setPrompt] = useState(initialPrompt)
   const [pickedProject, setPickedProject] = useState<Project | null>(
@@ -1026,6 +1028,7 @@ export default function HomeScreen({
                   projectName={
                     projects.find((p) => p.id === session.record?.projectId)?.name ?? undefined
                   }
+                  ticketKey={ticketKeyOf(session.record)}
                   // The same menu a session gets anywhere else — see
                   // useSessionActions. Home used to offer "Mark as done" alone.
                   actions={sessionActions(session)}

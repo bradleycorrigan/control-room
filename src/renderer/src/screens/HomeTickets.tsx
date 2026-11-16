@@ -2,6 +2,7 @@ import type { LiveSession } from '../../../main/store/types'
 import { loadTicketPullRequests, openExternal, type JiraIssue } from '../api'
 import { IconButton, StatusDot } from '../components/primitives'
 import { STATUS_WORDS } from '../components/primitives/Badge'
+import { relativeTime } from '../lib/format-time'
 import { PriorityGlyph, StatusGlyph } from './backlogGlyphs'
 import {
   pickHomeTickets,
@@ -80,6 +81,16 @@ export default function HomeTickets({
                 </span>
                 <span className="cr-session-card-title" title={issue.summary}>
                   {issue.summary}
+                </span>
+                <span className="cr-ticket-card-meta">
+                  {[
+                    issue.status,
+                    issue.parent?.summary,
+                    issue.estimate,
+                    issue.updated ? `updated ${relativeTime(Date.parse(issue.updated))}` : null
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </span>
                 <span className="cr-ticket-card-foot">
                   {session ? (
