@@ -203,8 +203,10 @@ export default function ProjectRail({
 
 /**
  * The bottom of the sidebar: what's waiting on you, wherever you are in the
- * list. A question first, then finished turns, most recent first; the rest
- * are one click away. Not shown when nothing is waiting.
+ * list. A question first, then turns that just finished (done, for its first
+ * 30 minutes), most recent first; the rest are one click away. Not the older
+ * "your turn" sessions: there are dozens, and a box always full means nothing.
+ * Not shown when nothing is waiting.
  */
 function NeedsYou({
   sessions,
@@ -216,7 +218,7 @@ function NeedsYou({
   onShowAll?: () => void
 }): React.JSX.Element | null {
   const waiting = sessions
-    .filter((s) => wantsYou(s.status))
+    .filter((s) => wantsYou(s.status) || s.status === 'done')
     .sort(
       (a, b) =>
         attentionRank(a.status) - attentionRank(b.status) ||

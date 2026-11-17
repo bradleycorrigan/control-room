@@ -2026,8 +2026,10 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           await until(() => Boolean($('[data-needs-you]')), 3000)
           const names = $$('.projects-rail-needs-you-name').map((n) => n.textContent ?? '')
           await check(
-            'the sidebar lists the sessions waiting on you, a question first',
-            names[0] === 'Waiting session' && names.includes('Ready session'),
+            'the sidebar lists the sessions waiting on you, a question first, and one just finished',
+            names[0] === 'Waiting session' &&
+              names.includes('Ready session') &&
+              names.includes('Done session'),
             names.join(' | ') || 'no card'
           )
           await click(byText('.projects-rail-needs-you-item', 'Waiting session'))

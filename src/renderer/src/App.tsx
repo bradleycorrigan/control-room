@@ -2354,7 +2354,7 @@ function App(): React.JSX.Element {
   // The sidebar's "N sessions need you": the list, filtered to them.
   const handleShowNeedsYou = useCallback(() => {
     setUnreadOnly(false)
-    setStatusFilter(['needs_attention', 'your_turn'])
+    setStatusFilter(['needs_attention', 'done'])
     setSelectedProjectId(null)
     setOpenSessionKey(null)
     setGridView(false)
