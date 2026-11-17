@@ -10,7 +10,13 @@ const EDGE_MARGIN = 8
 /** Below this a scrolling panel is useless, so flip rather than squeeze. */
 const MIN_USABLE_HEIGHT = 120
 
-export type PopoverPlacement = 'bottom-start' | 'bottom-end' | 'top-start' | 'top-end'
+export type PopoverPlacement =
+  | 'bottom-start'
+  | 'bottom-end'
+  | 'top-start'
+  | 'top-end'
+  /** Beside the trigger, its top at the trigger's top: a submenu off a menu row. */
+  | 'right-start'
 
 export interface PopoverProps {
   /** Whether the panel is showing. The trigger owns this state. */
@@ -31,6 +37,11 @@ export interface PopoverProps {
   /** `menu` for a list of actions; `dialog` for anything richer. */
   role?: 'menu' | 'dialog' | 'listbox'
   'aria-label'?: string
+  /**
+   * Opened from a row of another menu. The menu it hangs off stays open while
+   * you use it: a press inside a submenu doesn't count as outside its parent.
+   */
+  submenu?: boolean
   children: React.ReactNode
 }
 
@@ -59,6 +70,7 @@ export default function Popover({
   className = '',
   role = 'menu',
   'aria-label': ariaLabel,
+  submenu = false,
   children
 }: PopoverProps): React.JSX.Element | null {
   const panelRef = useRef<HTMLDivElement>(null)
@@ -106,6 +118,20 @@ export default function Popover({
     const height = panel.offsetHeight
     naturalHeight.current = height
     const r = anchor.getBoundingClientRect()
+
+    if (placement === 'right-start') {
+      // Beside the row, flipped to its left when the window has no room on
+      // the right; slid up when it would run off the bottom.
+      const right = r.right + gap
+      const left = right + width <= window.innerWidth - EDGE_MARGIN ? right : r.left - gap - width
+      const maxHeight = window.innerHeight - EDGE_MARGIN * 2
+      const top = Math.max(
+        EDGE_MARGIN,
+        Math.min(r.top - 4, window.innerHeight - EDGE_MARGIN - Math.min(height, maxHeight))
+      )
+      setPos({ top, left: Math.max(left, EDGE_MARGIN), maxHeight, side: 'bottom' })
+      return
+    }
 
     const roomBelow = window.innerHeight - r.bottom - gap - EDGE_MARGIN
     const roomAbove = r.top - gap - EDGE_MARGIN
@@ -213,6 +239,8 @@ export default function Popover({
       const target = e.target as Node
       if (panelRef.current?.contains(target)) return
       if (anchorRef.current?.contains(target)) return
+      // A submenu opened from this menu: using it is still using this menu.
+      if (!submenu && target instanceof Element && target.closest('[data-submenu]')) return
       onClose()
     }
     // Capture, so a scroll in any container repositions rather than leaving
@@ -227,7 +255,7 @@ export default function Popover({
       window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('pointerdown', onPointerDown, true)
     }
-  }, [open, place, onClose, anchorRef, items])
+  }, [open, place, onClose, anchorRef, items, submenu])
 
   if (!open) return null
 
@@ -239,6 +267,7 @@ export default function Popover({
       className={className ? `cr-popover ${className}` : 'cr-popover'}
       // Which side of the trigger it opened on: it grows out from that edge.
       data-side={pos?.side}
+      data-submenu={submenu ? '' : undefined}
       style={{
         top: pos?.top ?? 0,
         left: pos?.left ?? 0,

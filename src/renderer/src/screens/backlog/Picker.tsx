@@ -23,7 +23,9 @@ export function Picker({
   onClose,
   custom,
   emptyText = 'No match',
-  searchHint = 'hidden'
+  searchHint = 'hidden',
+  placement = 'bottom-start',
+  submenu
 }: {
   anchor: HTMLElement
   title: string
@@ -36,6 +38,9 @@ export function Picker({
   emptyText?: string
   /** What the search-only options are, for the "N more" line. */
   searchHint?: string
+  /** Where it opens: under its anchor, or beside it as a menu's submenu. */
+  placement?: 'bottom-start' | 'right-start'
+  submenu?: boolean
 }): React.JSX.Element {
   const anchorRef = useRef<HTMLElement | null>(anchor)
   const [filter, setFilter] = useState('')
@@ -61,7 +66,8 @@ export function Picker({
       open
       onClose={onClose}
       anchorRef={anchorRef}
-      placement="bottom-start"
+      placement={placement}
+      submenu={submenu}
       className="backlog-menu backlog-picker"
       role="listbox"
       aria-label={title}

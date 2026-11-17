@@ -2888,13 +2888,27 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           'the Attach menu offers files and an artifact',
           await until(
             () =>
-              Boolean(byText('.cr-popover-item', 'Files…')) &&
-              Boolean(byText('.cr-popover-item', 'Artifact…')),
+              Boolean(byText('.cr-popover-item', 'Files…')) && Boolean($('[data-attach-artifact]')),
             2000
           ),
           $('.cr-popover')?.textContent ?? 'no menu'
         )
-        await click(byText('.cr-popover-item', 'Artifact…'))
+        await click($('[data-attach-artifact]'))
+        await until(() => Boolean($('.backlog-picker-input')), 2000)
+        {
+          const row = $('[data-attach-artifact]')?.getBoundingClientRect()
+          const list = $('.backlog-picker')?.getBoundingClientRect()
+          await check(
+            'Artifact opens its list beside the menu, and the menu stays open',
+            Boolean(row && list) &&
+              list!.left >= row!.right - 1 &&
+              Math.abs(list!.top - row!.top) < 12 &&
+              Boolean($('[data-attach-artifact]')),
+            row && list
+              ? `row ${Math.round(row.left)}-${Math.round(row.right)},${Math.round(row.top)}; list at ${Math.round(list.left)},${Math.round(list.top)}`
+              : `row ${Boolean(row)}, list ${Boolean(list)}`
+          )
+        }
         await until(() => Boolean($('.backlog-picker-input')), 2000)
         await typeText('Board')
         await key('Enter')
@@ -4841,6 +4855,46 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             await click(row(key))
             await until(() => (row(key)?.getAttribute('aria-checked') === 'true') === before, 2000)
           }
+          // Model opens its list beside the menu; picking one names it on the row.
+          await click($('[data-composer-options]'))
+          await until(() => Boolean(row('model')), 2000)
+          const modelBefore = row('model')?.textContent ?? ''
+          await click(row('model'))
+          const sub = (): HTMLElement | null => $('[data-composer-options-sub="model"]')
+          await until(() => Boolean(sub()), 2000)
+          {
+            const r = row('model')?.getBoundingClientRect()
+            const l = sub()?.getBoundingClientRect()
+            await check(
+              'Model opens a submenu beside the Options menu, which stays open',
+              Boolean(r && l) && l!.left >= r!.right - 1 && Boolean(row('model')),
+              r && l
+                ? `row right ${Math.round(r.right)}, submenu left ${Math.round(l.left)}`
+                : 'missing'
+            )
+          }
+          const other = Array.from(
+            sub()?.querySelectorAll<HTMLElement>('[aria-checked="false"]') ?? []
+          )[0]
+          const otherName = other?.textContent ?? ''
+          await click(other ?? null)
+          await check(
+            'picking a model closes the submenu and shows it on the row',
+            await until(
+              () => !sub() && (row('model')?.textContent ?? '').includes(otherName),
+              2000
+            ),
+            row('model')?.textContent ?? 'no row'
+          )
+          // Back to what it was.
+          await click(row('model'))
+          await until(() => Boolean(sub()), 2000)
+          const was = Array.from(sub()?.querySelectorAll<HTMLElement>('button') ?? []).find((b) =>
+            modelBefore.includes(b.textContent ?? '~')
+          )
+          await click(was ?? null)
+          await until(() => !sub(), 2000)
+
           await flips('plan', 'Plan mode')
           await flips('background', 'Start in background')
           await key('Escape')

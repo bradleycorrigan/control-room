@@ -17,9 +17,12 @@ export function ArtifactPickerPanel({
   anchor,
   exclude = [],
   onPick,
-  onClose
+  onClose,
+  submenu
 }: {
   anchor: HTMLElement
+  /** Opened beside a menu row (the Attach menu's Artifact), not under a button. */
+  submenu?: boolean
   /** Urls already used here, left out of the list. */
   exclude?: string[]
   onPick: (a: PickedArtifact) => void
@@ -48,6 +51,8 @@ export function ArtifactPickerPanel({
       options={options}
       emptyText={list.length === 0 ? 'No artifacts yet - paste a link' : 'No match'}
       searchHint="older"
+      placement={submenu ? 'right-start' : 'bottom-start'}
+      submenu={submenu}
       custom={(text) => {
         const url = ARTIFACT_LINK.exec(text)?.[0]
         if (!url) return null

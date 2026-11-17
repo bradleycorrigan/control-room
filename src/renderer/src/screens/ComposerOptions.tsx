@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { Icon, IconButton, Pill, Popover, type IconName } from '../components/primitives'
 
 /** One on/off setting for the session about to start. */
@@ -23,7 +23,7 @@ export interface ComposerChoice<T extends string = string> {
 
 /**
  * The new-session box's settings in one menu: the model and its thinking
- * level, each opening its own list, then the on/off ones (plan mode, start in
+ * level, each opening its list beside the menu as a submenu, then the on/off ones (plan mode, start in
  * background, dev container). Whatever is switched on also shows as a chip
  * beside the button, so a session never starts in a mode you can't see; a
  * chip's click turns it off.
@@ -36,34 +36,15 @@ export function ComposerOptions({
   toggles: ComposerToggle[]
 }): React.JSX.Element {
   const anchor = useRef<HTMLSpanElement>(null)
-  const list = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
-  // Which list is showing: the menu itself, or one choice's options.
-  const [step, setStep] = useState<string | null>(null)
-  const cameFrom = useRef<string | null>(null)
-  const choice = choices.find((c) => c.key === step)
-
-  // A new list takes focus: its picked option, or the row you came back to.
-  useEffect(() => {
-    if (!open) return
-    const el = list.current
-    if (!el) return
-    const target = step
-      ? el.querySelector<HTMLElement>('[aria-checked="true"]')
-      : cameFrom.current
-        ? el.querySelector<HTMLElement>(`[data-option="${cameFrom.current}"]`)
-        : null
-    target?.focus()
-  }, [open, step])
+  // The choice whose options are showing beside the menu, and the row it hangs off.
+  const [sub, setSub] = useState<{ key: string } | null>(null)
+  const subRef = useRef<HTMLElement | null>(null)
+  const choice = choices.find((c) => c.key === sub?.key)
 
   const close = (): void => {
+    setSub(null)
     setOpen(false)
-    setStep(null)
-    cameFrom.current = null
-  }
-  const into = (key: string): void => {
-    cameFrom.current = key
-    setStep(key)
   }
   const summary = choices.map((c) => c.options.find((o) => o.value === c.value)?.label).join(' · ')
 
@@ -87,89 +68,100 @@ export function ComposerOptions({
           placement="top-start"
           gap={8}
           className="home-composer-popover"
-          aria-label={choice ? choice.label : 'Options'}
+          aria-label="Options"
         >
-          <div ref={list} className="composer-options" data-composer-options-menu>
-            {choice ? (
-              <>
+          <div className="composer-options" data-composer-options-menu>
+            {choices.map((c) => {
+              const openSub = (e: React.SyntheticEvent<HTMLElement>): void => {
+                subRef.current = e.currentTarget
+                setSub({ key: c.key })
+              }
+              return (
                 <button
+                  key={c.key}
                   type="button"
-                  className="home-composer-popover-back"
-                  onClick={() => setStep(null)}
-                  onKeyDown={(e) => e.key === 'ArrowLeft' && setStep(null)}
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={sub?.key === c.key}
+                  className={`cr-popover-item${sub?.key === c.key ? ' cr-popover-item--active' : ''}`}
+                  data-option={c.key}
+                  onMouseEnter={openSub}
+                  onClick={openSub}
+                  onKeyDown={(e) => {
+                    if (e.key === 'ArrowRight') {
+                      e.preventDefault()
+                      openSub(e)
+                    }
+                  }}
                 >
-                  <Icon name="ChevronLeft" size={14} />
-                  {choice.label}
+                  <span className="cr-popover-item-icon" aria-hidden="true" />
+                  {c.label}
+                  <span className="composer-options-value">
+                    {c.options.find((o) => o.value === c.value)?.label}
+                    <Icon name="ChevronRight" size={14} />
+                  </span>
                 </button>
-                {choice.options.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={o.value === choice.value}
-                    className="cr-popover-item"
-                    onKeyDown={(e) => e.key === 'ArrowLeft' && setStep(null)}
-                    onClick={() => {
-                      choice.set(o.value)
-                      setStep(null)
-                    }}
-                  >
-                    <span className="cr-popover-item-icon" aria-hidden="true">
-                      {o.value === choice.value && <Icon name="Check" size={14} />}
-                    </span>
-                    {o.label}
-                  </button>
-                ))}
-              </>
-            ) : (
-              <>
-                {choices.map((c) => (
-                  <button
-                    key={c.key}
-                    type="button"
-                    role="menuitem"
-                    aria-haspopup="menu"
-                    className="cr-popover-item"
-                    data-option={c.key}
-                    onClick={() => into(c.key)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'ArrowRight') {
-                        e.preventDefault()
-                        into(c.key)
-                      }
-                    }}
-                  >
-                    <span className="cr-popover-item-icon" aria-hidden="true" />
-                    {c.label}
-                    <span className="composer-options-value">
-                      {c.options.find((o) => o.value === c.value)?.label}
-                      <Icon name="ChevronRight" size={14} />
-                    </span>
-                  </button>
-                ))}
-                {toggles.length > 0 && <div role="separator" className="cr-popover-separator" />}
-                {toggles.map((t) => (
-                  <button
-                    key={t.key}
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={t.on}
-                    className="cr-popover-item"
-                    data-option={t.key}
-                    title={t.hint}
-                    onClick={() => t.set(!t.on)}
-                  >
-                    <span className="cr-popover-item-icon" aria-hidden="true">
-                      {t.on && <Icon name="Check" size={14} />}
-                    </span>
-                    {t.label}
-                    <span className="composer-options-value" aria-hidden="true">
-                      <Icon name={t.icon} size={14} />
-                    </span>
-                  </button>
-                ))}
-              </>
-            )}
+              )
+            })}
+            {toggles.length > 0 && <div role="separator" className="cr-popover-separator" />}
+            {toggles.map((t) => (
+              <button
+                key={t.key}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={t.on}
+                className="cr-popover-item"
+                data-option={t.key}
+                title={t.hint}
+                onMouseEnter={() => setSub(null)}
+                onClick={() => t.set(!t.on)}
+              >
+                <span className="cr-popover-item-icon" aria-hidden="true">
+                  {t.on && <Icon name="Check" size={14} />}
+                </span>
+                {t.label}
+                <span className="composer-options-value" aria-hidden="true">
+                  <Icon name={t.icon} size={14} />
+                </span>
+              </button>
+            ))}
+          </div>
+        </Popover>
+        <Popover
+          open={open && Boolean(choice)}
+          onClose={() => setSub(null)}
+          anchorRef={subRef}
+          placement="right-start"
+          gap={4}
+          submenu
+          className="home-composer-popover"
+          aria-label={choice?.label}
+        >
+          <div className="composer-options" data-composer-options-sub={choice?.key}>
+            {choice?.options.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                role="menuitemradio"
+                aria-checked={o.value === choice.value}
+                className="cr-popover-item"
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowLeft') {
+                    e.preventDefault()
+                    setSub(null)
+                  }
+                }}
+                onClick={() => {
+                  choice.set(o.value)
+                  setSub(null)
+                }}
+              >
+                <span className="cr-popover-item-icon" aria-hidden="true">
+                  {o.value === choice.value && <Icon name="Check" size={14} />}
+                </span>
+                {o.label}
+              </button>
+            ))}
           </div>
         </Popover>
       </span>
