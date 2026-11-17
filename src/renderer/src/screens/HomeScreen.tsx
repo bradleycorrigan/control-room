@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AttachMenu } from '../components/AttachMenu'
 import { ComposerOptions } from './ComposerOptions'
-import { withArtifact } from '../state/useArtifacts'
 import {
   attentionRank,
   wantsYou,
@@ -513,7 +512,7 @@ export default function HomeScreen({
             ? (runOn ?? undefined)
             : undefined,
         basedOn: makesWorktree ? 'new' : onBranch && runOn ? 'existing' : undefined,
-        prompt: text,
+        prompt: attach.withArtifacts(text),
         title: initialTitle,
         model,
         planMode,
@@ -646,10 +645,7 @@ export default function HomeScreen({
 
           <div className="home-composer-footer">
             <div className="home-composer-toggles">
-              <AttachMenu
-                onFiles={() => void attach.pick()}
-                onArtifact={(a) => setPrompt((p) => withArtifact(p, a))}
-              />
+              <AttachMenu onFiles={() => void attach.pick()} onArtifact={attach.addArtifact} />
               <ComposerOptions
                 choices={[
                   {

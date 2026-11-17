@@ -7,6 +7,7 @@ import {
   getPathForDroppedFile,
   type AttachmentResult
 } from '../api'
+import { withArtifact, type PickedArtifact } from '../state/useArtifacts'
 
 /**
  * Files on a prompt: the paperclip, a drop, a pasted image, and a long paste,
@@ -24,7 +25,10 @@ export interface AttachmentChip {
   path: string | null
   status: 'pending' | 'ok' | 'error'
   error?: string
-  source: 'path' | 'paste'
+  /** artifact: a Claude artifact's link, added to the message's words when it's sent. */
+  source: 'path' | 'paste' | 'artifact'
+  /** An artifact chip's link. */
+  link?: string
 }
 
 // Keeps the prompt's attachment block — and therefore the whole literal typed
@@ -45,6 +49,10 @@ export interface Attachments {
   remove: (id: string) => void
   clear: () => void
   pick: () => Promise<void>
+  /** An artifact as a chip; its link goes into the message on send, not into the box. */
+  addArtifact: (a: PickedArtifact) => void
+  /** The message as sent: its words, then a line per artifact chip. */
+  withArtifacts: (text: string) => string
   dropProps: {
     onDragOver: (e: React.DragEvent<HTMLElement>) => void
     onDragEnter: (e: React.DragEvent<HTMLElement>) => void
@@ -251,6 +259,29 @@ export function useAttachments(onError: (message: string | null) => void): Attac
     remove: (id) => setChips((prev) => prev.filter((c) => c.id !== id)),
     clear: () => setChips([]),
     pick,
+    addArtifact: (a) => {
+      if (chips.some((c) => c.link === a.link)) return
+      if (chips.length >= MAX_ATTACHMENTS) {
+        onError(`You can attach up to ${MAX_ATTACHMENTS} files.`)
+        return
+      }
+      setChips((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          name: a.title,
+          path: null,
+          status: 'ok',
+          source: 'artifact',
+          link: a.link
+        }
+      ])
+    },
+    withArtifacts: (text) =>
+      chips
+        .filter((c) => c.source === 'artifact' && c.link)
+        .reduce((t, c) => withArtifact(t, { url: c.link!, link: c.link!, title: c.name }), text)
+        .trim(),
     dropProps: {
       onDragOver: (e) => e.preventDefault(),
       onDragEnter: (e) => {

@@ -14,20 +14,25 @@ export default function AttachmentChips({
       {attachments.chips.map((chip) => (
         <div
           key={chip.id}
+          data-attachment-source={chip.source}
           className={`cr-attachment-chip cr-attachment-chip--${chip.status}`}
           title={
             chip.status === 'error'
               ? chip.error
               : chip.source === 'paste'
                 ? `${chip.name}: copied to a temporary file for the agent to read`
-                : chip.name
+                : chip.source === 'artifact'
+                  ? `${chip.name}: ${chip.link}`
+                  : chip.name
           }
         >
           {chip.status === 'pending' && (
             <Icon name="Loader2" size={14} className="cr-attachment-chip-spinner" />
           )}
           {chip.status === 'error' && <Icon name="AlertCircle" size={14} />}
-          {chip.status === 'ok' && <Icon name="Paperclip" size={14} />}
+          {chip.status === 'ok' && (
+            <Icon name={chip.source === 'artifact' ? 'AppWindow' : 'Paperclip'} size={14} />
+          )}
           <span className="cr-attachment-chip-name">
             {chip.status === 'error' ? chip.error : chip.name}
           </span>

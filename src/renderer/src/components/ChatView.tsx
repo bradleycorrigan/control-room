@@ -2,7 +2,6 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatEntry, QueuedMessage } from '../../../main/exec/chatTranscript'
 import { AttachMenu } from './AttachMenu'
 import { useStickToBottom } from '../lib/useStickToBottom'
-import { withArtifact } from '../state/useArtifacts'
 import type { PendingPrompt, PromptAnswer } from '../../../main/engine/prompts'
 import MarkdownText from './MarkdownText'
 import { Button, EmptyState, Icon, IconButton, Modal } from './primitives'
@@ -1178,7 +1177,7 @@ function Composer({
   const send = (): void => {
     if (!ready || sending) return
     setError(null)
-    const words = text.trim()
+    const words = attach.withArtifacts(text.trim())
     // Words go up and show straight away; the box is clear for the next one.
     if (words) {
       onSend(words, attach.readyPaths())
@@ -1283,7 +1282,7 @@ function Composer({
           <AttachMenu
             disabled={!paneId}
             onFiles={() => void attach.pick()}
-            onArtifact={(a) => setText(withArtifact(text, a))}
+            onArtifact={attach.addArtifact}
           />
           {error ? (
             <span className="cr-chat-prompt-error" role="alert">

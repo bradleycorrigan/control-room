@@ -2914,12 +2914,23 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         await until(() => Boolean($('.backlog-picker-input')), 2000)
         await typeText('Board')
         await key('Enter')
-        const prompt = $<HTMLTextAreaElement>('.home-composer-input')?.value ?? ''
+        const chip = (): HTMLElement | null =>
+          $('.home-composer-card [data-attachment-source="artifact"]')
         await check(
-          'choosing one in the message box adds its name and link',
-          prompt.includes('Board pack: https://claude.ai/artifact/FixtureSharedPack01?sk='),
-          prompt
+          'choosing one adds it as a chip under the message, not as text in the box',
+          (await until(() => /Board pack/.test(chip()?.textContent ?? ''), 2000)) &&
+            !($<HTMLTextAreaElement>('.home-composer-input')?.value ?? '').includes('claude.ai'),
+          chip()?.getAttribute('title') ?? 'no chip'
         )
+        await check(
+          'the chip carries the link that goes into the message on send',
+          /Board pack: https:\/\/claude\.ai\/artifact\/FixtureSharedPack01\?sk=/.test(
+            chip()?.getAttribute('title') ?? ''
+          ),
+          chip()?.getAttribute('title') ?? 'no chip'
+        )
+        await click(chip()?.querySelector<HTMLElement>('button') ?? null)
+        await until(() => !chip(), 2000)
       }
     },
     // ---- Scrolling a full-screen agent ----
