@@ -722,6 +722,7 @@
   z-index: var(--layer-overlay-content);
   width: var(--backlog-panel-width);
   overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: var(--space-16);

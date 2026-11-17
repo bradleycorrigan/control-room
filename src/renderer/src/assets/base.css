@@ -70,3 +70,15 @@ select:focus:not(:focus-visible),
 [role='button']:focus:not(:focus-visible) {
   outline: none;
 }
+
+/* Text as macOS apps draw it: grayscale smoothing, not the heavier default. */
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* A heading that wraps splits into even lines, not one long and one orphan. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}

@@ -5,6 +5,12 @@ import './primitives.css'
 const OPEN_DELAY_MS = 400
 const GAP = 8
 const EDGE_MARGIN = 8
+/**
+ * After one tooltip closes, the next opens at once for this long: moving
+ * along a row of icons reads each label without waiting on every one.
+ */
+const WARM_MS = 500
+let warmUntil = 0
 
 export interface TooltipProps {
   /** What the control does. Kept short — this is a label, not documentation. */
@@ -32,9 +38,12 @@ export default function Tooltip({
   const wrapRef = useRef<HTMLSpanElement>(null)
   const tipRef = useRef<HTMLSpanElement>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [pos, setPos] = useState<{ top: number; left: number; placed: 'top' | 'bottom' } | null>(
-    null
-  )
+  const [pos, setPos] = useState<{
+    top: number
+    left: number
+    placed: 'top' | 'bottom'
+    instant?: boolean
+  } | null>(null)
 
   const clear = useCallback(() => {
     if (timer.current) {
@@ -43,33 +52,41 @@ export default function Tooltip({
     }
   }, [])
 
-  const place = useCallback((): void => {
-    const el = wrapRef.current
-    if (!el) return
-    const r = el.getBoundingClientRect()
-    // Flip to the other side when the preferred one would go off-screen.
-    const wantsTop = side === 'top'
-    const fitsTop = r.top > 40
-    const placed: 'top' | 'bottom' = wantsTop ? (fitsTop ? 'top' : 'bottom') : 'bottom'
-    setPos({
-      top: placed === 'top' ? r.top - GAP : r.bottom + GAP,
-      left: r.left + r.width / 2,
-      placed
-    })
-  }, [side])
+  const place = useCallback(
+    (instant?: boolean): void => {
+      const el = wrapRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      // Flip to the other side when the preferred one would go off-screen.
+      const wantsTop = side === 'top'
+      const fitsTop = r.top > 40
+      const placed: 'top' | 'bottom' = wantsTop ? (fitsTop ? 'top' : 'bottom') : 'bottom'
+      setPos({
+        top: placed === 'top' ? r.top - GAP : r.bottom + GAP,
+        left: r.left + r.width / 2,
+        placed,
+        instant
+      })
+    },
+    [side]
+  )
 
   const open = useCallback(
     (immediate: boolean): void => {
       clear()
       if (immediate) place()
-      else timer.current = setTimeout(place, OPEN_DELAY_MS)
+      else if (Date.now() < warmUntil) place(true)
+      else timer.current = setTimeout(() => place(), OPEN_DELAY_MS)
     },
     [clear, place]
   )
 
   const close = useCallback((): void => {
     clear()
-    setPos(null)
+    setPos((p) => {
+      if (p) warmUntil = Date.now() + WARM_MS
+      return null
+    })
   }, [clear])
 
   useEffect(() => clear, [clear])
@@ -134,6 +151,7 @@ export default function Tooltip({
             id={id}
             role="tooltip"
             className={`cr-tooltip cr-tooltip--${pos.placed}`}
+            data-instant={pos.instant ? '' : undefined}
             style={{ top: pos.top, left: pos.left }}
           >
             {label}

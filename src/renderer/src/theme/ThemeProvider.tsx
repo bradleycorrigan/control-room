@@ -12,7 +12,10 @@ import { themes, getTheme, defaultDarkThemeId, defaultLightThemeId } from './the
 // would just add indirection. Revisit if a second consumer appears.
 
 function applyTheme(id: string): void {
-  document.documentElement.setAttribute('data-theme', getTheme(id).id)
+  const theme = getTheme(id)
+  document.documentElement.setAttribute('data-theme', theme.id)
+  // So the browser's own parts (scrollbars, date pickers, selects) match.
+  document.documentElement.style.colorScheme = theme.isDark ? 'dark' : 'light'
 }
 
 export interface ThemeController {

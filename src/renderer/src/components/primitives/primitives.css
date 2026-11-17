@@ -78,7 +78,8 @@
   border: 1px solid transparent;
   transition:
     background var(--motion-fast) var(--motion-easing),
-    border-color var(--motion-fast) var(--motion-easing);
+    border-color var(--motion-fast) var(--motion-easing),
+    transform var(--motion-fast) var(--motion-easing);
   outline-offset: 2px;
   /* Every size has a fixed height, so a label that wrapped would spill out
      of the button. It stays on one line; its container makes room. */
@@ -211,7 +212,8 @@
   flex-shrink: 0;
   transition:
     background var(--motion-fast) var(--motion-easing),
-    color var(--motion-fast) var(--motion-easing);
+    color var(--motion-fast) var(--motion-easing),
+    transform var(--motion-fast) var(--motion-easing);
 }
 .cr-icon-button:focus-visible {
   outline: 2px solid var(--accent);
@@ -513,7 +515,8 @@
   cursor: pointer;
   transition:
     background var(--motion-fast) var(--motion-easing),
-    color var(--motion-fast) var(--motion-easing);
+    color var(--motion-fast) var(--motion-easing),
+    transform var(--motion-fast) var(--motion-easing);
 }
 
 .cr-pill--28 {
@@ -1118,4 +1121,24 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* A press you can feel: buttons give a little under the pointer, as a real
+   key does, so a click registers before whatever it starts has drawn. */
+.cr-button:not(:disabled):active,
+.cr-icon-button:not(:disabled):active,
+.cr-pill:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/* A long menu or dialog scrolls itself, not the page behind it. */
+.cr-popover,
+.cr-modal,
+.cr-modal-content {
+  overscroll-behavior: contain;
+}
+
+/* Moving from one tooltip straight to the next: no fade, it is already up. */
+.cr-tooltip[data-instant] {
+  animation: none;
 }
