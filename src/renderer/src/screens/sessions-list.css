@@ -1095,16 +1095,3 @@
 .sessions-project-name {
   font-family: var(--font-display);
 }
-
-/* What Claude last said: two quiet lines under a card's title. */
-.session-card-said {
-  margin: 0;
-  font-size: var(--text-label-size);
-  line-height: var(--text-body-line);
-  color: var(--text-muted);
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}

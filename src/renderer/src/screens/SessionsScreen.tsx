@@ -47,7 +47,6 @@ import { sessionTitle } from '../lib/session-title'
 import './sessions-list.css'
 import { PrChips, type PrChipProps } from '../components/PrChip'
 import { getAllLinkedPullRequests } from '../api-sessions'
-import { useLastSaid } from '../state/useLastSaid'
 import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
 import type { PrPanelTarget } from '../components/prPanelTarget'
 
@@ -1218,7 +1217,7 @@ export interface SessionCardProps {
 /**
  * One session as a card: the one card for a session wherever you meet it, on
  * Home, a project's page and the Sessions grid. Its status and how long it has
- * waited, its title, what Claude last said, its branch, ticket, pull requests
+ * waited, its title, its branch, ticket, pull requests
  * and project; the session menu, with Mark as done to hand on hover.
  */
 export function SessionCard({
@@ -1244,7 +1243,6 @@ export function SessionCard({
   })
   const actions: OverflowAction[] = sessionActions(session)
   const quick = actions.find((a) => a.label === 'Mark as done' && !a.disabled)
-  const said = useLastSaid(session)
   return (
     <>
       <div
@@ -1306,11 +1304,6 @@ export function SessionCard({
             </span>
           )}
         </div>
-        {said && (
-          <p className="session-card-said" title={said}>
-            {said}
-          </p>
-        )}
         {branch && (
           <div className="session-card-branch" title={branch}>
             {branch}

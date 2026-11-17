@@ -133,8 +133,3 @@ export function getAllLinkedPullRequests(): Promise<Record<string, LinkedPullReq
 export function getLinkedPullRequests(id: string): Promise<LinkedPullRequest[]> {
   return window.api.invoke<LinkedPullRequest[]>('sessions:linkedPrs', id)
 }
-
-/** What Claude last said in a session, as one plain line; null when nothing yet. */
-export function getLastSaid(claudeSessionId: string): Promise<string | null> {
-  return window.api.invoke<string | null>('sessions:lastSaid', claudeSessionId)
-}
