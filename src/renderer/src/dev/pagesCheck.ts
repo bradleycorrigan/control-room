@@ -2411,8 +2411,14 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         {
           const byDefault = (): HTMLInputElement | null =>
             $<HTMLInputElement>('[aria-label="Start sessions in a dev container"]')
-          const toggle = (): HTMLElement | null => $('[data-dev-container-toggle]')
-          const toggleOn = (): boolean => toggle()?.getAttribute('aria-pressed') === 'true'
+          // The toggle is a row in the composer's Options menu.
+          const toggle = (): HTMLElement | null =>
+            $('[data-composer-options-menu] [data-option="container"]')
+          const toggleOn = (): boolean => toggle()?.getAttribute('aria-checked') === 'true'
+          const openOptions = async (): Promise<void> => {
+            if (!$('[data-composer-options-menu]')) await click($('[data-composer-options]'))
+            await until(() => Boolean($('[data-composer-options-menu]')), 2000)
+          }
           const original = await api.invoke<{
             devContainerByDefault: boolean
             devContainerRunCommand: string
@@ -2463,60 +2469,43 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             await until(() => Boolean(byText('.home-composer-popover-item', 'fixture-project')))
             await click(byText('.home-composer-popover-item', 'fixture-project'))
           }
-          const hoverOver = async (el: HTMLElement | null): Promise<void> => {
-            if (!el) return
-            const r = el.getBoundingClientRect()
-            await input({
-              type: 'mouseMove',
-              x: Math.round(r.left + r.width / 2),
-              y: Math.round(r.top + r.height / 2)
-            })
-          }
-          const tooltipText = (): string => $('[role="tooltip"]')?.textContent ?? ''
 
           await ctx.goTo('home')
           await wait(400)
           const hadProject = Boolean($('.home-project-chip'))
           await pickFixtureProject()
+          await openOptions()
           await check(
             'the composer shows a dev container toggle in a project with a devcontainer.json',
             await until(() => Boolean(toggle()), 3000),
             toggle()?.getAttribute('aria-label') ?? 'no toggle'
           )
           await check(
-            'the toggle sits with the composer icon buttons, not beside Start, and is a container icon',
-            Boolean(toggle()?.closest('.home-composer-toggles')) &&
-              !toggle()?.closest('.home-composer-start') &&
+            'the toggle is a checkable row in Options, with a container icon',
+            toggle()?.getAttribute('role') === 'menuitemcheckbox' &&
               Boolean(toggle()?.querySelector('svg')),
-            toggle()?.closest('.home-composer-toggles') ? 'in the row' : 'elsewhere'
+            toggle()?.getAttribute('role') ?? 'no toggle'
           )
           await check(
             'the toggle starts off, as the Settings default is off',
-            toggle()?.getAttribute('aria-label') === 'Dev container: off' && !toggleOn(),
-            toggle()?.getAttribute('aria-label') ?? 'no toggle'
+            /Dev container/.test(toggle()?.textContent ?? '') && !toggleOn(),
+            toggle()?.textContent ?? 'no toggle'
           )
-          await hoverOver(toggle())
           await check(
-            'hovering the toggle says what it does, and that it is off',
-            await until(
-              () => tooltipText() === 'Dev container: off - the agent runs on this Mac',
-              2000
-            ),
-            tooltipText() || 'no tooltip'
+            'the row says what it does',
+            /dev container, not on this Mac/.test(toggle()?.getAttribute('title') ?? ''),
+            toggle()?.getAttribute('title') ?? 'no title'
           )
-          await input({ type: 'mouseMove', x: 5, y: Math.round(window.innerHeight / 2) })
 
           await click(toggle())
           await check(
-            'clicking the toggle turns it on',
-            await until(
-              () => toggleOn() && toggle()?.getAttribute('aria-label') === 'Dev container: on',
-              2000
-            ),
-            toggle()?.getAttribute('aria-label') ?? 'no toggle'
+            'clicking the toggle turns it on, and a chip shows it',
+            await until(() => toggleOn() && Boolean($('[data-composer-chip="container"]')), 2000),
+            toggle()?.getAttribute('aria-checked') ?? 'no toggle'
           )
           await click(toggle())
           await check('clicking it again turns it back off', await until(() => !toggleOn(), 2000))
+          await key('Escape')
 
           await ctx.goTo('settings')
           await wait(400)
@@ -2530,10 +2519,15 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           await wait(400)
           await pickFixtureProject()
           await check(
-            'with the Settings default on, the toggle starts on and reads as filled',
-            (await until(() => Boolean(toggle()) && toggleOn(), 3000)) &&
-              Boolean(toggle()?.classList.contains('cr-icon-button--filled')),
-            toggle()?.getAttribute('aria-label') ?? 'no toggle'
+            'with the Settings default on, it starts on, shown as a chip beside Options',
+            await until(() => Boolean($('[data-composer-chip="container"]')), 3000),
+            $('.home-composer-toggles')?.textContent ?? 'no composer'
+          )
+          await openOptions()
+          await check(
+            'and its row in Options is checked',
+            await until(() => Boolean(toggle()) && toggleOn(), 3000),
+            toggle()?.getAttribute('aria-checked') ?? 'no toggle'
           )
           await api.invoke('settings:set', { devContainerByDefault: false })
 
@@ -2552,6 +2546,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           await until(() => Boolean(toggle()), 3000)
 
           await click($('[aria-label="Clear project"]'))
+          await openOptions()
           await check(
             'with no devcontainer.json (General), the toggle is gone',
             await until(
@@ -2887,8 +2882,19 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
 
         // In the new-session box: the link goes into the message
         await ctx.goTo('home')
-        await until(() => Boolean($('.home-composer-card [data-artifact-picker] button')), 3000)
-        await click($('.home-composer-card [data-artifact-picker] button'))
+        await until(() => Boolean($('.home-composer-card [data-attach-menu] button')), 3000)
+        await click($('.home-composer-card [data-attach-menu] button'))
+        await check(
+          'the Attach menu offers files and an artifact',
+          await until(
+            () =>
+              Boolean(byText('.cr-popover-item', 'Files…')) &&
+              Boolean(byText('.cr-popover-item', 'Artifact…')),
+            2000
+          ),
+          $('.cr-popover')?.textContent ?? 'no menu'
+        )
+        await click(byText('.cr-popover-item', 'Artifact…'))
         await until(() => Boolean($('.backlog-picker-input')), 2000)
         await typeText('Board')
         await key('Enter')
@@ -4798,50 +4804,47 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           )
         }
 
-        // Item 4: the four composer icon buttons (Attach, Model, Plan mode,
-        // Background) need a real tooltip each, and the two toggles need a
-        // visibly different on state, not just aria-pressed. Clicks them back
-        // afterwards so the composer is left as it was found. IconButton swallows
-        // `title` (it would double up with its own hover tooltip), so a DOM check
-        // reads the same text off `aria-label`, which Tooltip's label defaults to.
+        // The composer's two menu buttons, Attach and Options, each need a label
+        // (it is their tooltip too). Plan mode and Start in background live in
+        // Options as checkable rows; switched on, each also shows as a chip
+        // beside the button, and the chip turns it off. Left as found.
         {
-          const toggles = $$<HTMLElement>('.home-composer-toggles button.cr-icon-button')
+          const buttons = $$<HTMLElement>('.home-composer-toggles button.cr-icon-button')
           await check(
-            'every composer icon button carries a label (used as both tooltip and accessible name)',
-            toggles.length >= 4 &&
-              toggles.every((el) => (el.getAttribute('aria-label') ?? '').length > 0),
-            `${toggles.length} buttons, labels: ${toggles.map((el) => el.getAttribute('aria-label')).join(' | ')}`
+            'the composer has Attach and Options buttons, each with a label',
+            buttons.length >= 2 &&
+              buttons.every((el) => (el.getAttribute('aria-label') ?? '').length > 0) &&
+              Boolean($('[data-composer-options]')),
+            `${buttons.length} buttons, labels: ${buttons.map((el) => el.getAttribute('aria-label')).join(' | ')}`
           )
-
-          const planButton = $<HTMLElement>(
-            '.home-composer-toggles [aria-pressed][aria-label^="Plan mode"]'
-          )
-          const backgroundButton = $<HTMLElement>(
-            '.home-composer-toggles [aria-pressed][aria-label^="Start in background"]'
-          )
-
-          const flipsVisibly = async (button: HTMLElement | null, label: string): Promise<void> => {
-            if (!button) {
-              await check(`${label} toggle found`, false)
-              return
-            }
-            const before = button.getAttribute('aria-pressed') === 'true'
-            const classesBefore = button.className
-            await click(button)
-            const after = button.getAttribute('aria-pressed') === 'true'
-            const classesAfter = button.className
-            await check(`${label} flips aria-pressed when clicked`, after !== before)
+          const row = (key: string): HTMLElement | null =>
+            $(`[data-composer-options-menu] [data-option="${key}"]`)
+          const flips = async (key: string, label: string): Promise<void> => {
+            if (!$('[data-composer-options-menu]')) await click($('[data-composer-options]'))
+            await until(() => Boolean(row(key)), 2000)
+            const before = row(key)?.getAttribute('aria-checked') === 'true'
+            await click(row(key))
             await check(
-              `${label}'s on state looks different, not just aria-pressed`,
-              classesAfter !== classesBefore,
-              `before "${classesBefore}", after "${classesAfter}"`
+              `${label}: its row in Options flips when clicked`,
+              await until(
+                () => (row(key)?.getAttribute('aria-checked') === 'true') !== before,
+                2000
+              ),
+              row(key)?.getAttribute('aria-checked') ?? 'no row'
             )
-            // Click it back — this check shouldn't change what Home starts with.
-            await click(button)
+            const chip = (): HTMLElement | null => $(`[data-composer-chip="${key}"]`)
+            await check(
+              `${label}: on shows a chip beside Options, off hides it`,
+              await until(() => Boolean(chip()) === !before, 2000),
+              chip() ? 'chip shown' : 'no chip'
+            )
+            await click(row(key))
+            await until(() => (row(key)?.getAttribute('aria-checked') === 'true') === before, 2000)
           }
-
-          await flipsVisibly(planButton, 'Plan mode')
-          await flipsVisibly(backgroundButton, 'Start in background')
+          await flips('plan', 'Plan mode')
+          await flips('background', 'Start in background')
+          await key('Escape')
+          await until(() => !$('[data-composer-options-menu]'), 2000)
         }
 
         // Step 2 — the fixture seeds two projects on the same repo path/worktreeRoot
@@ -5909,10 +5912,12 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             await input({ type: 'mouseMove', ...at })
             let shown = await until(() => Boolean($('.cr-tooltip')), 1500)
             // macOS sends no hover to a window that isn't frontmost, and
-            // something else on the machine can take focus mid-run. What's
-            // checked here is where the tooltip sits, so open it with the
-            // event a real hover sends.
-            if (!shown && !document.hasFocus()) {
+            // something else on the machine can take focus mid-run; a focused
+            // window has also dropped the moves now and then, leaving the
+            // pointer where an earlier section put it. What's checked here is
+            // where the tooltip sits, so open it with the event a real hover
+            // sends.
+            if (!shown) {
               btn.closest('.cr-tooltip-trigger')?.dispatchEvent(new MouseEvent('mouseenter'))
               shown = await until(() => Boolean($('.cr-tooltip')), 1500)
             }

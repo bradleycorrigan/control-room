@@ -5354,7 +5354,6 @@ function IssueDrawer({
             )
             const artifactAdd = (
               <ArtifactPicker
-                look="button"
                 label="Add artifact"
                 exclude={artifactLinks.map((l) => ARTIFACT_LINK.exec(l.url)?.[0] ?? l.url)}
                 onPick={(a) => {

@@ -540,3 +540,25 @@ button.home-summary-clause:focus-visible {
 .home-composer > .home-view-all {
   margin-top: var(--space-12);
 }
+
+/* Options menu (ComposerOptions): a row's current value, or its icon, at its end. */
+.composer-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.composer-options-value {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: auto;
+  padding-left: var(--space-16);
+  color: var(--text-muted);
+}
+
+/* A setting that is on, beside the Options button; a click turns it off. */
+.composer-options-chip {
+  gap: var(--space-4);
+  font-size: var(--text-caption-size);
+}

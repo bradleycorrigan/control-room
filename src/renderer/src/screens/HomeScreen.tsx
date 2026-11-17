@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArtifactPicker } from '../components/ArtifactPicker'
+import { AttachMenu } from '../components/AttachMenu'
+import { ComposerOptions } from './ComposerOptions'
 import { withArtifact } from '../state/useArtifacts'
 import {
   attentionRank,
@@ -275,15 +276,9 @@ export default function HomeScreen({
     }
   }, [])
 
-  const [modelMenuOpen, setModelMenuOpen] = useState(false)
-  // Two-level drill-down (plan-app style): pick a model, then its thinking
-  // level, one screen at a time — both lists together were tall enough to
-  // clip off the top of the upward-opening popover.
-  const [modelMenuStep, setModelMenuStep] = useState<'model' | 'effort'>('model')
   const [projectMenuOpen, setProjectMenuOpen] = useState(false)
-  // Both menus are portalled, so Popover positions them from these anchors
+  // The menu is portalled, so Popover positions it from this anchor
   // rather than from a `position: relative` parent.
-  const modelMenuAnchor = useRef<HTMLDivElement>(null)
   const projectMenuAnchor = useRef<HTMLDivElement>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -651,134 +646,70 @@ export default function HomeScreen({
 
           <div className="home-composer-footer">
             <div className="home-composer-toggles">
-              <IconButton
-                icon="Paperclip"
-                label="Attach files"
-                title="Attach files"
-                variant="ghost"
-                size={28}
-                onClick={() => void attach.pick()}
+              <AttachMenu
+                onFiles={() => void attach.pick()}
+                onArtifact={(a) => setPrompt((p) => withArtifact(p, a))}
               />
-              <ArtifactPicker look="icon" onPick={(a) => setPrompt((p) => withArtifact(p, a))} />
-
-              <div className="home-composer-menu" ref={modelMenuAnchor}>
-                <IconButton
-                  icon="Cpu"
-                  label={`Model: ${MODEL_LABEL[model]} · Thinking: ${EFFORT_LABEL[effort]}`}
-                  title={`Model: ${MODEL_LABEL[model]} · Thinking: ${EFFORT_LABEL[effort]}`}
-                  variant={modelMenuOpen ? 'filled' : 'ghost'}
-                  size={28}
-                  onClick={() => {
-                    setModelMenuOpen((v) => !v)
-                    setModelMenuStep('model')
-                    setProjectMenuOpen(false)
-                  }}
-                />
-                <Popover
-                  open={modelMenuOpen && modelMenuStep === 'model'}
-                  onClose={() => setModelMenuOpen(false)}
-                  anchorRef={modelMenuAnchor}
-                  placement="top-start"
-                  gap={8}
-                  className="home-composer-popover"
-                  aria-label="Model"
-                >
-                  <div className="home-composer-popover-heading">Model</div>
-                  {(Object.keys(MODEL_LABEL) as Model[]).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      className={`home-composer-popover-item${m === model ? ' home-composer-popover-item--active' : ''}`}
-                      onClick={() => {
-                        touchedModel.current = true
-                        setModel(m)
-                        setModelMenuStep('effort')
-                      }}
-                    >
-                      {MODEL_LABEL[m]}
-                      <Icon name="ChevronRight" size={14} />
-                    </button>
-                  ))}
-                </Popover>
-                <Popover
-                  open={modelMenuOpen && modelMenuStep === 'effort'}
-                  onClose={() => setModelMenuOpen(false)}
-                  anchorRef={modelMenuAnchor}
-                  placement="top-start"
-                  gap={8}
-                  className="home-composer-popover"
-                  aria-label="Thinking level"
-                >
-                  <button
-                    type="button"
-                    className="home-composer-popover-back"
-                    onClick={() => setModelMenuStep('model')}
-                  >
-                    <Icon name="ChevronLeft" size={14} />
-                    {MODEL_LABEL[model]}
-                  </button>
-                  <div className="home-composer-popover-heading">Thinking</div>
-                  {(Object.keys(EFFORT_LABEL) as Effort[]).map((lvl) => (
-                    <button
-                      key={lvl}
-                      type="button"
-                      className={`home-composer-popover-item${lvl === effort ? ' home-composer-popover-item--active' : ''}`}
-                      onClick={() => {
-                        touchedModel.current = true
-                        setEffort(lvl)
-                        setModelMenuOpen(false)
-                      }}
-                    >
-                      {EFFORT_LABEL[lvl]}
-                    </button>
-                  ))}
-                </Popover>
-              </div>
-
-              <IconButton
-                icon="FileSearch"
-                label={planMode ? 'Plan mode: on' : 'Plan mode: off'}
-                title={
-                  planMode
-                    ? 'Plan mode: on - the agent plans before making changes'
-                    : 'Plan mode: off'
-                }
-                variant={planMode ? 'filled' : 'ghost'}
-                size={28}
-                aria-pressed={planMode}
-                onClick={() => setPlanMode((v) => !v)}
-              />
-
-              <IconButton
-                icon="EyeOff"
-                label={background ? 'Start in background: on' : 'Start in background: off'}
-                title={
-                  background
-                    ? 'Start in background: on - stays here after sending'
-                    : 'Start in background: off - opens the session after sending'
-                }
-                variant={background ? 'filled' : 'ghost'}
-                size={28}
-                aria-pressed={background}
-                onClick={() => setBackground((v) => !v)}
-              />
-
-              {devContainer.available && (
-                <IconButton
-                  icon="Container"
-                  data-dev-container-toggle
-                  label={inContainer ? 'Dev container: on' : 'Dev container: off'}
-                  title={
-                    inContainer
-                      ? "Dev container: on - the agent runs inside the project's dev container"
-                      : 'Dev container: off - the agent runs on this Mac'
+              <ComposerOptions
+                choices={[
+                  {
+                    key: 'model',
+                    label: 'Model',
+                    value: model,
+                    options: (Object.keys(MODEL_LABEL) as Model[]).map((m) => ({
+                      value: m,
+                      label: MODEL_LABEL[m]
+                    })),
+                    set: (m) => {
+                      touchedModel.current = true
+                      setModel(m as Model)
+                    }
+                  },
+                  {
+                    key: 'effort',
+                    label: 'Thinking',
+                    value: effort,
+                    options: (Object.keys(EFFORT_LABEL) as Effort[]).map((lvl) => ({
+                      value: lvl,
+                      label: EFFORT_LABEL[lvl]
+                    })),
+                    set: (lvl) => {
+                      touchedModel.current = true
+                      setEffort(lvl as Effort)
+                    }
                   }
-                  variant={inContainer ? 'filled' : 'ghost'}
-                  size={28}
-                  aria-pressed={inContainer}
-                  onClick={() => setContainerPress({ key: containerKey, on: !inContainer })}
-                />
-              )}
+                ]}
+                toggles={[
+                  {
+                    key: 'plan',
+                    label: 'Plan mode',
+                    hint: 'The agent plans before making changes',
+                    icon: 'FileSearch',
+                    on: planMode,
+                    set: setPlanMode
+                  },
+                  {
+                    key: 'background',
+                    label: 'Start in background',
+                    hint: 'Stays here after sending, instead of opening the session',
+                    icon: 'EyeOff',
+                    on: background,
+                    set: setBackground
+                  },
+                  ...(devContainer.available
+                    ? [
+                        {
+                          key: 'container',
+                          label: 'Dev container',
+                          hint: "The agent runs inside the project's dev container, not on this Mac",
+                          icon: 'Container' as const,
+                          on: inContainer,
+                          set: (on: boolean) => setContainerPress({ key: containerKey, on })
+                        }
+                      ]
+                    : [])
+                ]}
+              />
             </div>
 
             <div className="home-composer-start">

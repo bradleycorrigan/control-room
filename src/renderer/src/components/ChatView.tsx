@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatEntry, QueuedMessage } from '../../../main/exec/chatTranscript'
-import { ArtifactPicker } from './ArtifactPicker'
+import { AttachMenu } from './AttachMenu'
 import { useStickToBottom } from '../lib/useStickToBottom'
 import { withArtifact } from '../state/useArtifacts'
 import type { PendingPrompt, PromptAnswer } from '../../../main/engine/prompts'
@@ -1280,18 +1280,10 @@ function Composer({
         )}
         <AttachmentChips attachments={attach} />
         <div className="cr-chat-composer-foot">
-          <IconButton
-            icon="Paperclip"
-            label="Attach files"
-            size={28}
-            variant="ghost"
+          <AttachMenu
             disabled={!paneId}
-            onClick={() => void attach.pick()}
-          />
-          <ArtifactPicker
-            look="icon"
-            disabled={!paneId}
-            onPick={(a) => setText(withArtifact(text, a))}
+            onFiles={() => void attach.pick()}
+            onArtifact={(a) => setText(withArtifact(text, a))}
           />
           {error ? (
             <span className="cr-chat-prompt-error" role="alert">
