@@ -2965,6 +2965,31 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             await until(() => Boolean($('.cr-chat-jump')), 1500),
             `scrollTop ${scroller?.scrollTop} of ${scroller?.scrollHeight}`
           )
+          // Reading mid-conversation, a message above you changing size
+          // (one coming into view, an image loading, old ones trimmed) leaves
+          // the one you're reading where it is.
+          {
+            const rows = scroller ? ([...scroller.children] as HTMLElement[]) : []
+            const [above, reading] = rows
+            const box = scroller?.getBoundingClientRect().top ?? 0
+            if (scroller && reading)
+              scroller.scrollTop =
+                reading.getBoundingClientRect().top - box + scroller.scrollTop + 2
+            await wait(100)
+            const before = reading?.getBoundingClientRect().top ?? 0
+            const spacer = document.createElement('div')
+            spacer.style.height = '60px'
+            above?.append(spacer)
+            await wait(100)
+            const after = reading?.getBoundingClientRect().top ?? 0
+            spacer.remove()
+            await wait(100)
+            await check(
+              'growth above the message you are reading does not move it',
+              !!reading && Math.abs(after - before) < 2,
+              `rows ${rows.length}; moved ${Math.round(after - before)}px; scrollTop ${scroller?.scrollTop} of ${scroller?.scrollHeight}`
+            )
+          }
           await click($('.cr-chat-jump'))
           await check(
             'Latest goes back to the bottom',

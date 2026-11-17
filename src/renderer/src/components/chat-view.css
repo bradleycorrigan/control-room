@@ -15,7 +15,18 @@
   /* A thin, quiet scrollbar, like the reading panes in chat apps. */
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
-  /* Messages fade out at the top and bottom edges instead of being cut. */
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  /* The reading-width column, as padding: messages are the scroller's own
+     children (see ChatView), each as wide as the column's 760px less its 8px sides. */
+  padding: var(--space-8) max(var(--space-8), calc((100% - 744px) / 2)) var(--space-16);
+  /* Messages fade out at the top edge instead of being cut. The foot fades
+     only while there's more below: at the end, the last message is whole. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 16px);
+  mask-image: linear-gradient(to bottom, transparent, black 16px);
+}
+.cr-chat-scroll:not([data-at-bottom]) {
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent,
@@ -32,18 +43,15 @@
   );
 }
 
-.cr-chat-column,
+/* Every message at its full height: the scroller is a flex column. */
+.cr-chat-scroll > * {
+  flex-shrink: 0;
+}
+
 .cr-chat-composer {
   width: min(760px, 100%);
   margin: 0 auto;
   box-sizing: border-box;
-}
-
-.cr-chat-column {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-16);
-  padding: var(--space-8) var(--space-8) var(--space-16);
 }
 
 .cr-chat-empty {
@@ -452,12 +460,13 @@
   }
 }
 
-/* A long paste: its first lines, fading out, and a way to see the rest. */
+/* A long paste: its first lines, cut with an ellipsis (not a fade, which
+   read as the page scrolling), and a way to see the rest. */
 .cr-chat-you[data-clamped] {
-  max-height: 9.5em;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent);
-  mask-image: linear-gradient(to bottom, black 60%, transparent);
 }
 
 .cr-chat-you-more {

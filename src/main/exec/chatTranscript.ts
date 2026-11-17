@@ -17,6 +17,12 @@ export type ChatEntry =
       images: string[]
     }
   | { kind: 'assistant'; id: string; text: string; at: string | null }
+  /**
+   * A new turn that no message of yours started: a background task finishing
+   * wakes Claude up. Not shown; it stops the previous reply being folded into
+   * the new turn's work.
+   */
+  | { kind: 'turn'; id: string; at: string | null }
   | {
       kind: 'tool'
       id: string
@@ -40,6 +46,12 @@ export interface QueuedMessage {
 
 const MAX_BYTES = 3_000_000
 const MAX_ENTRIES = 400
+/**
+ * How far past MAX_ENTRIES the window grows before its oldest entries go. In
+ * steps, not one at a time: every entry dropped off the top moves everything
+ * under it, and a session at work adds several a second.
+ */
+const TRIM_STEP = 200
 
 interface Block {
   type?: string
@@ -204,6 +216,8 @@ export class ChatParser {
   private n = 0
   /** A line cut off at the end of the last piece, finished by the next. */
   private partial = ''
+  /** Where the window starts in `out`; moves only in TRIM_STEP jumps. */
+  private start = 0
   /** Pasted images, by key: a data: URL each. */
   readonly images = new Map<string, string>()
   /**
@@ -232,7 +246,9 @@ export class ChatParser {
       // A complete line just lacking its newline: keep it, and don't parse it twice.
       if (this.out.length !== before) this.partial = ''
     }
-    return this.out.slice(-MAX_ENTRIES)
+    if (this.out.length - this.start > MAX_ENTRIES + TRIM_STEP)
+      this.start = this.out.length - MAX_ENTRIES
+    return this.out.slice(this.start)
   }
 
   private line(raw: string): void {
@@ -259,6 +275,10 @@ export class ChatParser {
     // a user line, so without this it never showed: it looked dropped.
     if (line.type === 'attachment') {
       const a = line.attachment
+      if (a?.type === 'queued_command' && a.commandMode === 'task-notification') {
+        this.out.push({ kind: 'turn', id, at })
+        return
+      }
       if (a?.type !== 'queued_command' || (a.commandMode && a.commandMode !== 'prompt')) return
       const t = userText(promptText(a.prompt))
       if (t) this.out.push({ kind: 'user', id, text: t, at, images: [] })

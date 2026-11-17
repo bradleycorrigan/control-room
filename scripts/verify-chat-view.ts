@@ -124,6 +124,56 @@ async function main(): Promise<void> {
     JSON.stringify(midTurn)
   )
 
+  // ---- A background task starting a turn ----
+  const woken = parseChat(
+    [
+      line({ type: 'user', uuid: 'u1', message: { role: 'user', content: 'Run the audit.' } }),
+      line({
+        type: 'assistant',
+        uuid: 'a1',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'Started it.' }] }
+      }),
+      line({
+        type: 'attachment',
+        uuid: 't1',
+        timestamp: '2026-11-17T10:00:00.000Z',
+        attachment: {
+          type: 'queued_command',
+          prompt: '<task-notification>done</task-notification>',
+          commandMode: 'task-notification'
+        }
+      })
+    ].join('')
+  )
+  check(
+    'a background task finishing marks a new turn, and shows no message',
+    woken.length === 3 && woken[2].kind === 'turn' && woken[2].at === '2026-11-17T10:00:00.000Z',
+    JSON.stringify(woken)
+  )
+
+  // ---- The window trims in steps, not one entry per poll ----
+  {
+    const { ChatParser: P } = await import('../src/main/exec/chatTranscript')
+    const p = new P()
+    const said = (i: number): string =>
+      line({
+        type: 'assistant',
+        uuid: `s${i}`,
+        message: { role: 'assistant', content: [{ type: 'text', text: `note ${i}` }] }
+      })
+    p.push(Array.from({ length: 450 }, (_, i) => said(i)).join(''))
+    const first = p.entries()[0]?.id
+    p.push(said(450))
+    const still = p.entries()[0]?.id
+    p.push(Array.from({ length: 200 }, (_, i) => said(451 + i)).join(''))
+    const later = p.entries()
+    check(
+      'old entries leave the window in steps, so the top stays still between them',
+      first === 's0:0' && still === 's0:0' && later.length === 400 && later[0].id === 's251:0',
+      `${first} ${still} ${later.length} ${later[0]?.id}`
+    )
+  }
+
   // ---- Messages waiting in Claude Code's queue ----
   const { ChatParser } = await import('../src/main/exec/chatTranscript')
   const q = (operation: string, content?: string, extra: object = {}): string =>

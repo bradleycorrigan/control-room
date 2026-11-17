@@ -23,6 +23,7 @@ interface Props {
 
 type ToolEntry = Extract<ChatEntry, { kind: 'tool' }>
 type Said = Extract<ChatEntry, { kind: 'assistant' }>
+type TurnMark = Extract<ChatEntry, { kind: 'turn' }>
 type Tools = { kind: 'tools'; id: string; tools: ToolEntry[] }
 /** Claude's work on one turn, folded to a line: its notes to itself and its tool calls. */
 type Work = {
@@ -34,7 +35,7 @@ type Work = {
   /** The turn Claude is on right now: everything so far is work, even its last words. */
   live: boolean
 }
-type Item = Exclude<ChatEntry, ToolEntry> | Tools | Work
+type Item = Exclude<ChatEntry, ToolEntry | TurnMark> | Tools | Work
 
 const TOOLS_SHOWN = 5
 
@@ -85,8 +86,8 @@ function withDays(items: Item[]): Row[] {
   return out
 }
 
-function group(entries: ChatEntry[]): Item[] {
-  const out: Item[] = []
+function group(entries: ChatEntry[]): (Item | TurnMark)[] {
+  const out: (Item | TurnMark)[] = []
   for (const e of entries) {
     const last = out[out.length - 1]
     if (e.kind === 'tool') {
@@ -104,7 +105,7 @@ function group(entries: ChatEntry[]): Item[] {
  * all reply. While Claude is working, the whole current turn is work: its
  * latest words may be a note on the way, not the answer.
  */
-function fold(items: Item[], working: boolean): Item[] {
+function fold(items: (Item | TurnMark)[], working: boolean): Item[] {
   const out: Item[] = []
   let turn: Item[] = []
   let asked: string | null = null
@@ -134,6 +135,11 @@ function fold(items: Item[], working: boolean): Item[] {
     if (item.kind === 'user') {
       flush(false)
       out.push(item)
+      asked = item.at
+    } else if (item.kind === 'turn') {
+      // A background task woke Claude: a new turn, so the reply before it
+      // stays a reply instead of folding into this turn's work.
+      flush(false)
       asked = item.at
     } else turn.push(item)
   }
@@ -241,67 +247,68 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
   return (
     <div className="cr-chat" data-chat-view>
       <FindBar scrollRef={scrollRef} />
-      <div className="cr-chat-scroll" ref={scrollRef}>
-        <div className="cr-chat-column">
-          {entries === undefined ? null : items.length === 0 ? (
-            <EmptyState
-              className="cr-chat-empty"
-              icon="MessageSquare"
-              title="No messages yet"
-              body="Ask Claude something below. What you send goes to the session's terminal, as if you'd typed it there."
-            />
-          ) : (
-            rows.map((item) =>
-              item.kind === 'day' ? (
-                <div key={item.id} className="cr-chat-day" role="separator">
-                  <span>{item.label}</span>
-                </div>
-              ) : item.kind === 'user' ? (
-                <YouMessage
-                  key={item.id}
-                  text={item.text}
-                  at={item.at}
-                  images={item.images}
-                  claudeSessionId={claudeSessionId}
-                  isNew={isNew(item.id)}
-                />
-              ) : item.kind === 'assistant' ? (
-                <ClaudeMessage key={item.id} text={item.text} at={item.at} isNew={isNew(item.id)} />
-              ) : item.kind === 'work' ? (
-                <WorkBlock key={item.id} work={item} isNew={isNew(item.id)} />
-              ) : (
-                <ToolGroup key={item.id} tools={item.tools} isNew={isNew(item.id)} />
-              )
+      {/* Each message is a direct child of the scroller: that is what lets
+          useStickToBottom hold the one you're reading still while content
+          above it changes size. */}
+      <div className="cr-chat-scroll" ref={scrollRef} data-at-bottom={follow.atBottom || undefined}>
+        {entries === undefined ? null : items.length === 0 ? (
+          <EmptyState
+            className="cr-chat-empty"
+            icon="MessageSquare"
+            title="No messages yet"
+            body="Ask Claude something below. What you send goes to the session's terminal, as if you'd typed it there."
+          />
+        ) : (
+          rows.map((item) =>
+            item.kind === 'day' ? (
+              <div key={item.id} className="cr-chat-day" role="separator">
+                <span>{item.label}</span>
+              </div>
+            ) : item.kind === 'user' ? (
+              <YouMessage
+                key={item.id}
+                text={item.text}
+                at={item.at}
+                images={item.images}
+                claudeSessionId={claudeSessionId}
+                isNew={isNew(item.id)}
+              />
+            ) : item.kind === 'assistant' ? (
+              <ClaudeMessage key={item.id} text={item.text} at={item.at} isNew={isNew(item.id)} />
+            ) : item.kind === 'work' ? (
+              <WorkBlock key={item.id} work={item} isNew={isNew(item.id)} />
+            ) : (
+              <ToolGroup key={item.id} tools={item.tools} isNew={isNew(item.id)} />
             )
-          )}
-          {queued.map((q, i) => (
-            <OutgoingMessage
-              key={`q${i}:${q.at}`}
-              message={{ id: '', text: q.text, paths: [], sentAt: 0, state: 'queued' }}
-              onRetry={() => {}}
-            />
-          ))}
-          {waiting.map((m) => (
-            <OutgoingMessage
-              key={m.id}
-              message={m}
-              onRetry={() => {
-                const again: Outgoing = {
-                  ...m,
-                  sentAt: Date.now(),
-                  state: working ? 'queued' : 'sent',
-                  error: null
-                }
-                setSent((all) => all.map((x) => (x.id === m.id ? again : x)))
-                deliver(again)
-              }}
-            />
-          ))}
-          {mine.map((p) => (
-            <PromptCard key={p.id} prompt={p} />
-          ))}
-          {working && mine.length === 0 && <Working paneId={paneId} />}
-        </div>
+          )
+        )}
+        {queued.map((q, i) => (
+          <OutgoingMessage
+            key={`q${i}:${q.at}`}
+            message={{ id: '', text: q.text, paths: [], sentAt: 0, state: 'queued' }}
+            onRetry={() => {}}
+          />
+        ))}
+        {waiting.map((m) => (
+          <OutgoingMessage
+            key={m.id}
+            message={m}
+            onRetry={() => {
+              const again: Outgoing = {
+                ...m,
+                sentAt: Date.now(),
+                state: working ? 'queued' : 'sent',
+                error: null
+              }
+              setSent((all) => all.map((x) => (x.id === m.id ? again : x)))
+              deliver(again)
+            }}
+          />
+        ))}
+        {mine.map((p) => (
+          <PromptCard key={p.id} prompt={p} />
+        ))}
+        {working && mine.length === 0 && <Working paneId={paneId} />}
       </div>
       {!follow.atBottom && items.length > 0 && (
         <button
