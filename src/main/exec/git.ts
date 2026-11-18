@@ -1,5 +1,7 @@
-import { lstat, realpath, rm, unlink } from 'node:fs/promises'
+import { lstat, realpath, rm, unlink, copyFile, mkdir, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { run } from './run'
 
 export async function findMainCheckout(anyPathInRepo: string): Promise<string | null> {
@@ -970,4 +972,52 @@ export async function remoteTrackingRefExists(repoPath: string, branch: string):
     `refs/remotes/origin/${branch}`
   ])
   return res.code === 0
+}
+
+/** The commit a worktree is on, or null if git can't say. */
+export async function headCommit(worktree: string): Promise<string | null> {
+  const res = await run('git', ['-C', worktree, 'rev-parse', 'HEAD'])
+  const sha = res.stdout.trim()
+  return res.code === 0 && /^[0-9a-f]{40}$/.test(sha) ? sha : null
+}
+
+/**
+ * Carries one worktree's uncommitted work into another on the same commit:
+ * edits and deletions to tracked files as a patch, and new files Git isn't
+ * ignoring copied over. Nothing in `from` changes, its index included.
+ */
+export async function copyWorkingChanges(
+  from: string,
+  to: string
+): Promise<{ ok: boolean; changed: number; error?: string }> {
+  const diff = await run('git', ['-C', from, 'diff', 'HEAD', '--binary'], { timeoutMs: 30_000 })
+  if (diff.code !== 0) return { ok: false, changed: 0, error: diff.stderr.trim() }
+  let changed = 0
+  if (diff.stdout.trim()) {
+    const patch = join(tmpdir(), `cr-fork-${randomUUID()}.patch`)
+    await writeFile(patch, diff.stdout)
+    const applied = await run('git', ['-C', to, 'apply', '--binary', '--whitespace=nowarn', patch])
+    await rm(patch, { force: true })
+    if (applied.code !== 0) return { ok: false, changed: 0, error: applied.stderr.trim() }
+    changed += (diff.stdout.match(/^diff --git /gm) ?? []).length
+  }
+  const untracked = await run('git', [
+    '-C',
+    from,
+    'ls-files',
+    '--others',
+    '--exclude-standard',
+    '-z'
+  ])
+  if (untracked.code !== 0) return { ok: false, changed, error: untracked.stderr.trim() }
+  for (const rel of untracked.stdout.split('\0').filter(Boolean)) {
+    try {
+      await mkdir(dirname(join(to, rel)), { recursive: true })
+      await copyFile(join(from, rel), join(to, rel))
+      changed++
+    } catch (err) {
+      return { ok: false, changed, error: `could not copy ${rel}: ${String(err)}` }
+    }
+  }
+  return { ok: true, changed }
 }

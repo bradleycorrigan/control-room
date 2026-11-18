@@ -4739,6 +4739,26 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           await wait(300)
         }
 
+        // Fork: in the session's menu, ready to use on a session with a
+        // conversation. (Running it makes a worktree and a terminal, which
+        // would change the counts other checks rely on; the copying is
+        // checked by scripts/verify-fork-changes.ts.)
+        {
+          await openSessionByTitle('Working session')
+          await click($('[aria-label="More actions"]'))
+          await until(() => Boolean(byText('.session-detail-menu button', 'Fork')), 2000)
+          const fork = byText('.session-detail-menu button', 'Fork') as HTMLButtonElement | null
+          await check(
+            'Fork is in the session menu, and usable',
+            !!fork && !fork.disabled && fork.getAttribute('aria-disabled') !== 'true',
+            fork
+              ? `disabled ${fork.disabled}, aria ${fork.getAttribute('aria-disabled')}`
+              : 'missing'
+          )
+          await key('Escape')
+          await wait(200)
+        }
+
         // Hand-off note: header overflow menu -> dialog with the note built from
         // the branch's own history -> Post to a linked ticket, or Copy when
         // unlinked. Linked and unlinked in the same block, so this leaves the

@@ -265,6 +265,11 @@ export function createSession(input: CreateSessionInput): Promise<CreateSessionR
   return window.api.invoke<CreateSessionResult>('sessions:create', input)
 }
 
+/** A copy of a session: its conversation and work, in a new worktree. */
+export function forkSession(id: string): Promise<CreateSessionResult> {
+  return window.api.invoke<CreateSessionResult>('sessions:fork', id, crypto.randomUUID())
+}
+
 export interface SessionCreateEvent {
   creationId: string
   step: string

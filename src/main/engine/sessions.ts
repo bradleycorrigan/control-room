@@ -29,6 +29,8 @@ import {
   pruneWorktrees,
   isBranchCheckedOutElsewhere,
   branchOfWorktree,
+  headCommit,
+  copyWorkingChanges,
   type GitOpResult
 } from '../exec/git'
 import {
@@ -40,7 +42,7 @@ import {
   capturePane,
   deliverPrompt as pastePrompt
 } from '../exec/tmux'
-import { markSessionTransition, resolveClaudeBinary } from '../exec/claude'
+import { markSessionTransition, resolveClaudeBinary, resumeArgs } from '../exec/claude'
 import { devContainerAvailability, devContainerCommand } from '../exec/devcontainer'
 import { containerHookUrl } from './hooks-server'
 import { getState, mutate } from '../store/store'
@@ -218,6 +220,17 @@ export interface CreateSessionInput {
   // Start the agent inside the folder's dev container (exec/devcontainer.ts).
   // Refused when the dev container can't work for this folder.
   devContainer?: boolean
+  /** Set by forkSession, never by a screen: the conversation and work to copy. */
+  fork?: SessionFork
+}
+
+interface SessionFork {
+  parentId: string
+  claudeSessionId: string
+  /** The parent's worktree: its uncommitted work comes along. */
+  from: string
+  /** The commit the parent is on; the fork's new branch starts there. */
+  baseCommit: string
 }
 
 export interface CreateSessionResult {
@@ -454,7 +467,7 @@ export function withAttachments(
  * prompt) and inherits the GUI app's broken PATH, with unreliable exit codes.
  */
 export async function createSession(input: CreateSessionInput): Promise<CreateSessionResult> {
-  const { creationId, projectId, basedOn, model, planMode, effort, attachmentPaths } = input
+  const { creationId, projectId, basedOn, model, planMode, effort, attachmentPaths, fork } = input
   let investigate = input.investigate
   const prompt = withAttachments(input.prompt, attachmentPaths)
   let branch = input.branch
@@ -543,7 +556,9 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
     emitProgress(creationId, 'validate', true)
 
     // Plan 4 §7.2 worktreeFetchBeforeCreate — default true, today's behaviour.
-    if (project.worktreeFetchBeforeCreate !== false) {
+    if (fork) {
+      emitProgress(creationId, 'fetch', true, 'skipped: a fork starts from a local commit')
+    } else if (project.worktreeFetchBeforeCreate !== false) {
       const fetchedAt = lastFetchedAt.get(project.repoPath) ?? 0
       const age = Date.now() - fetchedAt
       if (age < FETCH_CACHE_MS) {
@@ -608,7 +623,9 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
       // Plan 4 §7.2 worktreeBaseBranch — falls back to the remote's actual
       // default branch, never a hardcoded "main".
       const baseBranch =
-        project.worktreeBaseBranch ?? `origin/${await getDefaultBranch(project.repoPath)}`
+        fork?.baseCommit ??
+        project.worktreeBaseBranch ??
+        `origin/${await getDefaultBranch(project.repoPath)}`
       worktreeResult = await addWorktreeNewBranchResult(
         project.repoPath,
         target,
@@ -660,6 +677,20 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
     )
     emitProgress(creationId, 'symlinks', carried.ok, carried.message)
     carryClaudeLocalSettings(project.repoPath, target)
+
+    if (fork) {
+      // The work the conversation talks about: without it, the fork would
+      // remember edits its folder doesn't have.
+      const copied = await copyWorkingChanges(fork.from, target)
+      emitProgress(
+        creationId,
+        'changes',
+        copied.ok,
+        copied.ok
+          ? `${copied.changed} uncommitted file${copied.changed === 1 ? '' : 's'} copied`
+          : `could not copy uncommitted work: ${copied.error}`
+      )
+    }
 
     // Best-effort, non-fatal — harmless if either tool isn't installed (a
     // missing binary or a real config problem both just show up as a
@@ -718,6 +749,7 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
   // fresh worktree (installing deps, etc.), and this session isn't one.
   const setupCommand = investigate ? null : resolveSetupCommand(project)
   let agentCommand = project.agentCommand
+  if (fork) agentCommand += ` ${resumeArgs(fork.claudeSessionId, true).join(' ')}`
   if (model) agentCommand += ` --model ${model}`
   if (planMode) agentCommand += ` --permission-mode plan`
   if (effort) agentCommand += ` --effort ${effort}`
@@ -834,12 +866,10 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
     archivedAt: null,
     lastPrompt: prompt || null,
     originalClaudeSessionId: null,
-    startKind: 'create',
+    startKind: fork ? 'fork' : 'create',
     waitingReason: null,
     isCustomName: false, // plan 4 §7.3 — the rename IPC handler flips this true
-    // plan 4 §7.5 — no fork UI/logic exists yet, so this session is never
-    // created as a fork today; left unset, ready for that path to set it.
-    parentSessionId: null,
+    parentSessionId: fork?.parentId ?? null,
     harnessVersion: undefined, // backfilled below, best-effort
     ...(input.devContainer ? { devContainer: true } : {})
   }
@@ -882,6 +912,36 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
     })
 
   return { ok: true, record }
+}
+
+/**
+ * A copy of a session to try something else in: the same conversation,
+ * carried on separately (`claude --resume … --fork-session`), in a worktree of
+ * its own on a new branch from the session's commit, with its uncommitted
+ * work copied over. The original carries on untouched.
+ */
+export async function forkSession(id: string, creationId: string): Promise<CreateSessionResult> {
+  const parent = getState().sessions.find((s) => s.id === id)
+  if (!parent) return { ok: false, error: 'session not found' }
+  const claudeSessionId = parent.claudeSessionId ?? parent.originalClaudeSessionId
+  if (!claudeSessionId) return { ok: false, error: 'it has no conversation to copy yet' }
+  if (!existsSync(parent.worktreePath))
+    return { ok: false, error: 'its worktree is gone, so there is no work to copy' }
+  const baseCommit = await headCommit(parent.worktreePath)
+  if (!baseCommit) return { ok: false, error: 'Git could not say which commit it is on' }
+  const stem =
+    parent.detached || parent.investigation || !parent.branch || parent.branch === '(unknown)'
+      ? generateBranchName()
+      : parent.branch
+  return createSession({
+    creationId,
+    projectId: parent.projectId,
+    title: `${parent.title} (fork)`,
+    branch: `${stem}-fork-${randomBytes(2).toString('hex')}`,
+    basedOn: 'new',
+    devContainer: parent.devContainer,
+    fork: { parentId: parent.id, claudeSessionId, from: parent.worktreePath, baseCommit }
+  })
 }
 
 async function waitForPrompt(paneId: string, timeoutMs: number): Promise<boolean> {

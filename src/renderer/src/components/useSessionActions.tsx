@@ -17,7 +17,8 @@ import {
   killSessionWindow,
   stopBackgroundAgent,
   dismissBackgroundAgent,
-  killSessionProcess
+  killSessionProcess,
+  forkSession
 } from '../api'
 import { useConfirm } from './primitives'
 import { setSessionPinned } from '../api-projects'
@@ -40,6 +41,11 @@ interface Options {
  * "Mark as unread" / "Mark as read". Every session gets it, with a record or
  * without, so it is exported for the rows that build their own menu.
  */
+/** Asks App to open a session in a tab, from wherever its menu was used. */
+function openSessionTab(key: string): void {
+  window.dispatchEvent(new CustomEvent('cr:open-session', { detail: key }))
+}
+
 export function readAction(session: LiveSession, onChanged?: () => void): SessionCardAction {
   return session.unread
     ? {
@@ -210,6 +216,32 @@ export function useSessionActions({
       // Needs a worktree and branch to build anything from — the same
       // record every other action here already requires.
       { label: 'Write hand-off note…', group: 'work', onClick: () => setWritingHandoff(session) },
+      // A copy to try something else in. Left out once its worktree is
+      // gone: there's no work to copy.
+      ...(record.deletedAt
+        ? []
+        : [
+            {
+              label: 'Fork',
+              icon: 'GitFork',
+              group: 'work',
+              disabled:
+                record.claudeSessionId || record.originalClaudeSessionId
+                  ? undefined
+                  : 'It has no conversation to copy yet',
+              onClick: () => {
+                pushToast?.(`Forking ${record.title}…`)
+                void forkSession(record.id).then((result) => {
+                  if (!result.ok || !result.record) {
+                    pushToast?.(result.error ?? 'Could not fork it.')
+                    return
+                  }
+                  onChanged()
+                  openSessionTab(`record:${result.record.id}`)
+                })
+              }
+            } satisfies SessionCardAction
+          ]),
       // Organise it.
       {
         label: onRename ? 'Rename' : 'Rename…',

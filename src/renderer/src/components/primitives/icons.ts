@@ -71,6 +71,7 @@ export {
   Forward,
   Gamepad2,
   GitBranch,
+  GitFork,
   GitMerge,
   GitPullRequest,
   Grid,

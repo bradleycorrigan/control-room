@@ -142,6 +142,7 @@ import type { JiraCreateInput, BacklogPrefs } from './exec/jira'
 import {
   carryClaudeLocalSettings,
   createSession,
+  forkSession,
   deleteSession,
   retireSessionsInWorktree,
   restoreWorktree,
@@ -559,7 +560,12 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('sessions:create', async (_evt, input: CreateSessionInput) => {
-    return createSession(input)
+    // A fork is only ever made from a stored session, by sessions:fork.
+    return createSession({ ...input, fork: undefined })
+  })
+
+  ipcMain.handle('sessions:fork', async (_evt, id: string, creationId: string) => {
+    return forkSession(id, creationId)
   })
 
   ipcMain.handle(

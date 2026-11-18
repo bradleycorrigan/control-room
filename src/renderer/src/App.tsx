@@ -292,6 +292,18 @@ function App(): React.JSX.Element {
     setLastOpenedSessionKey(liveKey)
   }, [])
 
+  // A session menu that made a new session (Fork) asks for it to open.
+  useEffect(() => {
+    const onOpen = (e: Event): void => {
+      const key = (e as CustomEvent<string>).detail
+      if (typeof key !== 'string') return
+      refreshSessions()
+      openSessionByKey(key)
+    }
+    window.addEventListener('cr:open-session', onOpen)
+    return () => window.removeEventListener('cr:open-session', onOpen)
+  }, [openSessionByKey, refreshSessions])
+
   // A file dropped anywhere that doesn't take one would otherwise load that
   // file in place of the app — Electron's default for a drop. Places that do
   // take drops (the terminal, Home's composer) handle it themselves first.
