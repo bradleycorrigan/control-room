@@ -3279,6 +3279,27 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         // (alternate screen, SGR mouse) and prints whatever it receives.
         await openSessionByTitle('Working session')
         await until(() => Boolean($('.xterm-screen')), 6000)
+        // A copy in tmux (a drag in the shell, `y` in copy mode) reaches the
+        // terminal as a clipboard write (OSC 52), and must land on the Mac's
+        // clipboard. A program writing one goes the same way through tmux.
+        {
+          const mark = `CR-CLIP-${Date.now()}`
+          await wait(800)
+          await api.invoke(
+            'dev:pane-command',
+            `printf '\\033]52;c;%s\\007' "$(printf ${mark} | base64)"`
+          )
+          let got = ''
+          for (let i = 0; i < 20 && got !== mark; i++) {
+            await wait(200)
+            got = String(await api.invoke('dev:clipboard-text'))
+          }
+          await check(
+            'a copy made in tmux lands on the clipboard',
+            got === mark,
+            `clipboard holds ${JSON.stringify(got.slice(0, 60))}`
+          )
+        }
         await api.invoke(
           'dev:pane-command',
           'python3 -c \'import os,tty,select,time;w=lambda b:os.write(1,b);w(b"\\x1b[?1049h\\x1b[?1000h\\x1b[?1006hWHEEL-"+b"READY\\r\\n");tty.setraw(0);end=time.time()+8;[w(b"got:"+repr(os.read(0,64)).encode()+b"\\r\\n") for r in iter(lambda: time.time()<end and select.select([0],[],[],0.2), False) if r[0]];w(b"\\x1b[?1000l\\x1b[?1006l\\x1b[?1049l");os.system("stty sane")\''

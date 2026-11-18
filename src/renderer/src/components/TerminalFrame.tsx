@@ -219,6 +219,9 @@ export default function TerminalFrame({
             onFallback={handleFallback}
             onFocusChange={handleFocusChange}
             onAtBottomChange={setAtBottom}
+            // The shell scrolls back through tmux's copy mode, 5 lines a
+            // report. The agent draws its own history; left as it was.
+            linesPerScrollReport={activeTab === 'shell' && !sideBySide ? 5 : undefined}
           />
         )}
         {!fallback && !atBottom && (

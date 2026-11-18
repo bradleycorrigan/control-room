@@ -196,6 +196,11 @@ export async function runScreenshotFlow(win: BrowserWindow): Promise<void> {
     const ran = out.stdout.split('\n').some((l) => l.trim() === marker)
     return { ok: result.ok && ran, detail: result.error ?? (ran ? 'ran' : 'not run') }
   })
+  // What's on the clipboard, for checks that copy through the terminal.
+  ipcMain.handle('dev:clipboard-text', async () => {
+    const { clipboard } = await import('electron')
+    return clipboard.readText()
+  })
   // Types a command into every fixture pane (e.g. printing block characters
   // for a look at how the terminal draws them).
   ipcMain.handle('dev:pane-command', async (_evt, command: string) => {

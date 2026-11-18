@@ -5,6 +5,7 @@
 // Run: npx tsx scripts/verify-pure-logic.ts
 
 import { parseEstimateHours, workingDays } from '../src/renderer/src/screens/backlog/cyclePlan'
+import { clipboardWrite, scrollReports } from '../src/renderer/src/lib/scrollReports'
 
 let failures = 0
 function check(name: string, ok: boolean, detail = ''): void {
@@ -22,6 +23,32 @@ check(
   workingDays('2026-09-14T00:00:00.000Z', '2026-09-18T00:00:00.000Z') === 5 &&
     workingDays(undefined, undefined) === 10,
   `${workingDays('2026-09-14T00:00:00.000Z', '2026-09-18T00:00:00.000Z')}, ${workingDays(undefined, undefined)}`
+)
+
+// The shell's scroll pace: one report per 5 lines moved, however the
+// movement arrives (a trackpad's many small events or a mouse's big notch).
+{
+  const cell = 16
+  let carried = 0
+  let reports = 0
+  for (let i = 0; i < 40; i++) {
+    const r = scrollReports(carried, -4, cell, 5) // 40 x 4px = 160px = 10 lines up
+    carried = r.carried
+    reports += r.reports
+  }
+  const notch = scrollReports(0, 240, cell, 5) // one 15-line notch down
+  const turn = scrollReports(-70, 10, cell, 5) // reversing drops what was carried
+  check(
+    'scrollReports sends one report per 5 lines, small events or big',
+    reports === -2 && notch.reports === 3 && turn.reports === 0 && turn.carried === 10,
+    `trackpad ${reports}, notch ${notch.reports}, reversed carried ${turn.carried}`
+  )
+}
+check(
+  'clipboardWrite reads an OSC 52 write and ignores a read',
+  clipboardWrite(`c;${Buffer.from('héllo wörld').toString('base64')}`) === 'héllo wörld' &&
+    clipboardWrite('c;?') === null &&
+    clipboardWrite('junk') === null
 )
 
 if (failures) {

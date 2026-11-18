@@ -7,6 +7,7 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { SearchAddon, type ISearchOptions } from '@xterm/addon-search'
 import { IconButton } from './primitives'
 import { isShortcutMod } from '../keyboard'
+import { clipboardWrite, scrollReports } from '../lib/scrollReports'
 import '@xterm/xterm/css/xterm.css'
 import {
   terminalAttach,
@@ -19,7 +20,8 @@ import {
   onSettingsChanged,
   getPathForDroppedFile,
   addDroppedPaths,
-  pasteAttachmentImage
+  pasteAttachmentImage,
+  copyText
 } from '../api'
 
 // A dropped file's path, escaped the way macOS Terminal and Ghostty do it —
@@ -144,12 +146,33 @@ interface Props {
   onReady?: () => void
   onFocusChange?: (focused: boolean) => void
   onAtBottomChange?: (atBottom: boolean) => void
+  /**
+   * While the program on screen takes the mouse (tmux, with mouse on), how
+   * far one scroll report moves it. xterm sends one report per wheel event
+   * whatever its size, so a trackpad's stream of small events raced and a
+   * mouse notch crawled. Given this, reports go out at one per that many
+   * lines your fingers move. tmux's copy mode moves 5 lines a report.
+   */
+  linesPerScrollReport?: number
 }
 
 const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(
-  { tmuxSessionName, paneId, onFallback, onReady, onFocusChange, onAtBottomChange },
+  {
+    tmuxSessionName,
+    paneId,
+    onFallback,
+    onReady,
+    onFocusChange,
+    onAtBottomChange,
+    linesPerScrollReport
+  },
   ref
 ) {
+  // Read when the wheel turns, so switching tabs doesn't rebuild the terminal.
+  const linesPerReportRef = useRef(linesPerScrollReport)
+  useEffect(() => {
+    linesPerReportRef.current = linesPerScrollReport
+  }, [linesPerScrollReport])
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -289,6 +312,9 @@ const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(
       },
       scrollback: 5000,
       allowProposedApi: true,
+      // tmux takes the mouse, so a drag selects in tmux. Option-drag selects
+      // here instead, as in Terminal.app and Ghostty, and ⌘C copies it.
+      macOptionClickForcesSelection: true,
       cursorBlink: true,
       minimumContrastRatio: readMinContrast(container),
       theme: readXtermTheme(container)
@@ -445,6 +471,54 @@ const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(
       })()
     })
 
+    // tmux copies (a drag in a shell pane, `y` in copy mode) by asking the
+    // terminal to set the clipboard, with OSC 52. xterm ignores that unless
+    // told, so the copy went nowhere and the selection just vanished.
+    const clipboardDisposable = term.parser.registerOscHandler(52, (data) => {
+      const text = clipboardWrite(data)
+      if (text) {
+        void copyText(text).then((r) => {
+          if (!disposed) flashNote(r.ok ? 'Copied' : 'Could not copy to the clipboard')
+        })
+      }
+      return true
+    })
+
+    // Scroll reports at a steady rate (see linesPerScrollReport). Only while
+    // the program takes the mouse, and only in SGR form, which tmux asks for;
+    // otherwise xterm scrolls as it always has.
+    let wheelPx = 0
+    term.attachCustomWheelEventHandler((ev) => {
+      const step = linesPerReportRef.current
+      const mouse = (
+        term as unknown as { _core?: { coreMouseService?: { activeEncoding?: string } } }
+      )._core?.coreMouseService?.activeEncoding
+      if (!step || term.modes.mouseTrackingMode === 'none' || mouse !== 'SGR') return true
+      ev.preventDefault()
+      const rect = container.getBoundingClientRect()
+      const cell = rect.height / term.rows
+      const px =
+        ev.deltaMode === WheelEvent.DOM_DELTA_LINE
+          ? ev.deltaY * cell
+          : ev.deltaMode === WheelEvent.DOM_DELTA_PAGE
+            ? ev.deltaY * rect.height
+            : ev.deltaY
+      if (px === 0) return false
+      const next = scrollReports(wheelPx, px, cell, step)
+      wheelPx = next.carried
+      const reports = next.reports
+      if (reports === 0) return false
+      const col = Math.min(
+        term.cols,
+        Math.max(1, Math.floor(((ev.clientX - rect.left) / rect.width) * term.cols) + 1)
+      )
+      const row = Math.min(term.rows, Math.max(1, Math.floor((ev.clientY - rect.top) / cell) + 1))
+      const report = `\x1b[<${reports < 0 ? 64 : 65};${col};${row}M`
+      if (terminalLiveRef.current)
+        void terminalInput(tmuxSessionName, paneId, report.repeat(Math.abs(reports)))
+      return false
+    })
+
     const scrollDisposable = term.onScroll(() => {
       const buf = term.buffer.active
       const atBottom = buf.viewportY >= buf.length - term.rows - 1
@@ -517,6 +591,7 @@ const Terminal = forwardRef<TerminalHandle, Props>(function Terminal(
       unsubscribeOutput?.()
       dataDisposable.dispose()
       scrollDisposable.dispose()
+      clipboardDisposable.dispose()
       term.textarea?.removeEventListener('focus', handleFocusIn)
       term.textarea?.removeEventListener('blur', handleFocusOut)
       document.removeEventListener('visibilitychange', handleVisibility)
