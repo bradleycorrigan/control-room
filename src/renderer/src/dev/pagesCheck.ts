@@ -3073,6 +3073,23 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             !(paste?.textContent ?? '').includes('Attached files'),
           `clamped ${pasteBubble?.dataset.clamped}; ${paste?.textContent?.slice(-160)}`
         )
+        // The fold ends on a whole line: nothing of the seventh line shows
+        // under it (it did, in the bubble's padding).
+        {
+          const text = pasteBubble?.querySelector<HTMLElement>('.cr-chat-you-text')
+          const line = text ? parseFloat(getComputedStyle(text).lineHeight) : NaN
+          const shown = text?.getBoundingClientRect().height ?? NaN
+          const pad = pasteBubble
+            ? parseFloat(getComputedStyle(pasteBubble).paddingTop) +
+              parseFloat(getComputedStyle(pasteBubble).paddingBottom)
+            : NaN
+          await check(
+            'a folded message ends on a whole line',
+            Math.abs(shown - 6 * line) < 1.5 &&
+              Math.abs((pasteBubble?.getBoundingClientRect().height ?? 0) - shown - pad) < 1.5,
+            `text ${shown}px for 6 lines of ${line}px; bubble ${pasteBubble?.getBoundingClientRect().height}px, padding ${pad}px`
+          )
+        }
         await click(byText('.cr-chat-you-more', 'Show all 25 lines'))
         await check(
           'Show all opens the whole paste',
@@ -3164,6 +3181,17 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             Boolean($('[data-chat-claude] .cr-chat-claude-tools button')),
           `copied ${codeCopy?.dataset.copied}; button ${Boolean(codeCopy)}`
         )
+
+        // Each reply can be forked from: the conversation up to there.
+        {
+          const replies = $$<HTMLElement>('[data-chat-view] > .cr-chat-scroll > [data-chat-claude]')
+          const forks = replies.filter((r) => r.querySelector('[data-chat-fork]'))
+          await check(
+            'each reply has Fork from here',
+            replies.length > 0 && forks.length === replies.length,
+            `${forks.length} of ${replies.length} replies`
+          )
+        }
 
         await api.invoke('dev:seed-prompt', {
           session_id: 'fixture-waiting',

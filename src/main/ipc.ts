@@ -564,9 +564,12 @@ export function registerIpcHandlers(): void {
     return createSession({ ...input, fork: undefined })
   })
 
-  ipcMain.handle('sessions:fork', async (_evt, id: string, creationId: string) => {
-    return forkSession(id, creationId)
-  })
+  ipcMain.handle(
+    'sessions:fork',
+    async (_evt, id: string, creationId: string, at?: string) => {
+      return forkSession(id, creationId, typeof at === 'string' ? at : undefined)
+    }
+  )
 
   ipcMain.handle(
     'sessions:delete',

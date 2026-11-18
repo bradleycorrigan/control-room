@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChatEntry, QueuedMessage } from '../../../main/exec/chatTranscript'
 import { AttachMenu } from './AttachMenu'
 import { useStickToBottom } from '../lib/useStickToBottom'
@@ -19,6 +19,18 @@ interface Props {
   claudeSessionId: string | null
   paneId: string | null
   working: boolean
+  /** Forks the session from one of Claude's replies (its transcript uuid). Left out where it can't fork. */
+  onFork?: (at: string) => void
+}
+
+/**
+ * The transcript line a reply came from: its id, less the `:n` of a block
+ * within it. Null for a line with no uuid of its own (the parser numbers
+ * those `l<n>`): there is nothing to fork from.
+ */
+function replyUuid(id: string): string | null {
+  const uuid = id.replace(/:\d+$/, '')
+  return /^l\d+$/.test(uuid) ? null : uuid
 }
 
 type ToolEntry = Extract<ChatEntry, { kind: 'tool' }>
@@ -147,7 +159,19 @@ function fold(items: (Item | TurnMark)[], working: boolean): Item[] {
   return out
 }
 
-export default function ChatView({ claudeSessionId, paneId, working }: Props): React.JSX.Element {
+export default function ChatView({
+  claudeSessionId,
+  paneId,
+  working,
+  onFork
+}: Props): React.JSX.Element {
+  // One stable function for every reply, so a re-render above never redraws
+  // a reply's markdown; it reads the latest onFork when clicked.
+  const onForkRef = useRef(onFork)
+  useEffect(() => {
+    onForkRef.current = onFork
+  }, [onFork])
+  const forkAt = useCallback((at: string) => onForkRef.current?.(at), [])
   const [entries, setEntries] = useState<ChatEntry[] | null | undefined>(undefined)
   const [prompts, setPrompts] = useState<PendingPrompt[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -274,7 +298,14 @@ export default function ChatView({ claudeSessionId, paneId, working }: Props): R
                 isNew={isNew(item.id)}
               />
             ) : item.kind === 'assistant' ? (
-              <ClaudeMessage key={item.id} text={item.text} at={item.at} isNew={isNew(item.id)} />
+              <ClaudeMessage
+                key={item.id}
+                text={item.text}
+                at={item.at}
+                isNew={isNew(item.id)}
+                forkFrom={onFork ? replyUuid(item.id) : null}
+                onFork={forkAt}
+              />
             ) : item.kind === 'work' ? (
               <WorkBlock key={item.id} work={item} isNew={isNew(item.id)} />
             ) : (
@@ -590,11 +621,16 @@ function ChatImage({
 const ClaudeMessage = memo(function ClaudeMessage({
   text,
   at,
-  isNew
+  isNew,
+  forkFrom,
+  onFork
 }: {
   text: string
   at: string | null
   isNew?: true
+  /** This reply's transcript uuid, when the session can be forked from it. */
+  forkFrom?: string | null
+  onFork?: (at: string) => void
 }): React.JSX.Element {
   return (
     <div className="cr-chat-claude" data-chat-claude data-new={isNew}>
@@ -602,6 +638,20 @@ const ClaudeMessage = memo(function ClaudeMessage({
       <div className="cr-chat-claude-tools">
         {at && <MessageTime at={at} />}
         <CopyButton text={text} label="Copy message" />
+        {forkFrom && onFork && (
+          <IconButton
+            icon="GitFork"
+            label="Fork from here"
+            tooltip="Fork from here: a new session that remembers the conversation up to this reply"
+            size={28}
+            variant="ghost"
+            data-chat-fork
+            onClick={(e) => {
+              e.stopPropagation()
+              onFork(forkFrom)
+            }}
+          />
+        )}
       </div>
     </div>
   )
@@ -634,8 +684,10 @@ const YouMessage = memo(function YouMessage({
   return (
     <div className="cr-chat-you-wrap" data-chat-you data-new={isNew}>
       {words && (
+        // The clamp is on the text, not the bubble: on the bubble, its padding
+        // showed the top of the next line under the cut.
         <div className="cr-chat-you" data-clamped={(long && !open) || undefined}>
-          {words}
+          <span className="cr-chat-you-text">{words}</span>
         </div>
       )}
       {long && (

@@ -802,6 +802,8 @@ claudeSaid('fixture-errored', [
   const at = (min: number): string => new Date(now - min * 60_000).toISOString()
   const said = (min: number, text: string): Record<string, unknown> => ({
     type: 'assistant',
+    // Its own line id, as Claude Code writes one: the chat view forks from it.
+    uuid: `chat-said-${min}`,
     timestamp: at(min),
     message: { role: 'assistant', content: [{ type: 'text', text }] }
   })

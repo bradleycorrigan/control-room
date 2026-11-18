@@ -44,6 +44,8 @@ import {
 } from '../exec/tmux'
 import { markSessionTransition, resolveClaudeBinary, resumeArgs } from '../exec/claude'
 import { devContainerAvailability, devContainerCommand } from '../exec/devcontainer'
+import { findSessionTranscriptPath } from '../exec/transcripts'
+import { cutTranscript, removeCut } from '../exec/forkTranscript'
 import { containerHookUrl } from './hooks-server'
 import { getState, mutate } from '../store/store'
 import { log } from '../log'
@@ -229,8 +231,10 @@ interface SessionFork {
   claudeSessionId: string
   /** The parent's worktree: its uncommitted work comes along. */
   from: string
-  /** The commit the parent is on; the fork's new branch starts there. */
-  baseCommit: string
+  /** The commit the parent is on; the fork's new branch starts there. Absent when it shares the parent's folder. */
+  baseCommit?: string
+  /** A cut copy of the conversation (cutTranscript), deleted once the fork has read it. */
+  discard?: string
 }
 
 export interface CreateSessionResult {
@@ -896,6 +900,15 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
   // their own; the user already has a live agent in a real worktree.
   emitProgress(creationId, 'done', true)
 
+  // The fork has its own copy of the conversation once Claude is up; the cut
+  // it started from would otherwise sit in History as a stray conversation.
+  const discard = fork?.discard
+  if (discard) {
+    void waitForPrompt(created.paneId, PROMPT_WAIT_TIMEOUT_MS)
+      .catch(() => false)
+      .then(() => removeCut(discard))
+  }
+
   void deliverPrompt(record.id).catch((err) =>
     log.warn('sessions: prompt delivery failed', { recordId: record.id, error: String(err) })
   )
@@ -916,32 +929,72 @@ export async function createSession(input: CreateSessionInput): Promise<CreateSe
 
 /**
  * A copy of a session to try something else in: the same conversation,
- * carried on separately (`claude --resume … --fork-session`), in a worktree of
- * its own on a new branch from the session's commit, with its uncommitted
- * work copied over. The original carries on untouched.
+ * carried on separately (`claude --resume … --fork-session`), and the
+ * original carries on untouched. Given `at` (one of Claude's messages), the
+ * copy remembers the conversation only up to there.
+ *
+ * Where it runs follows the original. A session in a worktree gets a new one,
+ * on a new branch from the session's commit, with its uncommitted work copied
+ * over. A session in the project's own folder (General, or a project
+ * checkout) has no branch of its own to copy, so the fork runs there too.
  */
-export async function forkSession(id: string, creationId: string): Promise<CreateSessionResult> {
+export async function forkSession(
+  id: string,
+  creationId: string,
+  at?: string
+): Promise<CreateSessionResult> {
   const parent = getState().sessions.find((s) => s.id === id)
   if (!parent) return { ok: false, error: 'session not found' }
-  const claudeSessionId = parent.claudeSessionId ?? parent.originalClaudeSessionId
-  if (!claudeSessionId) return { ok: false, error: 'it has no conversation to copy yet' }
+  const parentConversation = parent.claudeSessionId ?? parent.originalClaudeSessionId
+  if (!parentConversation) return { ok: false, error: 'it has no conversation to copy yet' }
   if (!existsSync(parent.worktreePath))
-    return { ok: false, error: 'its worktree is gone, so there is no work to copy' }
-  const baseCommit = await headCommit(parent.worktreePath)
-  if (!baseCommit) return { ok: false, error: 'Git could not say which commit it is on' }
-  const stem =
-    parent.detached || parent.investigation || !parent.branch || parent.branch === '(unknown)'
-      ? generateBranchName()
-      : parent.branch
-  return createSession({
-    creationId,
-    projectId: parent.projectId,
-    title: `${parent.title} (fork)`,
-    branch: `${stem}-fork-${randomBytes(2).toString('hex')}`,
-    basedOn: 'new',
-    devContainer: parent.devContainer,
-    fork: { parentId: parent.id, claudeSessionId, from: parent.worktreePath, baseCommit }
-  })
+    return { ok: false, error: 'its folder is gone, so there is no work to copy' }
+
+  let claudeSessionId = parentConversation
+  let discard: string | undefined
+  if (at) {
+    const source = findSessionTranscriptPath(parentConversation)
+    if (!source) return { ok: false, error: 'could not find its conversation' }
+    const cut = cutTranscript(source, at)
+    if (!cut.ok) return { ok: false, error: cut.error }
+    claudeSessionId = cut.claudeSessionId
+    discard = cut.path
+  }
+  const title = `${parent.title} (fork)`
+
+  let result: CreateSessionResult
+  if (parent.investigation) {
+    result = await createSession({
+      creationId,
+      projectId: parent.projectId,
+      title,
+      investigate: true,
+      devContainer: parent.devContainer,
+      fork: { parentId: parent.id, claudeSessionId, from: parent.worktreePath, discard }
+    })
+  } else {
+    const baseCommit = await headCommit(parent.worktreePath)
+    if (!baseCommit) {
+      if (discard) removeCut(discard)
+      return { ok: false, error: 'Git could not say which commit it is on' }
+    }
+    const stem =
+      parent.detached || !parent.branch || parent.branch === '(unknown)'
+        ? generateBranchName()
+        : parent.branch
+    result = await createSession({
+      creationId,
+      projectId: parent.projectId,
+      title,
+      branch: `${stem}-fork-${randomBytes(2).toString('hex')}`,
+      basedOn: 'new',
+      devContainer: parent.devContainer,
+      fork: { parentId: parent.id, claudeSessionId, from: parent.worktreePath, baseCommit, discard }
+    })
+  }
+  // Nothing started that would read it.
+  if (discard && !result.record) removeCut(discard)
+  return result
 }
 
 async function waitForPrompt(paneId: string, timeoutMs: number): Promise<boolean> {

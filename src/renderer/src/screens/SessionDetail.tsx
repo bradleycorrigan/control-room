@@ -6,7 +6,7 @@ import ChatView from '../components/ChatView'
 import DiffOverlay from '../components/DiffOverlay'
 import ShipPanel from '../components/ShipPanel'
 import ContextWindowPanel from '../components/ContextWindowPanel'
-import { useSessionActions } from '../components/useSessionActions'
+import { startFork, useSessionActions } from '../components/useSessionActions'
 import DeleteSessionDialog from '../components/DeleteSessionDialog'
 import {
   Button,
@@ -987,6 +987,11 @@ export default function SessionDetail({
           claudeSessionId={session.claudeSessionId}
           paneId={paneId}
           working={session.status === 'working'}
+          onFork={
+            session.record && !session.record.deletedAt
+              ? (at) => startFork(session.record!, pushToast, () => onSessionUpdated?.(), at)
+              : undefined
+          }
         />
       ) : paneId && session.tmux ? (
         <TerminalFrame

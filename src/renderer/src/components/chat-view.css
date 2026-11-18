@@ -462,7 +462,12 @@
 
 /* A long paste: its first lines, cut with an ellipsis (not a fade, which
    read as the page scrolling), and a way to see the rest. */
-.cr-chat-you[data-clamped] {
+.cr-chat-you-text {
+  display: block;
+}
+/* On the text, not the bubble: the bubble's padding would show the top of
+   the next line under the cut. */
+.cr-chat-you[data-clamped] .cr-chat-you-text {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 6;

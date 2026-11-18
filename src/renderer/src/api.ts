@@ -266,8 +266,9 @@ export function createSession(input: CreateSessionInput): Promise<CreateSessionR
 }
 
 /** A copy of a session: its conversation and work, in a new worktree. */
-export function forkSession(id: string): Promise<CreateSessionResult> {
-  return window.api.invoke<CreateSessionResult>('sessions:fork', id, crypto.randomUUID())
+/** `at`: one of Claude's messages (its transcript uuid); the fork remembers up to there. */
+export function forkSession(id: string, at?: string): Promise<CreateSessionResult> {
+  return window.api.invoke<CreateSessionResult>('sessions:fork', id, crypto.randomUUID(), at)
 }
 
 export interface SessionCreateEvent {

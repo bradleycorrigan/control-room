@@ -46,6 +46,28 @@ function openSessionTab(key: string): void {
   window.dispatchEvent(new CustomEvent('cr:open-session', { detail: key }))
 }
 
+/**
+ * Forks a session and opens the fork in a tab. `at`: one of Claude's messages,
+ * to fork from that point in the conversation rather than its end. Shared by
+ * the menu's Fork and each reply's own button in the chat view.
+ */
+export function startFork(
+  record: { id: string; title: string },
+  pushToast: ((message: string) => void) | undefined,
+  onChanged: () => void,
+  at?: string
+): void {
+  pushToast?.(`Forking ${record.title}…`)
+  void forkSession(record.id, at).then((result) => {
+    if (!result.ok || !result.record) {
+      pushToast?.(result.error ?? 'Could not fork it.')
+      return
+    }
+    onChanged()
+    openSessionTab(`record:${result.record.id}`)
+  })
+}
+
 export function readAction(session: LiveSession, onChanged?: () => void): SessionCardAction {
   return session.unread
     ? {
@@ -229,17 +251,7 @@ export function useSessionActions({
                 record.claudeSessionId || record.originalClaudeSessionId
                   ? undefined
                   : 'It has no conversation to copy yet',
-              onClick: () => {
-                pushToast?.(`Forking ${record.title}…`)
-                void forkSession(record.id).then((result) => {
-                  if (!result.ok || !result.record) {
-                    pushToast?.(result.error ?? 'Could not fork it.')
-                    return
-                  }
-                  onChanged()
-                  openSessionTab(`record:${result.record.id}`)
-                })
-              }
+              onClick: () => startFork(record, pushToast, onChanged)
             } satisfies SessionCardAction
           ]),
       // Organise it.
