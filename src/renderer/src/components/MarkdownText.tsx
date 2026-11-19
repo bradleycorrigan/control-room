@@ -1,5 +1,5 @@
-import { Fragment } from 'react'
 import CopyButton from './CopyButton'
+import { openExternal } from '../api'
 import './markdown-text.css'
 
 /**
@@ -7,7 +7,8 @@ import './markdown-text.css'
  * SKILL.md, a CLAUDE.md. Enough of it to read comfortably (headings, lists,
  * quotes, code, bold, italics) and nothing that could run: every piece is a
  * React element built from the text, never HTML. File contents are untrusted.
- * Links show their words; a table shows as its own text, in mono.
+ * Web links (http, https) open in the browser; any other link shows its
+ * words only. A table with a header row draws as a table.
  */
 export default function MarkdownText({
   text,
@@ -32,6 +33,17 @@ type Block =
   | { kind: 'quote'; text: string }
   | { kind: 'list'; ordered: boolean; items: { depth: number; text: string }[] }
   | { kind: 'rule' }
+  | { kind: 'table'; head: string[]; align: Align[]; rows: string[][] }
+
+type Align = 'left' | 'center' | 'right' | undefined
+
+/** `| a | b |` into its cells; `\|` stays a bar inside a cell. */
+function cells(row: string): string[] {
+  const inner = row.trim().replace(/^\|/, '').replace(/\|$/, '')
+  return inner.split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'))
+}
+
+const SEPARATOR = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/
 
 function parse(text: string): Block[] {
   const lines = text.replace(/\r\n/g, '\n').split('\n')
@@ -51,13 +63,28 @@ function parse(text: string): Block[] {
       out.push({ kind: 'code', text: code.join('\n'), lang })
       continue
     }
-    // A table keeps its shape as text: cells line up in mono.
+    // A table with a header row and a |---| line under it draws as one;
+    // anything else made of bars keeps its shape as text, in mono.
     if (/^\s*\|/.test(line)) {
       flush()
       const rows: string[] = []
       for (; i < lines.length && /^\s*\|/.test(lines[i]); i++) rows.push(lines[i])
       i--
-      out.push({ kind: 'code', text: rows.join('\n') })
+      if (rows.length >= 2 && SEPARATOR.test(rows[1])) {
+        const head = cells(rows[0])
+        const align = cells(rows[1]).map((c): Align => {
+          const l = c.startsWith(':')
+          const r = c.endsWith(':')
+          return l && r ? 'center' : r ? 'right' : l ? 'left' : undefined
+        })
+        const body = rows.slice(2).map((r) => {
+          const c = cells(r)
+          return head.map((_, j) => c[j] ?? '')
+        })
+        out.push({ kind: 'table', head, align, rows: body })
+      } else {
+        out.push({ kind: 'code', text: rows.join('\n') })
+      }
       continue
     }
     const heading = /^(#{1,6})\s+(.*)$/.exec(line)
@@ -139,6 +166,33 @@ function blocks(text: string, copyable: boolean): React.ReactNode {
         return <blockquote key={i}>{inline(b.text)}</blockquote>
       case 'rule':
         return <hr key={i} />
+      case 'table':
+        return (
+          <div key={i} className="md-table-wrap">
+            <table className="md-table">
+              <thead>
+                <tr>
+                  {b.head.map((c, j) => (
+                    <th key={j} style={{ textAlign: b.align[j] }}>
+                      {inline(c)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {b.rows.map((r, j) => (
+                  <tr key={j}>
+                    {r.map((c, k) => (
+                      <td key={k} style={{ textAlign: b.align[k] }}>
+                        {inline(c)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
       case 'list': {
         const Tag = b.ordered ? 'ol' : 'ul'
         return (
@@ -155,11 +209,46 @@ function blocks(text: string, copyable: boolean): React.ReactNode {
   })
 }
 
-/** `code`, **bold**, *italic* or _italic_, and [words](link) as its words. */
-function inline(text: string): React.ReactNode {
+/** A web address, ready to open, or null for anything else (file:, javascript:...). */
+function webLink(href: string): string | null {
+  try {
+    const url = new URL(href)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
+function Link({ href, children }: { href: string; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <a
+      className="md-link"
+      href={href}
+      title={href}
+      onClick={(e) => {
+        e.preventDefault()
+        void openExternal(href)
+      }}
+    >
+      {children}
+    </a>
+  )
+}
+
+/** A bare address ends before trailing punctuation, and before a ) it didn't open. */
+function trimBare(url: string): string {
+  let u = url.replace(/[.,;:!?'"]+$/, '')
+  while (u.endsWith(')') && (u.match(/\(/g)?.length ?? 0) < (u.match(/\)/g)?.length ?? 0)) {
+    u = u.slice(0, -1).replace(/[.,;:!?'"]+$/, '')
+  }
+  return u
+}
+
+/** `code`, **bold**, *italic* or _italic_, [words](link), and bare web addresses. */
+function inline(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = []
   const re =
-    /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|\b_([^_]+)_\b|\[([^\]]+)\]\([^)]*\)/g
+    /`([^`]+)`|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|\b_([^_]+)_\b|\[([^\]]+)\]\(\s*<?([^)\s>]*)>?[^)]*\)|(https?:\/\/[^\s<>`]+)/g
   let last = 0
   let m: RegExpExecArray | null
   let k = 0
@@ -167,9 +256,34 @@ function inline(text: string): React.ReactNode {
     if (m.index > last) parts.push(text.slice(last, m.index))
     if (m[1] !== undefined) parts.push(<code key={k++}>{m[1]}</code>)
     else if (m[2] !== undefined || m[3] !== undefined)
-      parts.push(<strong key={k++}>{m[2] ?? m[3]}</strong>)
-    else if (m[4] !== undefined || m[5] !== undefined) parts.push(<em key={k++}>{m[4] ?? m[5]}</em>)
-    else parts.push(<Fragment key={k++}>{m[6]}</Fragment>)
+      parts.push(<strong key={k++}>{inline(m[2] ?? m[3])}</strong>)
+    else if (m[4] !== undefined || m[5] !== undefined)
+      parts.push(<em key={k++}>{inline(m[4] ?? m[5])}</em>)
+    else if (m[6] !== undefined) {
+      const href = webLink(m[7])
+      parts.push(
+        href ? (
+          <Link key={k++} href={href}>
+            {inline(m[6])}
+          </Link>
+        ) : (
+          <span key={k++}>{inline(m[6])}</span>
+        )
+      )
+    } else {
+      const bare = trimBare(m[8])
+      const href = webLink(bare)
+      parts.push(
+        href ? (
+          <Link key={k++} href={href}>
+            {bare}
+          </Link>
+        ) : (
+          bare
+        )
+      )
+      re.lastIndex = m.index + bare.length
+    }
     last = re.lastIndex
   }
   if (last < text.length) parts.push(text.slice(last))

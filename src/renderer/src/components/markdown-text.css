@@ -113,3 +113,45 @@
   margin: 0;
   border-radius: 0;
 }
+
+/* Links open in the browser. Underlined so they read as links in any text. */
+.md-link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.md-link:hover {
+  text-decoration-color: var(--accent);
+}
+
+/* A table scrolls sideways on its own rather than widening the page. */
+.md-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.md-table {
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.md-table th,
+.md-table td {
+  padding: var(--space-4) var(--space-12);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.md-table th {
+  color: var(--text-muted);
+  font-weight: var(--text-heading-weight);
+  white-space: nowrap;
+}
+
+.md-table tbody tr:last-child td {
+  border-bottom: none;
+}

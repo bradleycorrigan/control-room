@@ -904,6 +904,10 @@ claudeSaid('fixture-errored', [
       'The merged ones can go with:\n\n```sh\ngit worktree remove ../wt-3\ngit branch -d fixture/branch-3\n```'
     ),
     said(
+      46.1,
+      'Report: https://example.com/report.\n\n| Branch | State |\n|---|---:|\n| [branch-3](https://example.com/pr/3) | merged |\n| branch-4 | open |'
+    ),
+    said(
       46,
       'Should the cleanup also delete branches whose pull request was closed without merging, or only merged ones?'
     )

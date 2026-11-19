@@ -3016,7 +3016,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             /2 commands, 1 edit/.test(summary?.textContent ?? '') &&
             /1 failed/.test(summary?.textContent ?? '') &&
             $$('[data-chat-tools] .cr-chat-tool').length === 0 &&
-            replies().length === 3 &&
+            replies().length === 4 &&
             replies()[0].includes('Two of the branches have merged'),
           `you "${you}"; work "${summary?.textContent}"; ${$$('[data-chat-tools] .cr-chat-tool').length} tool rows showing; replies ${JSON.stringify(replies())}`
         )
@@ -3181,6 +3181,25 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             Boolean($('[data-chat-claude] .cr-chat-claude-tools button')),
           `copied ${codeCopy?.dataset.copied}; button ${Boolean(codeCopy)}`
         )
+
+        // Links in a reply open in the browser; a table draws as a table.
+        {
+          const links = $$<HTMLAnchorElement>('[data-chat-claude] a.md-link')
+          const hrefs = links.map((a) => a.getAttribute('href'))
+          await check(
+            'links in a reply are clickable, bare or in [words](link)',
+            hrefs.includes('https://example.com/report') &&
+              hrefs.includes('https://example.com/pr/3'),
+            hrefs.join(', ') || 'no links'
+          )
+          const table = $<HTMLTableElement>('[data-chat-claude] table.md-table')
+          const heads = [...(table?.querySelectorAll('th') ?? [])].map((t) => t.textContent)
+          await check(
+            'a markdown table in a reply draws as a table',
+            heads.join('|') === 'Branch|State' && table?.querySelectorAll('tbody tr').length === 2,
+            table ? `heads ${heads.join('|')}` : 'no table'
+          )
+        }
 
         // Each reply can be forked from: the conversation up to there.
         {
