@@ -889,8 +889,8 @@ async function searchIssues(
   return out
 }
 
-/** One ticket, fresh from Jira, patched into the board cache too. */
-async function loadIssue(conn: Conn, key: string): Promise<JiraIssue> {
+/** One ticket, fresh from Jira. */
+async function fetchIssue(conn: Conn, key: string): Promise<JiraIssue> {
   // Straight from the issue, not from search: search is indexed and can
   // still hold the old value a second after a change, which put an edit back
   // on screen as though it hadn't happened.
@@ -900,7 +900,12 @@ async function loadIssue(conn: Conn, key: string): Promise<JiraIssue> {
   )
   if (!raw?.key) throw new JiraError(`${key} wasn't found`)
   const updated = (raw.fields as { updated?: string }).updated ?? ''
-  const issue = parseIssue(conn.site, raw, await me(conn), await linksFor(conn, key, updated))
+  return parseIssue(conn.site, raw, await me(conn), await linksFor(conn, key, updated))
+}
+
+/** One ticket, fresh from Jira, patched into the board cache too. */
+async function loadIssue(conn: Conn, key: string): Promise<JiraIssue> {
+  const issue = await fetchIssue(conn, key)
   if (boardCache) {
     const list = boardCache.value.issues
     const i = list.findIndex((x) => x.key === key)
@@ -1306,6 +1311,27 @@ async function loadBoardFresh(conn: Conn): Promise<JiraResult<JiraBoardData>> {
 
 /** The editable description (wiki markup), comments, and links for one ticket. */
 const peopleCache = new Map<string, string>()
+
+/**
+ * One ticket for its panel, whether or not the Backlog follows it: a Done
+ * ticket, or one in another project. Leaves the board as it is, so opening
+ * it doesn't put it on the board.
+ */
+export async function loadOneIssue(rawKey: string): Promise<JiraResult<JiraIssue>> {
+  const key = rawKey.trim().toUpperCase()
+  const store = fixtureStore()
+  if (store) {
+    const found = store.issues.find((i) => i.key === key)
+    if (!found) return { ok: false, error: `${key} wasn't found` }
+    const subtasks = store.issues
+      .filter((c) => c.isSubtask && c.parent?.key === key)
+      .map((c) => c.key)
+    return { ok: true, value: structuredClone({ ...found, subtasks }) }
+  }
+  const conn = connection()
+  if ('error' in conn) return { ok: false, error: conn.error }
+  return attempt(() => fetchIssue(conn, key))
+}
 
 export async function loadIssueDetail(key: string): Promise<JiraResult<JiraIssueDetail>> {
   const store = fixtureStore()

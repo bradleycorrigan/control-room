@@ -41,6 +41,7 @@ import {
   linkSessionToTicket,
   loadJiraBoard,
   loadJiraDetail,
+  loadJiraIssue,
   moveJiraIssue,
   openExternal,
   saveBacklogPrefs,
@@ -371,6 +372,9 @@ export default function BacklogScreen({
   const setCycle = useCallback((c: CycleFilter) => setCycleSet(c === 'all' ? [] : [c]), [])
   const [query, setQuery] = useState('')
   const [openKey, setOpenKey] = useState<string | null>(null)
+  /** The open ticket when it isn't on the board, and why it couldn't load. */
+  const [outside, setOutside] = useState<JiraIssue | null>(null)
+  const [outsideError, setOutsideError] = useState<{ key: string; error: string } | null>(null)
   const [menu, setMenu] = useState<{ key: string; x: number; y: number } | null>(null)
   const [prefs, setPrefs] = useState<BacklogPrefs>({ columns: null, views: [], capacity: {} })
   // Tickets picked with ⌘-click, ⇧-click or X, for changing several at once.
@@ -603,6 +607,7 @@ export default function BacklogScreen({
   }, [panelOnly, takenTicket, openKey, onPanelClose])
 
   const apply = useCallback((issue: JiraIssue) => {
+    setOutside((o) => (o?.key === issue.key ? { ...issue, subtasks: o.subtasks } : o))
     setBoard((b) =>
       b
         ? {
@@ -1341,7 +1346,26 @@ export default function BacklogScreen({
     [board, sprints, apply, write, statusInColumn, pushToast]
   )
 
-  const openIssue = board?.issues.find((i) => i.key === openKey) ?? null
+  const onBoard = board?.issues.find((i) => i.key === openKey) ?? null
+  const openIssue = onBoard ?? (outside && outside.key === openKey ? outside : null)
+  // A ticket the Backlog doesn't follow (Done, another project) still opens
+  // here: fetched on its own, and kept off the board.
+  useEffect(() => {
+    if (!board || !openKey || onBoard || outside?.key === openKey) return
+    let live = true
+    void loadJiraIssue(openKey).then((r) => {
+      if (!live) return
+      if (r.ok) setOutside(r.value)
+      else {
+        setOutsideError({ key: openKey, error: r.error })
+        // The panel-only view says so in its place; the Backlog has no place.
+        if (!panelOnly) pushToast?.(`Jira: ${r.error}`)
+      }
+    })
+    return () => {
+      live = false
+    }
+  }, [board, openKey, onBoard, outside?.key, panelOnly, pushToast])
   const menuIssue = menu ? (board?.issues.find((i) => i.key === menu.key) ?? null) : null
 
   // ---- Several at once, and the keys that act on them ----
@@ -1991,8 +2015,8 @@ export default function BacklogScreen({
               />
             </div>
             <p className="backlog-note">
-              {board
-                ? `${openTicket} isn't on your Backlog.`
+              {outsideError && outsideError.key === openKey
+                ? `${openTicket} couldn't be loaded: ${outsideError.error}`
                 : `Loading ${openTicket ?? 'the ticket'}…`}
             </p>
           </Card>

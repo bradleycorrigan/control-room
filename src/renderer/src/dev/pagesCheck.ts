@@ -5521,9 +5521,8 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
         )
         await key('Escape')
 
-        // PROJ-104 is Done, so it isn't on the fixture board's Backlog — the result
-        // says so, and Enter would send it to Jira in the browser rather than open
-        // a panel that doesn't exist for it.
+        // PROJ-104 is Done, so it isn't on the fixture board's Backlog. It still
+        // opens in the app, in its own panel, not in Jira in the browser.
         await ctx.goTo('home')
         await wait(400)
         await key('k', ['meta'])
@@ -5534,12 +5533,27 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
           '.command-palette-item'
         )
         await check(
-          '⌘K on a Done ticket not on the board says "Opens in Jira"',
-          Boolean(
-            doneTicketItem
-              ?.querySelector('.command-palette-item-sublabel')
-              ?.textContent?.includes('Opens in Jira')
-          )
+          '⌘K on a Done ticket not on the board doesn’t send it to Jira',
+          Boolean(doneTicketItem) && !doneTicketItem?.textContent?.includes('Jira')
+        )
+        await key('Enter')
+        await until(
+          () =>
+            ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('PROJ-104') &&
+            !/Loading PROJ-104|couldn’t be loaded|couldn't be loaded/.test(
+              $('.backlog-drawer')?.textContent ?? ''
+            ) &&
+            Boolean($('.backlog-drawer')?.textContent?.includes('Re-run the dbt model')),
+          4000
+        )
+        await check(
+          'choosing it opens PROJ-104’s panel in the app',
+          ($('.backlog-drawer')?.getAttribute('aria-label') ?? '').startsWith('PROJ-104') &&
+            !/Loading PROJ-104|couldn’t be loaded|couldn't be loaded/.test(
+              $('.backlog-drawer')?.textContent ?? ''
+            ) &&
+            Boolean($('.backlog-drawer')?.textContent?.includes('Re-run the dbt model')),
+          $('.backlog-drawer')?.textContent?.slice(0, 120) ?? 'no panel'
         )
         await key('Escape')
 

@@ -106,6 +106,7 @@ import {
   disconnectJira,
   loadBoard,
   loadIssueDetail,
+  loadOneIssue,
   updateIssueText,
   addComment,
   moveToStatus,
@@ -564,12 +565,9 @@ export function registerIpcHandlers(): void {
     return createSession({ ...input, fork: undefined })
   })
 
-  ipcMain.handle(
-    'sessions:fork',
-    async (_evt, id: string, creationId: string, at?: string) => {
-      return forkSession(id, creationId, typeof at === 'string' ? at : undefined)
-    }
-  )
+  ipcMain.handle('sessions:fork', async (_evt, id: string, creationId: string, at?: string) => {
+    return forkSession(id, creationId, typeof at === 'string' ? at : undefined)
+  })
 
   ipcMain.handle(
     'sessions:delete',
@@ -786,6 +784,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('jira:disconnect', () => disconnectJira())
   ipcMain.handle('jira:board', (_evt, refresh?: boolean) => loadBoard(Boolean(refresh)))
   ipcMain.handle('jira:detail', (_evt, key: string) => loadIssueDetail(key))
+  ipcMain.handle('jira:issue', (_evt, key: string) => loadOneIssue(key))
   ipcMain.handle(
     'jira:updateText',
     (_evt, key: string, patch: { summary?: string; descriptionWiki?: string }) =>

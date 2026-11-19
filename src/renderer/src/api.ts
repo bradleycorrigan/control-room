@@ -920,6 +920,11 @@ export function loadJiraBoard(refresh = false): Promise<JiraResult<JiraBoardData
   return window.api.invoke<JiraResult<JiraBoardData>>('jira:board', refresh)
 }
 
+/** One ticket, on the Backlog or not (Done, another project). */
+export function loadJiraIssue(key: string): Promise<JiraResult<JiraIssue>> {
+  return window.api.invoke<JiraResult<JiraIssue>>('jira:issue', key)
+}
+
 export function loadJiraDetail(key: string): Promise<JiraResult<JiraIssueDetail>> {
   return window.api.invoke<JiraResult<JiraIssueDetail>>('jira:detail', key)
 }

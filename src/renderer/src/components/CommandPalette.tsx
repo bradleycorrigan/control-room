@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LiveSession, Project } from '../../../main/store/types'
 import { themes } from '../theme/themes'
 import { findTicket, listCheckoutBranches, type CheckoutBranch } from '../api-palette'
-import { getJiraStatus, openExternal } from '../api'
+import { getJiraStatus } from '../api'
 import { useEditorName } from '../state/useEditorName'
 
 interface Props {
@@ -200,17 +200,13 @@ export default function CommandPalette({
     if (!ticketKey || ticketLookup?.key !== ticketKey || !ticketLookup.result) return null
     const res = ticketLookup.result
     if (!res.ok) return null
-    const { key, summary, url, onBoard } = res.value
+    const { key, summary } = res.value
     return {
       id: `ticket:${key}`,
       kind: 'ticket',
       label: `${key} · ${summary}`,
-      sublabel: onBoard ? undefined : 'Opens in Jira',
       searchText: key,
-      run: () => {
-        if (onBoard) onSelectTicket(key)
-        else void openExternal(url)
-      }
+      run: () => onSelectTicket(key)
     }
   }, [ticketKey, ticketLookup, onSelectTicket])
 
