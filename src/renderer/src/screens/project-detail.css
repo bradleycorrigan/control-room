@@ -513,24 +513,97 @@
   color: var(--text);
 }
 
-.cr-worktree-card-path {
+/* Grouped: Ready to remove, Claude running, Idle. A quiet heading over each
+   grid, with the count, and a bulk action on the ready pile. */
+.cr-worktree-group + .cr-worktree-group,
+.cr-worktree-group + .cr-worktree-grid {
+  margin-top: var(--space-24);
+}
+
+.cr-worktree-group-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-height: 28px;
+  margin-bottom: var(--space-8);
+}
+
+.cr-worktree-group-label {
+  font-size: var(--text-caption-size);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.cr-worktree-group-count {
+  font-size: var(--text-caption-size);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cr-worktree-group-action {
+  margin-left: auto;
+}
+
+/* What it's for first: the session's title in the UI face, the branch under
+   it in mono. The folder path is in the overlay. */
+.cr-worktree-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cr-worktree-card-title {
+  font-family: var(--font-ui);
+  font-size: var(--text-body-size);
+  line-height: var(--text-body-line);
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cr-worktree-card-branch {
   font-family: var(--font-mono);
   font-size: var(--text-caption-size);
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl;
-  text-align: left;
 }
 
-.cr-worktree-card-title {
-  font-family: var(--font-mono);
-  font-size: var(--text-label-size);
-  color: var(--text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* The one-word verdict, a dot and a word, like the status badges. */
+.cr-worktree-card-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text-muted);
+}
+
+.cr-worktree-card-verdict-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--status-idle);
+}
+
+.cr-worktree-card-verdict--ready {
+  color: var(--status-done);
+}
+
+.cr-worktree-card-verdict--ready .cr-worktree-card-verdict-dot {
+  background: var(--status-done);
+}
+
+.cr-worktree-card-verdict--warn {
+  color: var(--status-attention);
+}
+
+.cr-worktree-card-verdict--warn .cr-worktree-card-verdict-dot {
+  background: var(--status-attention);
 }
 
 .cr-worktree-card-session {
@@ -619,6 +692,17 @@ button.cr-worktree-card-ticket:hover {
 .cr-worktree-card-actions button:hover {
   background: var(--surface-raised);
   color: var(--text);
+}
+
+/* The next step for this worktree: the one button with weight. */
+.cr-worktree-card-actions .cr-worktree-card-primary {
+  border-color: var(--border-strong);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.cr-worktree-card--ready .cr-worktree-card-actions .cr-worktree-card-primary {
+  border-color: color-mix(in srgb, var(--status-done) 55%, var(--border-strong));
 }
 
 /* Plan 4 Part 7.2 — worktree settings, inside its own collapsible OVERVIEW

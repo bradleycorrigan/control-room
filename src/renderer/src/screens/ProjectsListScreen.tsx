@@ -5,6 +5,7 @@ import WorktreeCleanupDialog from '../components/WorktreeCleanupDialog'
 import { Button, Icon, SegmentedControl, useConfirm } from '../components/primitives'
 import { addProject, getProjectTidy, removeProject, updateProject, type ProjectTidy } from '../api'
 import { resolveSessionProjectId } from '../state/useSessions'
+import type { PushToast } from '../state/useToasts'
 
 type SortMode = 'changed' | 'lastSession' | 'activeSessions' | 'visits'
 
@@ -20,7 +21,7 @@ interface Props {
   sessions: LiveSession[]
   onProjectsChanged: () => void
   onOpenProject: (id: string) => void
-  pushToast: (message: string) => void
+  pushToast: PushToast
 }
 
 function isLive(status: LiveSession['status']): boolean {

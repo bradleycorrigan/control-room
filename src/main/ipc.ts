@@ -77,6 +77,7 @@ import {
   pullRequestsByBranch,
   type BranchPullRequest,
   lastCommitTime,
+  headContainedIn,
   remoteTrackingRefExists
 } from './exec/git'
 import {
@@ -1159,6 +1160,11 @@ export function registerIpcHandlers(): void {
           branch: w.branch,
           isMainCheckout: w.path === project.repoPath,
           dirty: await hasUncommittedChanges(w.path),
+          // No commits of its own: everything in it is already on the base.
+          contained:
+            w.path !== project.repoPath &&
+            (await headContainedIn(w.path, project.baseRef ?? 'origin/main')),
+          lastCommitAt: w.prunable ? null : await lastCommitTime(w.path),
           sessionId: sessionByPath.get(w.path) ?? null,
           doneSession: sessionByPath.has(w.path) ? null : (doneByPath.get(w.path) ?? null)
         }))

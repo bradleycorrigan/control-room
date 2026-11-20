@@ -26,6 +26,7 @@ import type { ComposerSeed } from './backlog/ticketSessions'
 import { relativeTime } from '../lib/format-time'
 import './sessions-list.css'
 import './artifacts.css'
+import type { PushToast } from '../state/useToasts'
 
 /** Yours: a session published it, or claude.ai says you own it. */
 type Kind = 'yours' | 'shared' | 'other'
@@ -257,7 +258,7 @@ export default function ArtifactsScreen({
   onOpenSession: (liveKey: string) => void
   onOpenTicket: (key: string) => void
   onStartSession: (seed: ComposerSeed) => void
-  pushToast: (message: string) => void
+  pushToast: PushToast
 }): React.JSX.Element {
   const lib = useArtifactLibrary()
   const { artifacts, refresh, place } = lib

@@ -1055,6 +1055,11 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
               .map((t) => t.textContent)
               .join(' | ') || 'no toast'
           )
+          await check(
+            'a toast carries its tone glyph and a countdown line',
+            Boolean($('.toast .toast-glyph svg')) && Boolean($('.toast .toast-timer')),
+            $('.toast')?.outerHTML.slice(0, 200) ?? 'no toast'
+          )
           await input({ type: 'mouseMove', x: 5, y: Math.round(window.innerHeight / 2) })
           // The toast sits over the panel's lower buttons; wait for it to go
           // (5s lifetime) before the comment check clicks Add note.
@@ -5176,24 +5181,43 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             const cards = $$('.cr-worktree-card:not(.cr-worktree-card--new)')
             const live = cards.filter((c) => /Open session/.test(c.textContent ?? ''))
             await check(
-              'Worktree cards say which have a session, with its status word, and use the branch as the title',
+              'Worktree cards say which have a session, with its status word, and lead with a title over the branch',
               live.length > 0 &&
                 live.every((c) =>
                   Boolean(c.querySelector('.cr-worktree-card-session .status-badge'))
                 ) &&
-                cards.every((c) =>
-                  Boolean(c.querySelector('.cr-worktree-card-title')?.textContent)
+                cards.every(
+                  (c) =>
+                    Boolean(c.querySelector('.cr-worktree-card-title')?.textContent) &&
+                    Boolean(c.querySelector('.cr-worktree-card-branch')?.textContent)
                 ),
               `${live.length} live of ${cards.length}; ${cards.map((c) => c.querySelector('.cr-worktree-card-session')?.textContent).join(' | ')}`
+            )
+          }
+
+          {
+            const cards = $$('.cr-worktree-card:not(.cr-worktree-card--new)')
+            const running = cards.filter((c) =>
+              Boolean(c.querySelector('.cr-worktree-card-session .status-badge'))
+            )
+            const heads = $$('.cr-worktree-group-label').map((h) => h.textContent ?? '')
+            await check(
+              'worktrees sit under group headings, and a card with Claude running never offers Start agent',
+              heads.length > 0 && running.every((c) => !/Start agent/.test(c.textContent ?? '')),
+              `groups ${heads.join(' | ')}; running cards ${running
+                .map((c) => c.querySelector('.cr-worktree-card-actions')?.textContent)
+                .join(' | ')}`
             )
           }
 
           // Clicking a card (not one of its buttons) opens its overlay.
           {
             const card = $$('.cr-worktree-card--clickable').find((c) =>
-              /fixture\/working/.test(c.querySelector('.cr-worktree-card-title')?.textContent ?? '')
+              /fixture\/working/.test(
+                c.querySelector('.cr-worktree-card-branch')?.textContent ?? ''
+              )
             )
-            await click(card?.querySelector<HTMLElement>('.cr-worktree-card-path') ?? null)
+            await click(card?.querySelector<HTMLElement>('.cr-worktree-card-branch') ?? null)
             const opened = await until(() => Boolean($('.wt-overlay')), 2000)
             const filesShown = await until(() => $$('.wt-overlay-files li').length > 0, 4000)
             await check(
@@ -5264,12 +5288,42 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
 
           const liveRow = rows.find((r) => r.textContent?.includes('fixture/working'))
           await check(
-            'the worktree a live session is using is disabled, not offered for removal',
+            'the worktree Claude is working in is disabled, says so, and offers Open session',
             Boolean(liveRow) &&
               liveRow!.classList.contains('wt-cleanup-row--disabled') &&
-              (liveRow as HTMLButtonElement).disabled === true,
-            liveRow?.textContent ?? 'fixture/working row not found'
+              (liveRow as HTMLButtonElement).disabled === true &&
+              /Claude working/.test(liveRow!.textContent ?? '') &&
+              Boolean(
+                [...(liveRow!.closest('.wt-cleanup-line')?.querySelectorAll('button') ?? [])].find(
+                  (b) => b.textContent?.trim() === 'Open session'
+                )
+              ),
+            liveRow?.closest('.wt-cleanup-item')?.textContent ?? 'fixture/working row not found'
           )
+          {
+            const groups = $$('.wt-cleanup-group').map((g) => g.textContent ?? '')
+            let heading = ''
+            for (
+              let el = (liveRow?.closest('.wt-cleanup-item') ?? null) as Element | null;
+              el;
+              el = el.previousElementSibling
+            ) {
+              const g = el.querySelector('.wt-cleanup-group')
+              if (g) {
+                heading = g.textContent ?? ''
+                break
+              }
+            }
+            await check(
+              'the dialog groups worktrees, busy ones under In use, and says which have landed',
+              groups.length > 0 &&
+                /^In use/.test(heading) &&
+                rows.some((r) => /merged|no commits of its own/.test(r.textContent ?? '')),
+              `groups ${groups.join(' | ')}; busy under "${heading}"; tags ${rows
+                .map((r) => r.querySelector('.wt-cleanup-row-tag')?.textContent)
+                .join(', ')}`
+            )
+          }
           await check(
             'each worktree says when it was last committed to, so abandoned ones stand out',
             rows.some((r) =>
@@ -5308,7 +5362,7 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             deletedAt?: number | null
             worktreeRemovedAt?: number | null
           }
-          type Cand = { path: string; hasLiveSession: boolean; liveSessionsDone: boolean }
+          type Cand = { path: string }
           const run = Date.now().toString(36)
           const made = await api.invoke<Created>('sessions:create', {
             creationId: crypto.randomUUID(),

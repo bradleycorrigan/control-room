@@ -5,6 +5,7 @@ import { PillFolder } from './PillFolder'
 import { addJiraArtifactLink, copyText, openExternal } from '../api'
 import type { TranscriptArtifact } from '../api-sessions'
 import './pr-chip.css'
+import type { PushToast } from '../state/useToasts'
 
 /** More than this many artifacts fold into one "N artifacts" pill. */
 const FOLD_OVER = 2
@@ -13,7 +14,7 @@ const FOLD_OVER = 2
 function artifactActions(
   artifact: TranscriptArtifact,
   ticketKey: string | null,
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
 ): MenuItem[] {
   return [
     {
@@ -58,7 +59,7 @@ export function ArtifactChip({
 }: {
   artifact: TranscriptArtifact
   ticketKey: string | null
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const anchor = useRef<HTMLSpanElement>(null)
@@ -106,7 +107,7 @@ export function ArtifactPills({
 }: {
   artifacts: TranscriptArtifact[]
   ticketKey: string | null
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
 }): React.JSX.Element | null {
   if (artifacts.length === 0) return null
   if (artifacts.length <= FOLD_OVER) {

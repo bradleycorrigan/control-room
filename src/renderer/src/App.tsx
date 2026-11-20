@@ -9,7 +9,8 @@ import GridView from './screens/GridView'
 import SettingsScreen from './screens/SettingsScreen'
 import SessionDetail from './screens/SessionDetail'
 import HomeScreen from './screens/HomeScreen'
-import { Modal, IconButton, Badge, Button, Card } from './components/primitives'
+import { Modal, Badge, Button, Card } from './components/primitives'
+import ToastStack from './components/ToastStack'
 import AppShell, { type AppView, type MainView } from './components/AppShell'
 import CommandPalette from './components/CommandPalette'
 import KeyboardHelp from './components/KeyboardHelp'
@@ -178,7 +179,8 @@ function App(): React.JSX.Element {
   }, [])
   const { projects, refresh: refreshProjects } = useProjects()
   const { sessions, refresh: refreshSessions } = useSessions()
-  const { toasts, push: pushToast, dismiss: dismissToast } = useToasts()
+  const toastController = useToasts()
+  const { push: pushToast } = toastController
   const theme = useThemeProvider()
 
   // Shell responsiveness (plan 3, 1.5): a ResizeObserver on the shell itself,
@@ -2876,27 +2878,7 @@ function App(): React.JSX.Element {
       {keyboardHelpOpen && <KeyboardHelp onClose={() => setKeyboardHelpOpen(false)} />}
       {setupOpen && <SetupDialog onClose={() => setSetupOpen(false)} />}
 
-      <div className="toast-stack">
-        {toasts.map((toast) => (
-          <div key={toast.id} className="toast">
-            <div className="toast-body">
-              <span className="toast-message">{toast.message}</span>
-              {toast.action && (
-                <button type="button" className="toast-action" onClick={toast.action.onClick}>
-                  {toast.action.label}
-                </button>
-              )}
-            </div>
-            <IconButton
-              icon="X"
-              label="Dismiss"
-              size={28}
-              variant="ghost"
-              onClick={() => dismissToast(toast.id)}
-            />
-          </div>
-        ))}
-      </div>
+      <ToastStack controller={toastController} />
     </div>
   )
 }

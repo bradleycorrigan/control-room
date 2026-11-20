@@ -14,8 +14,11 @@ import {
   pullRequestsByBranch,
   pruneWorktrees,
   gitStatus,
-  uncommittedChanges
+  uncommittedChanges,
+  removeWorktreeForce,
+  headContainedIn
 } from './exec/git'
+import { killPane } from './exec/tmux'
 import { handoffGitSummary } from './exec/sessionGit'
 import { openInEditor } from './exec/editor'
 import { discoverLiveSessions } from './engine/discovery'
@@ -36,39 +39,56 @@ function normalizePath(p: string): string {
   return path.resolve(p).replace(/[/\\]+$/, '')
 }
 
-// A worktree counts as "has a live session" when any alive session's path —
-// its record's worktreePath if it has one, else its own cwd — is that
-// worktree or something inside it. A record's worktreePath is the only
-// thing the two removal handlers used to check, which misses two real
-// cases: a discovered/external session with no record at all (cwd is all
-// it has), and a stored path that differs from git's only by a trailing
-// slash or a symlink. Both left a worktree with a running agent looking
-// clean, and `git worktree remove` on it either succeeds and kills the
-// agent's cwd out from under it, or fails loudly if the agent has written
-// there — neither is "safe to remove".
-/**
- * Every live session in the worktree is one you've marked done: removing it
- * stops them and keeps them, so that's allowed. A session with no record
- * (started outside the app) can't be marked done, so it always blocks.
- */
-function liveSessionsAllDone(worktreePath: string, liveSessions: LiveSession[]): boolean {
+// The sessions running in a worktree: every alive one whose path — its
+// record's worktreePath if it has one, else its own cwd — is that worktree or
+// something inside it. Matching by cwd too catches a session with no record
+// (started outside the app) and a stored path that differs from git's only by
+// a trailing slash or a symlink.
+function sessionsIn(worktreePath: string, liveSessions: LiveSession[]): LiveSession[] {
   const target = normalizePath(worktreePath)
-  return liveSessions
-    .filter((s) => {
-      if (!s.alive) return false
-      const sessionPath = normalizePath(s.record?.worktreePath ?? s.cwd)
-      return sessionPath === target || sessionPath.startsWith(target + path.sep)
-    })
-    .every((s) => s.record?.archivedAt != null)
-}
-
-function worktreeHasLiveSession(worktreePath: string, liveSessions: LiveSession[]): boolean {
-  const target = normalizePath(worktreePath)
-  return liveSessions.some((s) => {
+  return liveSessions.filter((s) => {
     if (!s.alive) return false
     const sessionPath = normalizePath(s.record?.worktreePath ?? s.cwd)
     return sessionPath === target || sessionPath.startsWith(target + path.sep)
   })
+}
+
+/**
+ * Claude is doing something, or waiting on an answer, so removing its
+ * worktree would pull the floor out from under it. Anything else — sitting at
+ * its prompt, marked done, a plain shell tab — is fine to stop. "Mark as
+ * done" leaves Claude running at its prompt, so treating every running
+ * process as in use made a done, merged worktree impossible to clean up.
+ */
+function isBusy(s: LiveSession): boolean {
+  if (s.status === 'working' || s.status === 'needs_attention') return true
+  // Started outside the app: the status says nothing, the raw one might.
+  if (s.status === 'external')
+    return s.rawStatus === 'busy' || s.rawStatus === 'waiting' || s.rawStatus === 'blocked'
+  return false
+}
+
+function busySessionIn(
+  worktreePath: string,
+  liveSessions: LiveSession[]
+): { key: string; title: string | null; waiting: boolean } | null {
+  const s = sessionsIn(worktreePath, liveSessions).find(isBusy)
+  if (!s) return null
+  return {
+    key: s.key,
+    title: s.record?.title ?? s.agentName,
+    waiting:
+      s.status === 'needs_attention' || s.rawStatus === 'waiting' || s.rawStatus === 'blocked'
+  }
+}
+
+/** Ends whatever still runs in a worktree's panes once its records are shelved:
+ * a Claude with no record, or a shell tab. Left alone, they sat in a folder
+ * that no longer existed. */
+async function closePanesIn(worktreePath: string, liveSessions: LiveSession[]): Promise<void> {
+  for (const s of sessionsIn(worktreePath, liveSessions)) {
+    if (s.tmux?.paneId) await killPane(s.tmux.paneId)
+  }
 }
 
 /**
@@ -147,6 +167,7 @@ export function registerProjectsIpc(): void {
   ipcMain.handle('projects:worktreesForCleanup', async (_evt, projectId: string) => {
     const project = getState().projects.find((p) => p.id === projectId)
     if (!project) return []
+    const baseRef = project.baseRef ?? 'origin/main'
 
     const [worktrees, defaultBranch, liveSessions] = await Promise.all([
       listWorktrees(project.repoPath),
@@ -158,58 +179,74 @@ export function registerProjectsIpc(): void {
 
     const merged = await mergedBranches(project.repoPath, defaultBranch)
     const prStates = await prStatesForBranches(project.repoPath)
+    const records = getState().sessions.filter((s) => s.projectId === projectId && !s.deletedAt)
 
     return Promise.all(
       candidates.map(async (w) => {
         const branch = w.branch?.replace(/^refs\/heads\//, '') ?? null
         const isMerged = branch ? merged.has(branch) : false
         const prState = branch ? (prStates.get(branch) ?? null) : null
-        const [dirty, lastCommitAt] = await Promise.all([
-          hasUncommittedChanges(w.path),
-          w.prunable ? Promise.resolve(null) : lastCommitTime(w.path)
-        ])
-        // A "live session" is one with a real tmux pane or background agent
-        // still running, not merely a SessionRecord that once pointed here —
-        // a stopped session's worktree is exactly the kind of thing this
-        // dialog should offer to clean up. Matches by cwd too, so a
-        // discovered session with no record isn't missed.
-        const hasLiveSession = worktreeHasLiveSession(w.path, liveSessions)
-        const liveSessionsDone = hasLiveSession && liveSessionsAllDone(w.path, liveSessions)
-        // git already flags a worktree whose folder is gone as "prunable" —
-        // that row is always safe to remove (there is nothing left to lose),
-        // regardless of merge state.
         const missing = w.prunable
-        const safe =
-          missing ||
-          ((isMerged || prState === 'MERGED' || prState === 'CLOSED') && !dirty && !hasLiveSession)
+        const [changes, lastCommitAt, contained] = await Promise.all([
+          missing ? Promise.resolve([]) : uncommittedChanges(w.path),
+          missing ? Promise.resolve(null) : lastCommitTime(w.path),
+          missing ? Promise.resolve(false) : headContainedIn(w.path, baseRef)
+        ])
+        const changeList = changes ?? []
+        const dirty = changeList.length > 0
+        const busy = busySessionIn(w.path, liveSessions)
+        // Claude processes that removing it will stop: not shell tabs.
+        const running = sessionsIn(w.path, liveSessions).filter((s) => s.status !== 'shell').length
+        const here = records.filter((r) => normalizePath(r.worktreePath) === normalizePath(w.path))
+        // A session you haven't marked done: removing it is allowed (it's
+        // kept, and Resume rebuilds the worktree), but never pre-ticked.
+        const openSession = here.find((r) => !r.archivedAt) ?? null
+        const doneSession = here.find((r) => r.archivedAt) ?? null
+        // Nothing to lose: the folder's gone, or its work landed (merged, a
+        // merged or closed PR, or no commits of its own), with nothing
+        // uncommitted, Claude not busy, and every session in it marked done.
+        const finished = isMerged || prState === 'MERGED' || prState === 'CLOSED' || contained
+        const preselect = missing || (finished && !dirty && !busy && !openSession)
         return {
           path: w.path,
           branch,
           merged: isMerged,
           prState,
+          contained,
           dirty,
-          hasLiveSession,
-          liveSessionsDone,
+          changes: changeList.slice(0, 20).map((c) => ({ path: c.path, code: c.code.trim() })),
+          changeCount: changeList.length,
+          busy,
+          running,
+          openSessionTitle: openSession?.title ?? null,
+          doneSessionTitle: doneSession?.title ?? null,
           missing,
           lastCommitAt,
-          preselect: safe
+          preselect
         }
       })
     )
   })
 
-  // Runs the bulk removal the dialog above confirmed. `worktreePaths` and
-  // `deleteBranches` come from the renderer, but every path is re-checked
-  // against this project's own current worktree list and re-tested for
-  // uncommitted changes and a live session — the dialog's snapshot could be
-  // stale by the time the user presses the button. Never `--force` and
-  // never `git branch -D`: a row this can't safely act on is skipped and
-  // reported, not overridden.
+  // Runs the bulk removal the dialog above confirmed. `worktreePaths`,
+  // `deleteBranches` and `discardPaths` come from the renderer, but every path
+  // is re-checked against this project's own current worktree list and
+  // re-tested for uncommitted changes and a busy Claude — the dialog's
+  // snapshot could be stale by the time the user presses the button. A
+  // worktree with changes is forced only when it's in `discardPaths`: the
+  // person saw those changes in the dialog and ticked it anyway.
   ipcMain.handle(
     'projects:removeWorktrees',
-    async (_evt, projectId: string, worktreePaths: string[], deleteBranches: boolean) => {
+    async (
+      _evt,
+      projectId: string,
+      worktreePaths: string[],
+      deleteBranches: boolean,
+      discardPaths: string[] = []
+    ) => {
       const project = getState().projects.find((p) => p.id === projectId)
       if (!project) return { removed: [], branchesDeleted: [], failed: [] }
+      const discard = new Set(discardPaths)
 
       const [worktrees, defaultBranch, liveSessions] = await Promise.all([
         listWorktrees(project.repoPath),
@@ -233,21 +270,26 @@ export function registerProjectsIpc(): void {
           failed.push({ path: wtPath, reason: 'not a worktree of this project' })
           continue
         }
-        if (
-          worktreeHasLiveSession(wtPath, liveSessions) &&
-          !liveSessionsAllDone(wtPath, liveSessions)
-        ) {
-          failed.push({ path: wtPath, reason: 'a live session is using it' })
+        const busy = busySessionIn(wtPath, liveSessions)
+        if (busy) {
+          failed.push({
+            path: wtPath,
+            reason: busy.waiting ? 'Claude is waiting on you in it' : 'Claude is working in it'
+          })
           continue
         }
-        if (await hasUncommittedChanges(wtPath)) {
+        const dirty = !w.prunable && (await hasUncommittedChanges(wtPath))
+        if (dirty && !discard.has(wtPath)) {
           failed.push({ path: wtPath, reason: 'has uncommitted changes' })
           continue
         }
         // Its sessions are stopped first and kept as done: Resume rebuilds
         // the worktree from the branch. Only a deleted branch ends them.
         await shelveSessionsInWorktree(wtPath)
-        const result = await removeWorktreeClean(project.repoPath, wtPath)
+        await closePanesIn(wtPath, liveSessions)
+        const result = dirty
+          ? await removeWorktreeForce(project.repoPath, wtPath)
+          : await removeWorktreeClean(project.repoPath, wtPath)
         if (!result.ok) {
           failed.push({ path: wtPath, reason: result.error ?? 'git worktree remove failed' })
           continue
@@ -290,7 +332,17 @@ export function registerProjectsIpc(): void {
     if (await hasUncommittedChanges(worktreePath))
       return fail('This worktree has uncommitted changes. Commit or discard them first.')
 
+    const liveSessions = await discoverLiveSessions()
+    const busy = busySessionIn(worktreePath, liveSessions)
+    if (busy)
+      return fail(
+        busy.waiting
+          ? 'Claude is waiting on you in this worktree. Answer it or stop it first.'
+          : 'Claude is still working in this worktree. Let it finish or stop it first.'
+      )
+
     await retireSessionsInWorktree(worktreePath)
+    await closePanesIn(worktreePath, liveSessions)
     const removed = await removeWorktreeClean(wt.repoPath, worktreePath)
     if (!removed.ok) return fail(removed.error ?? 'Could not remove the worktree.')
     await pruneWorktrees(wt.repoPath)

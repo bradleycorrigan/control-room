@@ -18,10 +18,19 @@ export interface WorktreeCleanupCandidate {
   branch: string | null
   merged: boolean
   prState: string | null
+  /** Its current commit is already on the base branch: no commits of its own. */
+  contained: boolean
   dirty: boolean
-  hasLiveSession: boolean
-  /** Every live session in it is marked done: removing it keeps them, stopped. */
-  liveSessionsDone: boolean
+  /** The first 20 uncommitted files, and how many there are in all. */
+  changes: { path: string; code: string }[]
+  changeCount: number
+  /** Claude is working or waiting on you in it: the one thing that blocks removal. */
+  busy: { key: string; title: string | null; waiting: boolean } | null
+  /** Claude processes still running in it that removing it will stop. */
+  running: number
+  /** A session in it you haven't marked done. */
+  openSessionTitle: string | null
+  doneSessionTitle: string | null
   /** The worktree's folder is already gone on disk (git reports it prunable). */
   missing: boolean
   /** When its latest commit was made (epoch ms), or null when git can't say. */
@@ -42,13 +51,16 @@ export interface RemoveWorktreesResult {
 export function removeWorktrees(
   projectId: string,
   worktreePaths: string[],
-  deleteBranches: boolean
+  deleteBranches: boolean,
+  /** Of those, the ones whose uncommitted changes the person agreed to throw away. */
+  discardPaths: string[] = []
 ): Promise<RemoveWorktreesResult> {
   return window.api.invoke<RemoveWorktreesResult>(
     'projects:removeWorktrees',
     projectId,
     worktreePaths,
-    deleteBranches
+    deleteBranches,
+    discardPaths
   )
 }
 

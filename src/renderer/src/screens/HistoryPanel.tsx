@@ -4,7 +4,6 @@ import type { CliHistoryEntry } from '../../../main/exec/transcripts'
 import { Button, StatusDot } from '../components/primitives'
 import { STATUS_WORDS } from '../components/primitives/Badge'
 import {
-  archiveSession,
   listCliHistory,
   listWorktreePullRequests,
   openExternal,
@@ -14,6 +13,8 @@ import {
 } from '../api'
 import { relativeTime } from '../lib/format-time'
 import { useTicketKeys } from '../state/useTicketKeys'
+import type { PushToast } from '../state/useToasts'
+import { markSessionDone } from '../lib/markDone'
 
 // Plan 3, Part 4 — Recent (this app's own sessions) and CLI (transcripts
 // written by Claude Code sessions started outside the app) history, both
@@ -54,7 +55,7 @@ interface Props {
   /** Opens a Jira ticket in the side panel, with the list's tickets for J/K. */
   onOpenTicket?: (key: string, list?: string[]) => void
   onOpenSession: (liveKey: string) => void
-  pushToast: (message: string) => void
+  pushToast: PushToast
   /** Refreshes the project's records after one is put back on the board. */
   onRecordsChanged: () => void
   // Dev shot harness only — lands directly on the CLI sub-tab.
@@ -92,13 +93,12 @@ export default function HistoryPanel({
   }, [projectId])
 
   const onArchive = async (record: SessionRecord): Promise<void> => {
-    const result = await archiveSession(record.id)
-    if (!result.ok) {
-      pushToast(result.error ?? 'Could not archive it.')
-      return
-    }
-    pushToast(`${record.title} marked done. Nothing was stopped - resume it from here.`)
-    onRecordsChanged()
+    await markSessionDone(
+      record,
+      pushToast,
+      onRecordsChanged,
+      `${record.title} marked done. Nothing was stopped - resume it from here.`
+    )
   }
 
   // The one way out of the archive, and it does what it says: the session

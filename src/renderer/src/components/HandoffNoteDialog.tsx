@@ -3,11 +3,12 @@ import type { SessionRecord } from '../../../main/store/types'
 import { Modal, Button, Row, Stack, Textarea } from './primitives'
 import { getSessionHandoffNote } from '../api-sessions'
 import { addJiraComment, getSessionTicketLinks } from '../api'
+import type { PushToast } from '../state/useToasts'
 
 interface Props {
   record: SessionRecord
   onClose: () => void
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
 }
 
 /**

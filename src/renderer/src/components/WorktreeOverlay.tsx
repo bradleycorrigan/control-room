@@ -12,6 +12,7 @@ import { relativeTime } from '../lib/format-time'
 import '../screens/backlog.css'
 import './worktree-overlay.css'
 import { useEditorName } from '../state/useEditorName'
+import type { PushToast } from '../state/useToasts'
 
 /**
  * One worktree, opened from its card: what's attached to it (session, pull
@@ -52,7 +53,7 @@ export default function WorktreeOverlay({
   /** Only when the branch's pull request is merged. */
   onWrapUp?: () => void
   onOpenTicket?: (key: string) => void
-  pushToast: (message: string) => void
+  pushToast: PushToast
   onClose: () => void
 }): React.JSX.Element {
   const [detail, setDetail] = useState<WorktreeDetail | null | 'loading'>('loading')

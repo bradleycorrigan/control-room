@@ -49,6 +49,7 @@ import { PrChips, type PrChipProps } from '../components/PrChip'
 import { getAllLinkedPullRequests } from '../api-sessions'
 import type { LinkedPullRequest } from '../../../main/exec/pullRequests'
 import type { PrPanelTarget } from '../components/prPanelTarget'
+import type { PushToast } from '../state/useToasts'
 
 interface Props {
   sessions: LiveSession[]
@@ -82,7 +83,7 @@ interface Props {
    * screen still renders without it: falls back to window.alert, this
    * file's existing pattern for the delete/stop failures below, so a
    * failure is never silent either way. */
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
   /** The title bar bell's click target: show only sessions whose status is
    * 'needs_attention', across every project — independent of, and takes
    * priority over, selectedProjectId (the bell means "show me what needs
@@ -939,7 +940,7 @@ interface ProjectContainerProps {
   onNewSession?: (projectId?: string) => void
   onProjectsChanged?: () => void
   onOpenInIde?: (session: LiveSession) => void
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
 }
 
 function ProjectContainer({
@@ -1211,7 +1212,7 @@ export interface SessionCardProps {
   /** Its ticket, where the surface knows it and there's no list to ask. */
   ticketKey?: string | null
   onOpenTicket?: (key: string) => void
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
 }
 
 /**

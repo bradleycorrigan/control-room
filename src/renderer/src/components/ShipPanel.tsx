@@ -28,6 +28,7 @@ import { Button, Icon, IconButton, Popover } from './primitives'
 import { MenuItems } from './MenuItems'
 import { useDismissible } from '../keyboard'
 import './ship-panel.css'
+import type { PushToast } from '../state/useToasts'
 
 interface Props {
   session: LiveSession
@@ -36,7 +37,7 @@ interface Props {
   jiraReady: boolean
   onClose: () => void
   onOpenDiff: () => void
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
   /**
    * A pull request the agent opened somewhere other than this session's own
    * branch (usually another repo). The panel is then about that PR: no commits

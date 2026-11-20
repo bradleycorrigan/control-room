@@ -5,7 +5,6 @@ import DeleteSessionDialog from './DeleteSessionDialog'
 import RenameSessionDialog from './RenameSessionDialog'
 import HandoffNoteDialog from './HandoffNoteDialog'
 import {
-  archiveSession,
   unarchiveSession,
   openSessionInIde,
   copyWorktreePath,
@@ -22,10 +21,12 @@ import {
 } from '../api'
 import { useConfirm } from './primitives'
 import { setSessionPinned } from '../api-projects'
+import { markSessionDone } from '../lib/markDone'
 import { useEditorName } from '../state/useEditorName'
+import type { PushToast } from '../state/useToasts'
 
 interface Options {
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
   /** Called after anything here changes a record, so the caller's list reloads. */
   onChanged: () => void
   /**
@@ -294,14 +295,7 @@ export function useSessionActions({
             icon: 'CircleCheck',
             group: 'organise',
             onClick: () => {
-              void archiveSession(record.id).then((result) => {
-                pushToast?.(
-                  result.ok
-                    ? `${record.title} marked done. Nothing was stopped.`
-                    : (result.error ?? 'Could not mark it done.')
-                )
-                if (result.ok) onChanged()
-              })
+              void markSessionDone(record, pushToast, onChanged)
             }
           },
       // Copy from it.

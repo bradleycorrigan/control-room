@@ -401,6 +401,23 @@ export async function removeWorktreeClean(repoPath: string, dir: string): Promis
   return { ok: false, error: res.stderr.trim() || `git worktree remove exited ${res.code}` }
 }
 
+/** Removes a worktree and whatever is uncommitted in it. Only for a removal the
+ * person confirmed after seeing the changes it throws away. */
+export async function removeWorktreeForce(repoPath: string, dir: string): Promise<GitOpResult> {
+  const res = await run('git', ['-C', repoPath, 'worktree', 'remove', '--force', dir])
+  if (res.code === 0) return { ok: true }
+  return { ok: false, error: res.stderr.trim() || `git worktree remove exited ${res.code}` }
+}
+
+/** The worktree's current commit is already in `baseRef`: it holds no commits
+ * of its own, so removing it loses nothing that's committed. True for a
+ * detached worktree a quick question started from main, and for a branch
+ * nobody committed to. */
+export async function headContainedIn(worktreePath: string, baseRef: string): Promise<boolean> {
+  const res = await run('git', ['-C', worktreePath, 'merge-base', '--is-ancestor', 'HEAD', baseRef])
+  return res.code === 0
+}
+
 /** Branch names (short form) already merged into `defaultBranch`, local heads only. */
 export async function mergedBranches(
   repoPath: string,

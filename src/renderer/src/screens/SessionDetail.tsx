@@ -69,6 +69,7 @@ import { useTitleSuggestion } from '../components/useTitleSuggestion'
 import { MenuItems } from '../components/MenuItems'
 import { Picker, type PickerOption } from './backlog/Picker'
 import { useEditorName } from '../state/useEditorName'
+import type { PushToast } from '../state/useToasts'
 
 interface Props {
   session: LiveSession
@@ -78,7 +79,7 @@ interface Props {
   // necessarily ending the detail view — App.tsx's sessions list needs a
   // refresh to pick that up, same as onDeleted but without navigating away.
   onSessionUpdated?: () => void
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
   /** The project it belongs to, by name — from App, which has the projects. */
   projectName: string | null
   /** Opens this ticket's panel on Backlog. */

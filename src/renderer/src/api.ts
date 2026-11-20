@@ -61,6 +61,10 @@ export interface ProjectWorktree {
   branch: string | null
   isMainCheckout: boolean
   dirty: boolean
+  /** Its current commit is already on the base branch: no commits of its own. */
+  contained: boolean
+  /** When its latest commit was made (epoch ms), or null when git can't say. */
+  lastCommitAt: number | null
   /** The session record whose worktree this is, or null when nothing runs in it. */
   sessionId: string | null
   /** A session marked done that last ran here, when no open one does. */

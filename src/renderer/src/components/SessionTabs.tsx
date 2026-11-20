@@ -5,6 +5,7 @@ import { readAction } from './useSessionActions'
 import { renameSession } from '../api'
 import HandoffNoteDialog from './HandoffNoteDialog'
 import './session-tabs.css'
+import type { PushToast } from '../state/useToasts'
 
 export interface SessionTabsProps {
   tabs: LiveSession[]
@@ -25,7 +26,7 @@ export interface SessionTabsProps {
   onChanged: () => void
   /** Present only when a closed tab can come back. */
   onReopenClosed?: () => void
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
 }
 
 function tabTitle(session: LiveSession): string {

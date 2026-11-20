@@ -44,6 +44,7 @@ import './home.css'
 import HomeTickets from './HomeTickets'
 import { type ComposerSeed } from './backlog/ticketSessions'
 import '../components/session-card.css'
+import type { PushToast } from '../state/useToasts'
 
 type Model = 'opus' | 'sonnet' | 'haiku'
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
@@ -139,7 +140,7 @@ export interface HomeScreenProps {
   onOpenTicket?: (key: string) => void
   /** Opens the Tickets screen, for the summary's review and cycle clauses. */
   onViewTickets?: () => void
-  pushToast?: (message: string) => void
+  pushToast?: PushToast
 }
 
 /**

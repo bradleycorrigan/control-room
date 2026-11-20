@@ -9,7 +9,6 @@ import {
   Input,
   Row,
   SegmentedControl,
-  Badge,
   useConfirm
 } from '../components/primitives'
 import GitTab from './tabs/GitTab'
@@ -22,6 +21,8 @@ import { useDevContainer } from '../state/useDevContainer'
 import { SessionCard } from './SessionsScreen'
 import WorktreeCleanupDialog from '../components/WorktreeCleanupDialog'
 import WorktreeOverlay from '../components/WorktreeOverlay'
+import WorktreeCard from '../components/WorktreeCard'
+import { groupOf, type WorktreeGroup } from '../lib/worktreeGroup'
 import '../components/session-card.css'
 import { useWorktreeChoice } from '../state/useWorktreeChoice'
 import { useHomeDir } from '../state/useHomeDir'
@@ -36,11 +37,11 @@ import {
   listSessionRecordsForProject,
   updateWorktreeDefaults,
   listWorktreePullRequests,
-  openExternal,
   type ProjectWorktree,
   type WorktreePullRequest,
   type WorktreeDefaultsPatch
 } from '../api'
+import type { PushToast } from '../state/useToasts'
 
 const TABS: TabItem[] = [
   { id: 'overview', label: 'Overview' },
@@ -61,7 +62,7 @@ interface Props {
   onSessionsChanged: () => void
   onProjectsChanged: () => void
   onOpenSession: (liveKey: string, background?: boolean) => void
-  pushToast: (message: string) => void
+  pushToast: PushToast
   // Dev shot harness only: lets `npm run shot` land directly on a tab other
   // than the default (e.g. `project-detail-git`, `project-detail-files`).
   initialTab?: string
@@ -204,7 +205,7 @@ function OverviewTab({
   onSessionsChanged: () => void
   onProjectsChanged: () => void
   onOpenSession: (liveKey: string, background?: boolean) => void
-  pushToast: (message: string) => void
+  pushToast: PushToast
   onOpenTicket?: (key: string, list?: string[]) => void
   initialHistoryTab?: 'recent' | 'cli'
 }): React.JSX.Element {
@@ -230,6 +231,21 @@ function OverviewTab({
   const refreshWorktrees = (): void => {
     listAllWorktrees(project.id).then((all) => setWorktrees(all.filter((w) => !w.isMainCheckout)))
     void listWorktreePullRequests(project.id).then(setWorktreePrs)
+  }
+
+  // The Claude running in a worktree: its own session's, else any alive one
+  // whose folder is inside it. "Mark as done" leaves Claude at its prompt, so
+  // matching only by the open record called those "no session" and offered
+  // Start agent beside a Claude that was still there.
+  const claudeIn = (w: ProjectWorktree): LiveSession | undefined => {
+    const own = w.sessionId ? sessions.find((s) => s.record?.id === w.sessionId) : undefined
+    if (own && isLive(own.status)) return own
+    const root = w.path.replace(/\/+$/, '')
+    return sessions.find((s) => {
+      if (!s.alive || s.status === 'shell' || !isLive(s.status)) return false
+      const at = (s.record?.worktreePath ?? s.cwd).replace(/\/+$/, '')
+      return at === root || at.startsWith(root + '/')
+    })
   }
 
   // The ticket a worktree is for: the one its session is linked to, else a
@@ -425,181 +441,125 @@ function OverviewTab({
       {confirmNode}
 
       <section className="overview-section">
-        <Disclosure
-          label="Worktrees"
-          hint={(() => {
-            if (worktrees.length === 0)
-              return 'None yet: a session makes one when you start it on a new worktree'
-            const idle = worktrees.filter((w) => !w.sessionId).length
-            const total = `${worktrees.length} on disk`
-            return idle ? `${total}, ${idle} with no session` : total
-          })()}
-          open={worktreesOpen}
-          onToggle={setWorktreesOpen}
-        >
-          <Row justify="flex-start" className="overview-worktrees-actions">
-            <Button variant="outlined" size="compact" onClick={() => setCleanupOpen(true)}>
-              Clean up worktrees
-            </Button>
-          </Row>
-          <div className="cr-worktree-grid">
-            {worktrees.map((w) => {
-              const branch = w.branch?.replace(/^refs\/heads\//, '') ?? null
-              const liveSession = w.sessionId
-                ? sessions.find((s) => s.record?.id === w.sessionId)
-                : undefined
-              const sessionRecord = w.sessionId
-                ? records.find((r) => r.id === w.sessionId)
-                : undefined
-              const pr = branch ? worktreePrs[branch] : undefined
-              const ticket = ticketFor(w, branch)
-              const running = liveSession !== undefined && isLive(liveSession.status)
-              return (
-                <div
-                  key={w.path}
-                  className="cr-worktree-card cr-worktree-card--clickable"
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Details for ${branch ?? 'this worktree'}`}
-                  // The card opens its overlay; the buttons on it do their own thing.
-                  onClick={(e) => {
-                    if (!(e.target as HTMLElement).closest('button')) setOpenWorktree(w.path)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && e.target === e.currentTarget) setOpenWorktree(w.path)
-                  }}
-                >
-                  <div className="cr-worktree-card-title" title={branch ?? undefined}>
-                    {branch ?? 'No branch'}
-                  </div>
-                  <div className="cr-worktree-card-path" title={w.path}>
-                    <bdi>{formatHomePath(w.path, worktreeHomeDir)}</bdi>
-                  </div>
-                  <div className="cr-worktree-card-session">
-                    {liveSession ? (
-                      <>
-                        <Badge status={liveSession.status} variant="bare" />
-                        <span className="cr-worktree-card-session-title">
-                          {liveSession.record?.title}
-                        </span>
-                      </>
-                    ) : w.sessionId ? (
-                      <span className="cr-worktree-card-note">
-                        Session ended{sessionRecord ? `: ${sessionRecord.title}` : ''}
-                      </span>
-                    ) : w.doneSession ? (
-                      <span className="cr-worktree-card-note">
-                        Marked done: {w.doneSession.title}
-                      </span>
-                    ) : (
-                      <span className="cr-worktree-card-note">No session</span>
+        {(() => {
+          // Every worktree with what it needs to judge it, worked out once.
+          const cards = worktrees.map((w) => {
+            const branch = w.branch?.replace(/^refs\/heads\//, '') ?? null
+            const pr = branch ? worktreePrs[branch] : undefined
+            const claude = claudeIn(w)
+            const sessionRecord = w.sessionId
+              ? records.find((r) => r.id === w.sessionId)
+              : undefined
+            const sessionTitle =
+              claude?.record?.title ?? sessionRecord?.title ?? w.doneSession?.title ?? null
+            return { w, branch, pr, claude, sessionTitle, group: groupOf(w, pr, claude) }
+          })
+          const counts = {
+            ready: cards.filter((c) => c.group === 'ready').length,
+            inUse: cards.filter((c) => c.group === 'inUse').length,
+            idle: cards.filter((c) => c.group === 'idle').length
+          }
+          const GROUPS: { id: WorktreeGroup; label: string }[] = [
+            { id: 'ready', label: 'Ready to remove' },
+            { id: 'inUse', label: 'Claude running' },
+            { id: 'idle', label: 'Idle' }
+          ]
+          const plural = (n: number): string => `${n} worktree${n === 1 ? '' : 's'}`
+          return (
+            <Disclosure
+              label="Worktrees"
+              hint={
+                worktrees.length === 0
+                  ? 'None yet: a session makes one when you start it on a new worktree'
+                  : counts.ready > 0
+                    ? `${plural(worktrees.length)}, ${counts.ready} ready to remove`
+                    : plural(worktrees.length)
+              }
+              open={worktreesOpen}
+              onToggle={setWorktreesOpen}
+            >
+              <Row justify="flex-start" className="overview-worktrees-actions">
+                <Button variant="outlined" size="compact" onClick={() => setCleanupOpen(true)}>
+                  Clean up worktrees
+                </Button>
+              </Row>
+              {GROUPS.filter((g) => counts[g.id] > 0).map((g) => (
+                <div key={g.id} className="cr-worktree-group">
+                  <div className="cr-worktree-group-head">
+                    <span className="cr-worktree-group-label">{g.label}</span>
+                    <span className="cr-worktree-group-count">{counts[g.id]}</span>
+                    {g.id === 'ready' && counts.ready > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="compact"
+                        className="cr-worktree-group-action"
+                        onClick={() => setCleanupOpen(true)}
+                      >
+                        Review and remove {counts.ready}
+                      </Button>
                     )}
                   </div>
-                  {(pr || ticket || w.dirty) && (
-                    <div className="cr-worktree-card-links">
-                      {pr && (
-                        <button
-                          type="button"
-                          className={`cr-worktree-card-pr cr-worktree-card-pr--${pr.state.toLowerCase()}`}
-                          title="Open the pull request on GitHub"
-                          onClick={() => void openExternal(pr.url)}
-                        >
-                          <span className="cr-worktree-card-pr-dot" aria-hidden />
-                          PR #{pr.number} {pr.state.toLowerCase()}
-                        </button>
-                      )}
-                      {ticket &&
-                        (onOpenTicket ? (
-                          <button
-                            type="button"
-                            className="cr-worktree-card-ticket"
-                            title={`Open ${ticket} in Tickets`}
-                            onClick={() => onOpenTicket(ticket, worktreeTickets)}
-                          >
-                            {ticket}
-                          </button>
-                        ) : (
-                          <span className="cr-worktree-card-ticket">{ticket}</span>
-                        ))}
-                      {w.dirty && (
-                        <span className="cr-worktree-card-dirty">uncommitted changes</span>
-                      )}
-                    </div>
-                  )}
-                  <div className="cr-worktree-card-actions">
-                    {liveSession && running ? (
-                      // In use: open its session. Removing it here would pull the
-                      // worktree out from under a running agent.
-                      <button type="button" onClick={() => onOpenSession(liveSession.key)}>
-                        Open session
-                      </button>
-                    ) : (
-                      <>
-                        {liveSession ? (
-                          <button type="button" onClick={() => onOpenSession(liveSession.key)}>
-                            Open session
-                          </button>
-                        ) : (
-                          !w.sessionId && (
-                            <button type="button" onClick={() => handleAdopt(w.path)}>
-                              Start agent
-                            </button>
-                          )
-                        )}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleRemoveWorktree(
-                              w.path,
-                              liveSession?.record?.title ??
-                                sessionRecord?.title ??
-                                w.doneSession?.title
-                            )
+                  <div className="cr-worktree-grid">
+                    {cards
+                      .filter((c) => c.group === g.id)
+                      .map(({ w, branch, pr, claude, sessionTitle }) => (
+                        <WorktreeCard
+                          key={w.path}
+                          worktree={w}
+                          branch={branch}
+                          sessionTitle={sessionTitle}
+                          claude={claude}
+                          pr={pr}
+                          ticket={ticketFor(w, branch)}
+                          onOpen={() => setOpenWorktree(w.path)}
+                          onOpenTicket={
+                            onOpenTicket ? (key) => onOpenTicket(key, worktreeTickets) : undefined
                           }
-                        >
-                          Remove
-                        </button>
-                      </>
-                    )}
-                    {pr?.state === 'MERGED' && (
+                          onOpenSession={(key) => onOpenSession(key)}
+                          onStartAgent={() => handleAdopt(w.path)}
+                          onRemove={() => handleRemoveWorktree(w.path, sessionTitle ?? undefined)}
+                          onWrapUp={(n) => handleWrapUp(w.path, n, sessionTitle ?? undefined)}
+                        />
+                      ))}
+                    {g.id === 'idle' && (
                       <button
                         type="button"
-                        onClick={() =>
-                          handleWrapUp(
-                            w.path,
-                            pr.number,
-                            liveSession?.record?.title ??
-                              sessionRecord?.title ??
-                              w.doneSession?.title
-                          )
-                        }
+                        className="cr-worktree-card cr-worktree-card--new"
+                        onClick={handleStartEmpty}
+                        disabled={busy}
                       >
-                        Wrap up
+                        ＋ New
                       </button>
                     )}
                   </div>
                 </div>
-              )
-            })}
-            <button
-              type="button"
-              className="cr-worktree-card cr-worktree-card--new"
-              onClick={handleStartEmpty}
-              disabled={busy}
-            >
-              ＋ New
-            </button>
-          </div>
-        </Disclosure>
+              ))}
+              {counts.idle === 0 && (
+                <div className="cr-worktree-grid">
+                  <button
+                    type="button"
+                    className="cr-worktree-card cr-worktree-card--new"
+                    onClick={handleStartEmpty}
+                    disabled={busy}
+                  >
+                    ＋ New
+                  </button>
+                </div>
+              )}
+            </Disclosure>
+          )
+        })()}
       </section>
 
       {(() => {
         const w = worktrees.find((x) => x.path === openWorktree)
         if (!w) return null
         const branch = w.branch?.replace(/^refs\/heads\//, '') ?? null
-        const liveSession = w.sessionId
-          ? sessions.find((s) => s.record?.id === w.sessionId)
-          : undefined
+        // The same Claude the card shows, so the overlay never offers Start
+        // agent beside one that's still running.
+        const liveSession =
+          claudeIn(w) ??
+          (w.sessionId ? sessions.find((s) => s.record?.id === w.sessionId) : undefined)
         const running = liveSession !== undefined && isLive(liveSession.status)
         const pastTitle = w.sessionId
           ? records.find((r) => r.id === w.sessionId)?.title
@@ -625,7 +585,7 @@ function OverviewTab({
                 : undefined
             }
             onStartAgent={
-              w.sessionId
+              w.sessionId || running
                 ? undefined
                 : () => {
                     close()
@@ -633,7 +593,7 @@ function OverviewTab({
                   }
             }
             onRemove={
-              running
+              liveSession?.status === 'working' || liveSession?.status === 'needs_attention'
                 ? undefined
                 : () => {
                     close()
@@ -673,6 +633,7 @@ function OverviewTab({
           onClose={() => setCleanupOpen(false)}
           onCleaned={refreshWorktrees}
           pushToast={pushToast}
+          onOpenSession={(key) => onOpenSession(key)}
         />
       )}
 
@@ -715,7 +676,7 @@ function WorktreeSettingsSection({
 }: {
   project: Project
   onProjectsChanged: () => void
-  pushToast: (message: string) => void
+  pushToast: PushToast
 }): React.JSX.Element {
   const [open, setOpen] = useState(false)
   const [baseBranch, setBaseBranch] = useState(project.worktreeBaseBranch ?? '')
