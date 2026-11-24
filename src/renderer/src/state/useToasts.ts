@@ -41,12 +41,14 @@ export interface Toast {
 const TOAST_LIFETIME_MS = 5000
 // A toast that offers something needs long enough to read and reach for.
 const ACTION_LIFETIME_MS = 8000
-// A flat 5s timer cuts off anything longer than a short confirmation before
-// it can be read — a "Finished:" toast carrying the first line of an
-// assistant turn, or a git error with a path in it, both run well past this.
-// Past this many characters a toast no longer auto-dismisses at all; it
-// waits for the dismiss button instead.
-const TOAST_AUTO_DISMISS_CHAR_LIMIT = 80
+// A flat timer cuts off anything longer than a short confirmation before it
+// can be read, like a "Finished:" toast carrying the first line of an
+// assistant turn. So past this many characters a toast gets extra time per
+// character, up to a cap.
+const TOAST_LONG_CHAR_LIMIT = 80
+// Roughly reading speed, with room to look over from the terminal.
+const MS_PER_EXTRA_CHAR = 60
+const TOAST_MAX_LIFETIME_MS = 20000
 // Matches the exit animation in styles.css.
 const LEAVE_MS = 160
 // More than this and the oldest go: a burst shouldn't wall off the corner.
@@ -140,12 +142,19 @@ export function useToasts(): ToastsController {
     (message: string, options?: ToastAction | ToastOptions) => {
       const opts: ToastOptions =
         options && 'onClick' in options ? { action: options } : (options ?? {})
+      const tone = opts.tone ?? toneOf(message)
+      const long = message.length > TOAST_LONG_CHAR_LIMIT
+      // A long error (a git failure with a path in it) waits for the dismiss
+      // button, so it can be read and copied. Anything else long gets more
+      // time, never forever: a toast that never leaves looks stuck.
       const lifetime =
-        opts.sticky || message.length > TOAST_AUTO_DISMISS_CHAR_LIMIT
+        opts.sticky || (long && tone === 'error')
           ? null
-          : opts.action
-            ? ACTION_LIFETIME_MS
-            : TOAST_LIFETIME_MS
+          : Math.min(
+              TOAST_MAX_LIFETIME_MS,
+              (opts.action ? ACTION_LIFETIME_MS : TOAST_LIFETIME_MS) +
+                Math.max(0, message.length - TOAST_LONG_CHAR_LIMIT) * MS_PER_EXTRA_CHAR
+            )
       const prev = current.current
       // The same words again while they're still up: count it, restart the
       // clock, and don't stack a twin.
@@ -163,7 +172,7 @@ export function useToasts(): ToastsController {
         id: nextId++,
         message,
         title: opts.title,
-        tone: opts.tone ?? toneOf(message),
+        tone,
         action: opts.action,
         secondary: opts.secondary,
         count: 1,
