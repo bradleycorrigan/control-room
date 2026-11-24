@@ -4,9 +4,12 @@ import './attachments.css'
 
 /** The files on a prompt, one chip each: pending, ready, or why it failed. */
 export default function AttachmentChips({
-  attachments
+  attachments,
+  pasteNote = 'copied to a temporary file for the agent to read'
 }: {
   attachments: Attachments
+  /** What happens to a pasted file, for its tooltip. */
+  pasteNote?: string
 }): React.JSX.Element | null {
   if (attachments.chips.length === 0) return null
   return (
@@ -20,7 +23,7 @@ export default function AttachmentChips({
             chip.status === 'error'
               ? chip.error
               : chip.source === 'paste'
-                ? `${chip.name}: copied to a temporary file for the agent to read`
+                ? `${chip.name}: ${pasteNote}`
                 : chip.source === 'artifact'
                   ? `${chip.name}: ${chip.link}`
                   : chip.name

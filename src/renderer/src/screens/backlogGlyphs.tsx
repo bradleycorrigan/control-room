@@ -1,5 +1,5 @@
-import { Fragment } from 'react'
-import { openExternal } from '../api'
+import { Fragment, useEffect, useState } from 'react'
+import { jiraAttachmentImage, openExternal } from '../api'
 
 /**
  * Small marks for the Backlog: where a ticket is in its workflow, how urgent
@@ -233,7 +233,8 @@ function openLink(url: string): void {
 function inline(
   text: string,
   keyBase: string,
-  people: Record<string, string> = {}
+  people: Record<string, string> = {},
+  images: Record<string, string> = {}
 ): React.ReactNode[] {
   const out: React.ReactNode[] = []
   let last = 0
@@ -251,7 +252,14 @@ function inline(
     const key = `${keyBase}-${n++}`
     if (m[1]) {
       const body = token.slice(1, -1)
-      if (body.startsWith('~')) {
+      if (body.startsWith('^')) {
+        // [^file]: a file on the ticket.
+        out.push(
+          <span key={key} className="backlog-wiki-attachment">
+            {body.slice(1)}
+          </span>
+        )
+      } else if (body.startsWith('~')) {
         const id = body.replace(/^~(accountid:)?/, '').split('|')[0]
         out.push(
           <span key={key} className="backlog-wiki-mention">
@@ -288,10 +296,15 @@ function inline(
         </button>
       )
     } else if (m[6]) {
+      const name = token.slice(1, -1).split('|')[0]
       out.push(
-        <span key={key} className="backlog-wiki-attachment">
-          {token.slice(1, -1).split('|')[0]}
-        </span>
+        images[name] ? (
+          <JiraImage key={key} name={name} url={images[name]} />
+        ) : (
+          <span key={key} className="backlog-wiki-attachment">
+            {name}
+          </span>
+        )
       )
     }
     last = start + token.length
@@ -400,14 +413,61 @@ function parse(source: string): Block[] {
   return blocks
 }
 
+// Fetched once per app run: reopening a ticket shouldn't download its
+// screenshots again.
+const imageCache = new Map<string, Promise<string | null>>()
+
+/** An image embedded with !name!, fetched through main (it needs the token). */
+function JiraImage({ name, url }: { name: string; url: string }): React.JSX.Element {
+  const [src, setSrc] = useState<string | null | undefined>(undefined)
+  const [big, setBig] = useState(false)
+  useEffect(() => {
+    let live = true
+    let p = imageCache.get(url)
+    if (!p) {
+      p = jiraAttachmentImage(url).then((r) => (r.ok ? r.value : null))
+      imageCache.set(url, p)
+    }
+    void p.then((v) => live && setSrc(v))
+    return () => {
+      live = false
+    }
+  }, [url])
+  if (!src) {
+    return (
+      <span className="backlog-wiki-attachment">
+        {name}
+        {src === undefined ? '…' : ''}
+      </span>
+    )
+  }
+  return (
+    <button
+      type="button"
+      className={big ? 'backlog-wiki-image backlog-wiki-image--big' : 'backlog-wiki-image'}
+      title={big ? `${name}: click to shrink` : `${name}: click to enlarge`}
+      aria-expanded={big}
+      onClick={(e) => {
+        e.stopPropagation()
+        setBig((v) => !v)
+      }}
+    >
+      <img src={src} alt={name} />
+    </button>
+  )
+}
+
 /** A ticket's description or a comment, formatted rather than raw markup. */
 export function WikiText({
   source,
-  people
+  people,
+  images
 }: {
   source: string
   /** Names for tagged account ids. */
   people?: Record<string, string>
+  /** Attachment file name → its content link, so !name! shows the image. */
+  images?: Record<string, string>
 }): React.JSX.Element {
   const blocks = parse(source)
   return (
@@ -418,7 +478,7 @@ export function WikiText({
           case 'h':
             return (
               <p key={k} className={`backlog-wiki-h backlog-wiki-h${Math.min(b.level, 3)}`}>
-                {inline(b.text, k, people)}
+                {inline(b.text, k, people, images)}
               </p>
             )
           case 'hr':
@@ -426,7 +486,7 @@ export function WikiText({
           case 'pre':
             return <pre key={k}>{b.text}</pre>
           case 'quote':
-            return <blockquote key={k}>{inline(b.text, k, people)}</blockquote>
+            return <blockquote key={k}>{inline(b.text, k, people, images)}</blockquote>
           case 'table':
             return (
               <div key={k} className="backlog-wiki-table">
@@ -436,9 +496,9 @@ export function WikiText({
                       <tr key={ri}>
                         {r.cells.map((c, ci) =>
                           r.header ? (
-                            <th key={ci}>{inline(c, `${k}-${ri}-${ci}`, people)}</th>
+                            <th key={ci}>{inline(c, `${k}-${ri}-${ci}`, people, images)}</th>
                           ) : (
-                            <td key={ci}>{inline(c, `${k}-${ri}-${ci}`, people)}</td>
+                            <td key={ci}>{inline(c, `${k}-${ri}-${ci}`, people, images)}</td>
                           )
                         )}
                       </tr>
@@ -453,7 +513,7 @@ export function WikiText({
               <Tag key={k}>
                 {b.items.map((it, ii) => (
                   <li key={ii} style={{ marginLeft: it.depth * 16 }}>
-                    {inline(it.text, `${k}-${ii}`, people)}
+                    {inline(it.text, `${k}-${ii}`, people, images)}
                   </li>
                 ))}
               </Tag>
@@ -465,7 +525,7 @@ export function WikiText({
                 {b.lines.map((l, li) => (
                   <Fragment key={li}>
                     {li > 0 && <br />}
-                    {inline(l, `${k}-${li}`, people)}
+                    {inline(l, `${k}-${li}`, people, images)}
                   </Fragment>
                 ))}
               </p>

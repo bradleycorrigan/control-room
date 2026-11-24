@@ -62,7 +62,11 @@ export interface Attachments {
   onPaste: (e: React.ClipboardEvent<HTMLTextAreaElement>) => Promise<void>
 }
 
-export function useAttachments(onError: (message: string | null) => void): Attachments {
+export function useAttachments(
+  onError: (message: string | null) => void,
+  /** Off where a long paste belongs in the text itself, like a Jira comment. */
+  { longPasteAsFile = true }: { longPasteAsFile?: boolean } = {}
+): Attachments {
   const [chips, setChips] = useState<AttachmentChip[]>([])
   const [dragOver, setDragOver] = useState(false)
 
@@ -206,7 +210,7 @@ export function useAttachments(onError: (message: string | null) => void): Attac
       // getAsFile() handed back nothing and the chip read "empty paste".
       const text = e.clipboardData?.getData('text/plain') ?? ''
       const lines = text ? text.split('\n').length : 0
-      if (text.trim() && lines >= PASTE_AS_FILE_LINES) {
+      if (longPasteAsFile && text.trim() && lines >= PASTE_AS_FILE_LINES) {
         e.preventDefault()
         const { room, note } = roomFor(1)
         if (room <= 0) {

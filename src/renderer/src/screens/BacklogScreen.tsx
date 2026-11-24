@@ -102,6 +102,9 @@ import {
 } from './backlog/ticketSessions'
 import { PickCheck, SelectionAction, SelectionBar } from '../components/selection'
 import './backlog.css'
+import AttachmentChips from '../components/AttachmentChips'
+import { AttachMenu } from '../components/AttachMenu'
+import { useAttachments } from '../components/useAttachments'
 import Select from '../components/Select'
 
 export type { ComposerSeed } from './backlog/ticketSessions'
@@ -4661,6 +4664,9 @@ function IssueDrawer({
   // Internal notes by default: only the team sees them. Reply is for the
   // person who raised the ticket (service desk projects).
   const [asNote, setAsNote] = useState(true)
+  // Images and files on the comment: paste, drop or the paperclip. They go up
+  // to the ticket when it's sent and are embedded at the end.
+  const attach = useAttachments((m) => m && onError(m), { longPasteAsFile: false })
   // @-mentions in the comment box: the names you picked, and the one being typed.
   const [mentions, setMentions] = useState<Record<string, string>>({})
   const [mention, setMention] = useState<{ query: string; start: number; index: number } | null>(
@@ -4789,16 +4795,21 @@ function IssueDrawer({
     void write(() => updateJiraText(issue.key, { summary: next }), { ...issue, summary: next })
   }
 
+  const files = attach.readyPaths()
+  const canSend =
+    Boolean(detail) && !attach.pending && (comment.trim() !== '' || attach.chips.length > 0)
   const sendComment = (): void => {
-    if (!comment.trim() || !detail) return
+    if (!canSend || busy) return
     void run(async () => {
       // @Name → [~accountid:…], which Jira shows as a mention and notifies.
-      let body = comment
+      let body = attach.withArtifacts(comment)
       for (const [name, id] of Object.entries(mentions)) {
         body = body.split(`@${name}`).join(`[~accountid:${id}]`)
       }
-      const r = await addJiraComment(issue.key, body, asNote)
+      const r = await addJiraComment(issue.key, body, asNote, files)
       if (r.ok) {
+        // The files are on the ticket now: reload so their images show.
+        if (files.length) void loadJiraDetail(issue.key).then((x) => x.ok && setDetail(x.value))
         setDetail((d) =>
           d
             ? {
@@ -4813,11 +4824,22 @@ function IssueDrawer({
         )
         setComment('')
         setMentions({})
+        attach.clear()
       } else onError(`Jira: ${r.error}`)
       return r.ok
     })
   }
 
+  // File name → its link, for images embedded in the description and comments.
+  const images = useMemo(
+    () =>
+      Object.fromEntries(
+        (detail?.attachments ?? []).flatMap((a) =>
+          a.image && a.contentUrl ? [[a.name, a.contentUrl]] : []
+        )
+      ),
+    [detail?.attachments]
+  )
   const links = detail?.links ?? issue.links
   const slack = links.find((l) => isSlack(l.url))
   const artifactLinks = links.filter((l) => ARTIFACT_LINK.test(l.url))
@@ -5322,7 +5344,11 @@ function IssueDrawer({
               ) : detail.descriptionWiki.trim() ? (
                 // Keyed by ticket, so the next ticket starts folded.
                 <FoldedText key={issue.key}>
-                  <WikiText source={detail.descriptionWiki} people={detail.people} />
+                  <WikiText
+                    source={detail.descriptionWiki}
+                    people={detail.people}
+                    images={images}
+                  />
                 </FoldedText>
               ) : (
                 <p className="backlog-note">No description.</p>
@@ -5657,7 +5683,10 @@ function IssueDrawer({
               {detail && <span className="backlog-group-count">{detail.comments.length}</span>}
             </h3>
           </div>
-          <div className="backlog-comment-box">
+          <div
+            className={`backlog-comment-box${attach.dragOver ? ' backlog-comment-box--drag-over' : ''}`}
+            {...attach.dropProps}
+          >
             <Textarea
               aria-label="Add a comment"
               className="backlog-drawer-textarea"
@@ -5703,8 +5732,10 @@ function IssueDrawer({
                 }
               }}
               onBlur={() => setMention(null)}
+              onPaste={attach.onPaste}
               rows={3}
             />
+            <AttachmentChips attachments={attach} pasteNote="added to the ticket when you send" />
             {mention && mentionMatches.length > 0 && (
               <div className="backlog-mention-list" role="listbox" aria-label="Mention someone">
                 {mentionMatches.map((p, i) => (
@@ -5737,6 +5768,11 @@ function IssueDrawer({
             )}
           </div>
           <div className="backlog-drawer-buttons">
+            <AttachMenu
+              disabled={busy}
+              onFiles={() => void attach.pick()}
+              onArtifact={attach.addArtifact}
+            />
             <SegmentedControl<'note' | 'reply'>
               aria-label="Comment type"
               options={[
@@ -5750,7 +5786,7 @@ function IssueDrawer({
             <Button
               variant="outlined"
               size="compact"
-              disabled={busy || !comment.trim() || !detail}
+              disabled={busy || !canSend}
               onClick={sendComment}
             >
               {asNote ? 'Add note' : 'Reply'}
@@ -5773,7 +5809,7 @@ function IssueDrawer({
                 <span title={fullDate(c.created)}>{when(c.created)}</span>
               </div>
               <div className="backlog-drawer-text">
-                <WikiText source={c.body} people={detail?.people} />
+                <WikiText source={c.body} people={detail?.people} images={images} />
               </div>
             </div>
           ))}

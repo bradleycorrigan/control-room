@@ -1080,6 +1080,52 @@ export async function runPagesCheck(ctx: PagesCheckContext): Promise<void> {
             .map((t) => t.textContent)
             .join('|')}`
         )
+        {
+          // A pasted screenshot rides along with a note: it goes up to the
+          // ticket and is embedded at the end of the comment.
+          const box = $<HTMLTextAreaElement>('.backlog-drawer textarea[aria-label="Add a comment"]')
+          const png = Uint8Array.from(
+            atob(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
+            ),
+            (ch) => ch.charCodeAt(0)
+          )
+          const data = new DataTransfer()
+          data.items.add(new File([png], 'image.png', { type: 'image/png' }))
+          box?.focus()
+          box?.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
+          await check(
+            'pasting an image into a comment adds it as a chip',
+            await until(() =>
+              Boolean(
+                $('.backlog-comment-box .cr-attachment-chip--ok[data-attachment-source="paste"]')
+              )
+            ),
+            $('.backlog-comment-box .cr-attachments')?.textContent ?? 'no chips'
+          )
+          setText(box, 'Screenshot attached.')
+          await click(byText('.backlog-drawer button', 'Add note'))
+          await check(
+            'and sending puts the image on the ticket, embedded in the note',
+            await until(() =>
+              $$('.backlog-comment').some(
+                (c) =>
+                  /Screenshot attached/.test(c.textContent ?? '') &&
+                  /pasted-.*\.png/.test(
+                    c.querySelector('.backlog-wiki-attachment, .backlog-wiki-image')?.textContent ??
+                      ''
+                  )
+              )
+            ),
+            $$('.backlog-comment')
+              .map((c) => c.textContent?.slice(0, 80))
+              .join(' | ')
+          )
+          await check(
+            'the chips clear once it is sent',
+            !$('.backlog-comment-box .cr-attachment-chip')
+          )
+        }
         await check('a ticket shows what blocks it', Boolean(blockRow('blockedBy', 'TEAM-201')))
         await click($('.backlog-drawer [aria-label="Add blocking"]'))
         await until(() => Boolean($('.backlog-picker')))

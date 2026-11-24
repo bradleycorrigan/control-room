@@ -110,6 +110,7 @@ import {
   loadOneIssue,
   updateIssueText,
   addComment,
+  attachmentImage,
   moveToStatus,
   assignIssue,
   assignablePeople,
@@ -791,8 +792,18 @@ export function registerIpcHandlers(): void {
     (_evt, key: string, patch: { summary?: string; descriptionWiki?: string }) =>
       updateIssueText(key, patch)
   )
-  ipcMain.handle('jira:comment', (_evt, key: string, body: string, internal?: boolean) =>
-    addComment(key, body, internal === true)
+  ipcMain.handle(
+    'jira:comment',
+    (_evt, key: string, body: string, internal?: boolean, files?: unknown) =>
+      addComment(
+        key,
+        body,
+        internal === true,
+        Array.isArray(files) ? files.filter((f): f is string => typeof f === 'string') : []
+      )
+  )
+  ipcMain.handle('jira:attachmentImage', (_evt, url: unknown) =>
+    typeof url === 'string' ? attachmentImage(url) : { ok: false, error: 'not a link' }
   )
   ipcMain.handle('jira:move', (_evt, key: string, status: string) => moveToStatus(key, status))
   ipcMain.handle('jira:assign', (_evt, key: string, who: boolean | string) => assignIssue(key, who))

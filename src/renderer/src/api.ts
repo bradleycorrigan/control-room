@@ -944,9 +944,15 @@ export function updateJiraText(
 export function addJiraComment(
   key: string,
   body: string,
-  internal = false
+  internal = false,
+  files: string[] = []
 ): Promise<JiraResult<JiraComment>> {
-  return window.api.invoke<JiraResult<JiraComment>>('jira:comment', key, body, internal)
+  return window.api.invoke<JiraResult<JiraComment>>('jira:comment', key, body, internal, files)
+}
+
+/** An attachment's image as a data URL (main fetches it with the token). */
+export function jiraAttachmentImage(url: string): Promise<JiraResult<string>> {
+  return window.api.invoke<JiraResult<string>>('jira:attachmentImage', url)
 }
 
 export function moveJiraIssue(key: string, status: string): Promise<JiraResult<JiraIssue>> {

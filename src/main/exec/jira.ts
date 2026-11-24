@@ -1,8 +1,9 @@
 import { app, BrowserWindow, safeStorage } from 'electron'
 import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { log } from '../log'
+import { validateAttachmentPath } from './attachments'
 
 /**
  * Jira, for the Backlog screen — enough to stay out of Jira for day-to-day
@@ -151,13 +152,22 @@ export interface JiraComment {
   internal?: boolean
 }
 
+export interface JiraAttachment {
+  name: string
+  /** The ticket in Jira, for "Open in Jira". */
+  url: string
+  /** The file itself; it needs the token, so it's fetched through main. */
+  contentUrl?: string
+  image?: boolean
+}
+
 export interface JiraIssueDetail {
   key: string
   /** Jira wiki markup — what the description editor edits. */
   descriptionWiki: string
   comments: JiraComment[]
   links: JiraLink[]
-  attachments: { name: string; url: string }[]
+  attachments: JiraAttachment[]
   /** Names for the people tagged in the text ([~accountid:…] → display name). */
   people?: Record<string, string>
   /**
@@ -237,6 +247,10 @@ interface Conn {
 
 class JiraError extends Error {}
 
+function authHeader(conn: Conn): string {
+  return `Basic ${Buffer.from(`${conn.email}:${conn.secret}`).toString('base64')}`
+}
+
 async function callJson<T>(
   conn: Conn,
   path: string,
@@ -245,7 +259,7 @@ async function callJson<T>(
   const res = await fetch(`https://${conn.site}${path}`, {
     method: init.method ?? 'GET',
     headers: {
-      Authorization: `Basic ${Buffer.from(`${conn.email}:${conn.secret}`).toString('base64')}`,
+      Authorization: authHeader(conn),
       Accept: 'application/json',
       ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {})
     },
@@ -1346,7 +1360,7 @@ export async function loadIssueDetail(key: string): Promise<JiraResult<JiraIssue
       fields?: {
         description?: string | null
         updated?: string
-        attachment?: Array<{ filename?: string; content?: string }>
+        attachment?: Array<{ filename?: string; content?: string; mimeType?: string }>
         reporter?: JiraUserRef | null
         assignee?: JiraUserRef | null
       }
@@ -1414,7 +1428,12 @@ export async function loadIssueDetail(key: string): Promise<JiraResult<JiraIssue
       links: await linksFor(conn, key, issue.fields?.updated ?? ''),
       attachments: (issue.fields?.attachment ?? [])
         .filter((a) => a.filename)
-        .map((a) => ({ name: a.filename!, url: `https://${conn.site}/browse/${key}` }))
+        .map((a) => ({
+          name: a.filename!,
+          url: `https://${conn.site}/browse/${key}`,
+          contentUrl: a.content,
+          image: (a.mimeType ?? '').startsWith('image/')
+        }))
     }
   })
 }
@@ -1457,20 +1476,33 @@ export async function updateIssueText(
  * Adds a comment. `internal` makes it a Jira Service Management internal
  * note, which only the team sees; on a project that isn't a service desk
  * Jira ignores the flag and the comment is an ordinary one.
+ *
+ * `files` are paths from the comment box's attach, drop or paste. Each is
+ * uploaded to the ticket first, then embedded at the end of the comment:
+ * an image as a thumbnail, anything else as a link to the file.
  */
 export async function addComment(
   key: string,
   body: string,
-  internal = false
+  internal = false,
+  files: string[] = []
 ): Promise<JiraResult<JiraComment>> {
-  if (!body.trim()) return { ok: false, error: 'the comment is empty' }
+  if (!body.trim() && files.length === 0) return { ok: false, error: 'the comment is empty' }
+  const checked = files.map((f) => validateAttachmentPath(f))
+  const bad = checked.find((c) => !c.ok)
+  if (bad && !bad.ok) return { ok: false, error: `${bad.name}: ${bad.error}` }
+  const paths = checked.flatMap((c) => (c.ok ? [c.path] : []))
   const store = fixtureStore()
   if (store) {
+    const uploaded = paths.map((p) => ({ name: basenameOf(p), image: IMAGE_FILE.test(p) }))
+    store.details[key]?.attachments.push(
+      ...uploaded.map((u) => ({ ...u, url: `https://example.atlassian.net/browse/${key}` }))
+    )
     const c = {
       id: String(Date.now()),
       author: 'You',
       created: new Date().toISOString(),
-      body: body.trim(),
+      body: withEmbeds(body, uploaded),
       internal
     }
     store.details[key]?.comments.push(c)
@@ -1479,6 +1511,9 @@ export async function addComment(
   const conn = connection()
   if ('error' in conn) return { ok: false, error: conn.error }
   return attempt(async () => {
+    const uploaded: { name: string; image: boolean }[] = []
+    for (const path of paths) uploaded.push(await uploadAttachment(conn, key, path))
+    const text = withEmbeds(body, uploaded)
     const c = await callJson<{
       id: string
       author?: { displayName?: string }
@@ -1488,7 +1523,7 @@ export async function addComment(
     }>(conn, `/rest/api/2/issue/${encodeURIComponent(key)}/comment`, {
       method: 'POST',
       body: {
-        body: body.trim(),
+        body: text,
         ...(internal
           ? { properties: [{ key: 'sd.public.comment', value: { internal: true } }] }
           : {})
@@ -1498,9 +1533,85 @@ export async function addComment(
       id: c.id,
       author: c.author?.displayName ?? 'You',
       created: c.created ?? '',
-      body: c.body ?? body,
+      body: c.body ?? text,
       internal: c.jsdPublic === undefined ? internal : c.jsdPublic === false
     }
+  })
+}
+
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i
+
+function basenameOf(path: string): string {
+  return path.split('/').pop() ?? path
+}
+
+/** The comment's words, then each file: `!name|thumbnail!` for an image, `[^name]` otherwise. */
+export function withEmbeds(body: string, files: { name: string; image: boolean }[]): string {
+  const embeds = files.map((f) => (f.image ? `!${f.name}|thumbnail!` : `[^${f.name}]`))
+  return [body.trim(), ...embeds].filter(Boolean).join('\n\n')
+}
+
+/** Puts one file on the ticket and returns the name Jira gave it. */
+async function uploadAttachment(
+  conn: Conn,
+  key: string,
+  path: string
+): Promise<{ name: string; image: boolean }> {
+  const form = new FormData()
+  form.append('file', new Blob([await readFile(path)]), basenameOf(path))
+  const res = await fetch(
+    `https://${conn.site}/rest/api/3/issue/${encodeURIComponent(key)}/attachments`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: authHeader(conn),
+        Accept: 'application/json',
+        // Jira refuses uploads without it (its guard against forged forms).
+        'X-Atlassian-Token': 'no-check'
+      },
+      body: form,
+      signal: AbortSignal.timeout(60_000)
+    }
+  )
+  if (res.status === 413) throw new JiraError(`${basenameOf(path)} is too big for Jira`)
+  if (!res.ok) throw new JiraError(`Jira wouldn't take ${basenameOf(path)} (${res.status})`)
+  const [a] = (await res.json()) as Array<{ filename?: string; mimeType?: string }>
+  const name = a?.filename ?? basenameOf(path)
+  return { name, image: (a?.mimeType ?? '').startsWith('image/') || IMAGE_FILE.test(name) }
+}
+
+// Big enough for any screenshot; a data URL this size is still quick to hand over.
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024
+
+/**
+ * One attachment's image as a data URL, so the panel can show it. Only a
+ * URL on the connected Jira site is fetched: the token never goes anywhere
+ * else, whatever the renderer asks for.
+ */
+export async function attachmentImage(url: string): Promise<JiraResult<string>> {
+  if (fixtureStore()) return { ok: false, error: 'no images in the fixture' }
+  const conn = connection()
+  if ('error' in conn) return { ok: false, error: conn.error }
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return { ok: false, error: 'not a link' }
+  }
+  if (parsed.protocol !== 'https:' || parsed.host !== conn.site) {
+    return { ok: false, error: 'not on your Jira site' }
+  }
+  return attempt(async () => {
+    const res = await fetch(parsed, {
+      headers: { Authorization: authHeader(conn) },
+      signal: AbortSignal.timeout(30_000)
+    })
+    if (!res.ok) throw new JiraError(`Jira answered ${res.status}`)
+    const type = res.headers.get('content-type')?.split(';')[0] ?? ''
+    if (!type.startsWith('image/')) throw new JiraError('not an image')
+    const bytes = Buffer.from(await res.arrayBuffer())
+    if (bytes.byteLength > MAX_IMAGE_BYTES) throw new JiraError('image too big to show')
+    return `data:${type};base64,${bytes.toString('base64')}`
   })
 }
 

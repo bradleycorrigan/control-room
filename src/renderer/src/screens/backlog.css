@@ -3595,3 +3595,41 @@
   padding: 0 var(--space-4);
   color: var(--text-muted);
 }
+
+/* An image embedded in a comment or description: a thumbnail that opens
+   to full width in place. */
+.backlog-wiki-image {
+  display: block;
+  margin: var(--space-4) 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  cursor: zoom-in;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.backlog-wiki-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+}
+
+.backlog-wiki-image--big {
+  cursor: zoom-out;
+}
+
+.backlog-wiki-image--big img {
+  max-height: none;
+}
+
+.backlog-comment-box--drag-over .backlog-drawer-textarea {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.backlog-comment-box .cr-attachments {
+  padding: var(--space-8) 0 0;
+}
