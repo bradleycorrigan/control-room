@@ -290,30 +290,29 @@
   display: none;
 }
 
-/* --- Colour. A coloured tab, every tab in a group and the group's label
-   carry a stroke in that colour (--tab-colour, set inline from a --label-*
-   token): along the top edge, round both corners and down each side to the
-   bottom of the tab, an outline open only where the tab meets the header. The same on every tab, the one you're on included.
-   A real border on three sides, so the curve keeps one thickness all the
-   way round; a single top line or inset shadow thinned out at the corners. */
+/* --- Colour. A line in the tab's colour (--tab-colour, set inline from a
+   --label-* token) along the bottom of the strip, on the edge the header
+   meets. Under a group it runs unbroken beneath the label and every tab.
+   The tab you're on sits over it, joined to the header, as a browser's
+   active tab breaks its group's line. */
 .cr-tab--coloured::after,
-.cr-tab-group .cr-tab::after,
-.cr-tab-group-label::after {
+.cr-tab-group::after {
   content: '';
   position: absolute;
-  top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  box-sizing: border-box;
-  border: 2px solid var(--tab-colour);
-  border-bottom: none;
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  height: 2px;
+  background: var(--tab-colour);
   pointer-events: none;
 }
 
-.cr-tab-group-label {
-  position: relative;
+.cr-tab--coloured.cr-tab--active::after {
+  content: none;
+}
+
+.cr-tab-group .cr-tab--active {
+  z-index: var(--layer-raised);
 }
 
 /* A group: its label, then its tabs. */
