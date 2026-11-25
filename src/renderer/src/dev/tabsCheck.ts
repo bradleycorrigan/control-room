@@ -404,6 +404,122 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
     )
   }
 
+  // --- pinning, colour and groups
+  {
+    const menuItem = (label: string): HTMLElement | null =>
+      [...document.querySelectorAll<HTMLElement>('.cr-tab-menu .cr-popover-item')].find(
+        (b) => b.textContent === label
+      ) ?? null
+    const tabMenu = async (tab: HTMLElement | undefined, label: string): Promise<boolean> => {
+      await click(tab ?? null, 'right')
+      await until(() => Boolean(menuItem(label)))
+      const item = menuItem(label)
+      await click(item)
+      return Boolean(item)
+    }
+    await ctx.goToSessionsList()
+    await wait(400)
+    await click(rows()[0], 'left', ['meta'])
+    await click(rows()[1], 'left', ['meta'])
+    await click(rows()[2])
+    await until(onSessionScreen)
+    await wait(300)
+
+    const pinning = title(tabs()[2])
+    const found = await tabMenu(tabs()[2], 'Pin tab')
+    await wait(300)
+    await check(
+      'Pin tab moves the tab first, with a pin instead of the ×',
+      found &&
+        title(tabs()[0]) === pinning &&
+        tabs()[0].classList.contains('cr-tab--pinned') &&
+        !tabs()[0].querySelector('.cr-tab-close'),
+      `found=${found} first=${title(tabs()[0])} wanted=${pinning}`
+    )
+    await tabMenu(tabs()[2], 'Close other tabs')
+    await wait(300)
+    await check(
+      'Close other tabs keeps the pinned tab',
+      tabs().length === 2 && title(tabs()[0]) === pinning,
+      tabs().map(title).join(' | ')
+    )
+
+    await click(tabs()[1], 'right')
+    await until(() =>
+      Boolean(document.querySelector('.cr-tab-menu .cr-swatch[data-colour="green"]'))
+    )
+    await click(document.querySelector('.cr-tab-menu .cr-swatch[data-colour="green"]'))
+    await wait(300)
+    await check(
+      'a colour from the tab menu colours the tab',
+      tabs()[1]?.dataset.tabColour === 'green' && tabs()[1].classList.contains('cr-tab--coloured'),
+      `colour=${tabs()[1]?.dataset.tabColour}`
+    )
+    if (document.querySelector('.cr-tab-menu')) await key('Escape')
+
+    await tabMenu(tabs()[1], 'Add to new group')
+    const nameField = await until(() => Boolean(document.querySelector('.cr-tab-group-input')))
+    const field = document.querySelector<HTMLInputElement>('.cr-tab-group-input')
+    await check(
+      'Add to new group makes a group and asks for its name',
+      nameField &&
+        Boolean(document.querySelector('.cr-tab-group')) &&
+        document.activeElement === field,
+      `field=${nameField} focus=${document.activeElement?.className}`
+    )
+    if (field) {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setValue?.call(field, 'Review')
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+      await wait(150)
+      await key('Enter')
+    }
+    const groupLabel = (): HTMLElement | null => document.querySelector('.cr-tab-group-label')
+    await check(
+      'the group shows its name, in the tab’s colour',
+      (groupLabel()?.textContent ?? '').includes('Review') &&
+        !document.querySelector('.cr-tab-group-input') &&
+        (
+          document
+            .querySelector<HTMLElement>('.cr-tab-group')
+            ?.style.getPropertyValue('--tab-colour') ?? ''
+        ).includes('green'),
+      `label=${groupLabel()?.textContent}`
+    )
+
+    // Fold it away from the pinned tab, so the grouped one isn't the tab you're on.
+    await click(tabs()[0])
+    await click(groupLabel())
+    await check(
+      'clicking a group’s label folds its tabs away',
+      tabs().length === 1 && groupLabel()?.getAttribute('aria-expanded') === 'false',
+      `tabs=${tabs().length}`
+    )
+    // Pinned, then the folded tab, then round to the house: ⌘⇧] skips the folded one.
+    await key(']', ['meta', 'shift'])
+    await check('⌘⇧] skips a folded tab', onList(), `active=${activeIndex()} onList=${onList()}`)
+    await click(tabs()[0])
+    await click(groupLabel())
+    await check('clicking it again shows them', tabs().length === 2, `tabs=${tabs().length}`)
+
+    await click(groupLabel(), 'right')
+    const ungroup = await until(() => Boolean(menuItem('Ungroup')))
+    await click(menuItem('Ungroup'))
+    await wait(300)
+    await check(
+      'Ungroup keeps the tab and drops the group',
+      ungroup && !document.querySelector('.cr-tab-group') && tabs().length === 2,
+      `tabs=${tabs().length}`
+    )
+    await tabMenu(tabs()[0], 'Unpin tab')
+    await wait(300)
+    await check(
+      'Unpin tab gives it its × back',
+      !document.querySelector('.cr-tab--pinned') &&
+        Boolean(tabs()[0]?.querySelector('.cr-tab-close'))
+    )
+  }
+
   // --- the pinned house tab
   await ctx.goToSessionsList()
   await wait(500)

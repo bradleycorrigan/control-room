@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { themes, type Theme } from '../src/renderer/src/theme/themes'
+import { LABEL_IDS, themes, type Theme } from '../src/renderer/src/theme/themes'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const tokensPath = join(__dirname, '..', 'src', 'renderer', 'src', 'theme', 'tokens.css')
@@ -36,6 +36,8 @@ function themeBlock(theme: Theme): string {
     `  --status-done: ${theme.status.done};`,
     `  --status-idle: ${theme.status.idle};`,
     `  --status-error: ${theme.status.error};`,
+    ``,
+    ...LABEL_IDS.map((id) => `  --label-${id}: ${theme.labels[id]};`),
     ``,
     `  --term-bg: ${theme.termBg};`,
     `  --term-fg: ${theme.termFg};`,

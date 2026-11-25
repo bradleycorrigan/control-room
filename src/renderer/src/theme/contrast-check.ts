@@ -72,6 +72,20 @@ for (const theme of themes) {
     minRatio: 3
   })
 
+  // Tab and group colours: a line under a tab, and a group's swatch, on the
+  // page or a card.
+  for (const [labelName, labelHex] of Object.entries(theme.labels)) {
+    for (const [surfaceName, surfaceHex] of surfaces.slice(0, 2)) {
+      checks.push({
+        theme: theme.name,
+        label: `label-${labelName} on ${surfaceName}`,
+        fg: labelHex,
+        bg: surfaceHex,
+        minRatio: 3
+      })
+    }
+  }
+
   // The accent underline/rail also needs to read against the ground.
   checks.push({
     theme: theme.name,

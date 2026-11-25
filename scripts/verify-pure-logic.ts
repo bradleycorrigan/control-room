@@ -6,6 +6,13 @@
 
 import { parseEstimateHours, workingDays } from '../src/renderer/src/screens/backlog/cyclePlan'
 import { clipboardWrite, scrollReports } from '../src/renderer/src/lib/scrollReports'
+import {
+  arrangeTabs,
+  hiddenTabs,
+  pruneLayout,
+  readLayout,
+  type TabLayout
+} from '../src/renderer/src/lib/tabLayout'
 
 let failures = 0
 function check(name: string, ok: boolean, detail = ''): void {
@@ -50,6 +57,51 @@ check(
     clipboardWrite('c;?') === null &&
     clipboardWrite('junk') === null
 )
+
+// Session tab layout: pins first, groups together, nothing lost or doubled.
+{
+  const layout: TabLayout = {
+    pinned: ['e'],
+    colour: { a: 'red' },
+    groups: [{ id: 'g', name: 'Review', colour: 'blue', collapsed: true }],
+    groupOf: { b: 'g', d: 'g' }
+  }
+  const arranged = arrangeTabs(['a', 'b', 'c', 'd', 'e'], layout)
+  check(
+    'arrangeTabs puts pinned tabs first and pulls a group together at its first tab',
+    arranged.join('') === 'eabdc',
+    arranged.join('')
+  )
+  const hidden = hiddenTabs(arranged, layout, 'd')
+  check(
+    'hiddenTabs hides a collapsed group, bar the tab you are on',
+    hidden.has('b') && !hidden.has('d') && hidden.size === 1,
+    [...hidden].join(',')
+  )
+  const pruned = pruneLayout(layout, ['a', 'c', 'd'])
+  check(
+    'pruneLayout drops closed tabs from pins and groups, keeps colours and live groups',
+    pruned.pinned.length === 0 &&
+      pruned.groupOf.d === 'g' &&
+      !('b' in pruned.groupOf) &&
+      pruned.groups.length === 1 &&
+      pruned.colour.a === 'red'
+  )
+  check(
+    'pruneLayout drops a group with no tabs left',
+    pruneLayout(layout, ['a', 'c']).groups.length === 0
+  )
+  check(
+    'pruneLayout returns the same object when nothing changes',
+    pruneLayout(layout, ['a', 'b', 'c', 'd', 'e']) === layout
+  )
+  check(
+    'readLayout survives a missing or broken stored layout',
+    readLayout(null).pinned.length === 0 &&
+      readLayout({ groups: [{ id: 'x', name: '', colour: 'mauve' as never, collapsed: false }] })
+        .groups.length === 0
+  )
+}
 
 if (failures) {
   console.error(`${failures} check(s) failed`)

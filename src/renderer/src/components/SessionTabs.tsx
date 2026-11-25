@@ -1,6 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
 import { Count, Icon, Popover, StatusDot, Tooltip } from './primitives'
+import { MenuItems, type MenuItem } from './MenuItems'
+import ColourSwatches from './ColourSwatches'
+import type { TabLayoutActions } from '../state/useTabLayout'
+import { groupLabel, hiddenTabs, tabColour, type TabGroup } from '../lib/tabLayout'
 import { readAction } from './useSessionActions'
 import { renameSession } from '../api'
 import HandoffNoteDialog from './HandoffNoteDialog'
@@ -22,6 +26,10 @@ export interface SessionTabsProps {
   onCloseToRight: (key: string) => void
   /** Moves the tab at `from` to sit where the tab at `to` is. */
   onReorder: (from: number, to: number) => void
+  /** Pins, colours and groups. */
+  tabLayout: TabLayoutActions
+  /** Closes every tab in a group. */
+  onCloseGroup: (groupId: string) => void
   /** After Mark as unread / read, so the strip picks the change up. */
   onChanged: () => void
   /** Present only when a closed tab can come back. */
@@ -54,6 +62,8 @@ export default function SessionTabs({
   onCloseOthers,
   onCloseToRight,
   onReorder,
+  tabLayout,
+  onCloseGroup,
   onChanged,
   onReopenClosed,
   pushToast
@@ -67,6 +77,12 @@ export default function SessionTabs({
   // menu itself (and menuSession) has closed.
   const [handoffFor, setHandoffFor] = useState<LiveSession | null>(null)
   const menuAnchor = useRef<HTMLElement | null>(null)
+  // The group editor (name, colour, ungroup, close), hung off a group's label.
+  // Opened by right-clicking the label, and straight after making a group.
+  const [editGroupId, setEditGroupId] = useState<string | null>(null)
+  const groupAnchor = useRef<HTMLElement | null>(null)
+  // A group made from the tab menu: open its editor once its label is drawn.
+  const [pendingGroupId, setPendingGroupId] = useState<string | null>(null)
   const stripRef = useRef<HTMLDivElement>(null)
   // Double-click a tab to rename its session in place, as a list row can.
   const [renamingKey, setRenamingKey] = useState<string | null>(null)
@@ -144,24 +160,246 @@ export default function SessionTabs({
     }
   }, [activeKey, tabs.length])
 
+  const { layout } = tabLayout
+  useEffect(() => {
+    if (!pendingGroupId) return
+    const label = stripRef.current?.querySelector<HTMLElement>(
+      `[data-group-id="${pendingGroupId}"]`
+    )
+    if (!label) return
+    groupAnchor.current = label
+    setEditGroupId(pendingGroupId)
+    setPendingGroupId(null)
+  }, [pendingGroupId, layout])
+
   const menuSession = tabs.find((s) => s.key === menuKey) ?? null
   const menuIndex = menuSession ? tabs.indexOf(menuSession) : -1
-  const menuItems = menuSession
+  const menuPinned = menuSession ? layout.pinned.includes(menuSession.key) : false
+  const menuGroupId = menuSession ? layout.groupOf[menuSession.key] : undefined
+  const menuItems: MenuItem[] = menuSession
     ? [
-        { label: 'Close tab', onClick: () => onClose(menuSession.key) },
+        {
+          label: menuPinned ? 'Unpin tab' : 'Pin tab',
+          icon: menuPinned ? 'PinOff' : 'Pin',
+          group: 'layout',
+          onClick: () => tabLayout.setPinned(menuSession.key, !menuPinned)
+        },
+        ...(menuPinned
+          ? []
+          : [
+              {
+                label: 'Add to new group',
+                group: 'layout',
+                onClick: () => setPendingGroupId(tabLayout.newGroup(menuSession.key))
+              },
+              ...layout.groups
+                .filter((g) => g.id !== menuGroupId)
+                .map((g) => ({
+                  label: `Add to “${groupLabel(g)}”`,
+                  group: 'layout',
+                  onClick: () => tabLayout.moveToGroup(menuSession.key, g.id)
+                })),
+              ...(menuGroupId
+                ? [
+                    {
+                      label: 'Remove from group',
+                      group: 'layout',
+                      onClick: () => tabLayout.moveToGroup(menuSession.key, null)
+                    }
+                  ]
+                : [])
+            ]),
+        { label: 'Close tab', group: 'close', onClick: () => onClose(menuSession.key) },
         ...(tabs.length > 1
-          ? [{ label: 'Close other tabs', onClick: () => onCloseOthers(menuSession.key) }]
+          ? [
+              {
+                label: 'Close other tabs',
+                group: 'close',
+                onClick: () => onCloseOthers(menuSession.key)
+              }
+            ]
           : []),
         ...(menuIndex < tabs.length - 1
-          ? [{ label: 'Close tabs to the right', onClick: () => onCloseToRight(menuSession.key) }]
+          ? [
+              {
+                label: 'Close tabs to the right',
+                group: 'close',
+                onClick: () => onCloseToRight(menuSession.key)
+              }
+            ]
           : []),
-        readAction(menuSession, onChanged),
+        ...(onReopenClosed
+          ? [{ label: 'Reopen closed tab', group: 'close', onClick: onReopenClosed }]
+          : []),
+        { ...readAction(menuSession, onChanged), group: 'session' },
         ...(menuSession.record
-          ? [{ label: 'Write hand-off note…', onClick: () => setHandoffFor(menuSession) }]
-          : []),
-        ...(onReopenClosed ? [{ label: 'Reopen closed tab', onClick: onReopenClosed }] : [])
+          ? [
+              {
+                label: 'Write hand-off note…',
+                group: 'session',
+                onClick: () => setHandoffFor(menuSession)
+              }
+            ]
+          : [])
       ]
     : []
+
+  const editGroup = layout.groups.find((g) => g.id === editGroupId) ?? null
+  const hidden = hiddenTabs(
+    tabs.map((s) => s.key),
+    layout,
+    activeKey
+  )
+  const visibleKeys = tabs.map((s) => s.key).filter((k) => !hidden.has(k))
+
+  const renderTab = (session: LiveSession, index: number): React.JSX.Element => {
+    const active = session.key === activeKey
+    const title = tabTitle(session)
+    const unread = session.unread && !active
+    const pinned = layout.pinned.includes(session.key)
+    const colour = tabColour(session.key, layout)
+    const grouped = Boolean(layout.groupOf[session.key])
+    const className = [
+      'cr-tab',
+      active && 'cr-tab--active',
+      unread && 'cr-tab--unread',
+      pinned && 'cr-tab--pinned',
+      // A grouped tab shares its group's line; only a lone tab draws its own.
+      colour && !grouped && 'cr-tab--coloured',
+      dragOver === index && dragFrom !== index && 'cr-tab--drop'
+    ]
+      .filter(Boolean)
+      .join(' ')
+    const shortcut = visibleKeys.indexOf(session.key)
+    return (
+      <Tooltip
+        key={session.key}
+        label={
+          shortcut === visibleKeys.length - 1
+            ? `${title} · ⌘9`
+            : shortcut >= 0 && shortcut < 8
+              ? `${title} · ⌘${shortcut + 1}`
+              : title
+        }
+      >
+        <div
+          role="tab"
+          aria-selected={active}
+          aria-label={pinned ? `${title}, pinned` : undefined}
+          tabIndex={active ? 0 : -1}
+          className={className}
+          data-tab-colour={colour ?? undefined}
+          style={
+            colour
+              ? ({ '--tab-colour': `var(--label-${colour})` } as React.CSSProperties)
+              : undefined
+          }
+          draggable={renamingKey !== session.key}
+          onClick={() => onSelect(session.key)}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            menuAnchor.current = e.currentTarget
+            setMenuKey(session.key)
+          }}
+          // Middle-click closes, as it does in every browser.
+          onAuxClick={(e) => {
+            if (e.button === 1) {
+              e.preventDefault()
+              onClose(session.key)
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              onSelect(session.key)
+            }
+          }}
+          onDragStart={(e) => {
+            setDragFrom(index)
+            e.dataTransfer.effectAllowed = 'move'
+          }}
+          onDragOver={(e) => {
+            if (dragFrom === null) return
+            e.preventDefault()
+            setDragOver(index)
+          }}
+          onDragLeave={() => setDragOver((v) => (v === index ? null : v))}
+          onDrop={(e) => {
+            e.preventDefault()
+            if (dragFrom !== null && dragFrom !== index) onReorder(dragFrom, index)
+            setDragFrom(null)
+            setDragOver(null)
+          }}
+          onDragEnd={() => {
+            setDragFrom(null)
+            setDragOver(null)
+          }}
+        >
+          <StatusDot status={session.status} size={8} />
+          {renamingKey === session.key ? (
+            <input
+              className="cr-tab-rename"
+              autoFocus
+              aria-label="Session name"
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter') void submitRename(session)
+                else if (e.key === 'Escape') setRenamingKey(null)
+              }}
+              onBlur={() => void submitRename(session)}
+            />
+          ) : (
+            <span
+              className="cr-tab-title"
+              onDoubleClick={(e) => {
+                // Only a session with a record has a name to change.
+                if (!session.record) return
+                e.stopPropagation()
+                setRenameValue(title)
+                setRenamingKey(session.key)
+              }}
+            >
+              {title}
+            </span>
+          )}
+          {unread && <span className="cr-tab-unread" aria-label="unread" />}
+          {/* A pinned tab has no ×: it stays put until you unpin it, or close
+              it from its menu, ⌘W or a middle-click. */}
+          {pinned ? (
+            <span className="cr-tab-pin" aria-hidden="true">
+              <Icon name="Pin" size={12} />
+            </span>
+          ) : (
+            <button
+              type="button"
+              className="cr-tab-close"
+              aria-label={`Close ${title}`}
+              tabIndex={-1}
+              onClick={(e) => {
+                e.stopPropagation()
+                onClose(session.key)
+              }}
+            >
+              <Icon name="X" size={12} />
+            </button>
+          )}
+        </div>
+      </Tooltip>
+    )
+  }
+
+  // The strip, in runs: a group's label, then its tabs (bar any it hides
+  // while collapsed); lone tabs on their own.
+  const runs: { group: TabGroup | null; items: { session: LiveSession; index: number }[] }[] = []
+  tabs.forEach((session, index) => {
+    const group = layout.groups.find((g) => g.id === layout.groupOf[session.key]) ?? null
+    const last = runs[runs.length - 1]
+    if (group && last?.group?.id === group.id) last.items.push({ session, index })
+    else runs.push({ group, items: [{ session, index }] })
+  })
 
   return (
     <div
@@ -217,120 +455,53 @@ export default function SessionTabs({
           )}
         </div>
       </Tooltip>
-      {tabs.map((session, index) => {
-        const active = session.key === activeKey
-        const title = tabTitle(session)
-        const unread = session.unread && !active
-        const className = [
-          'cr-tab',
-          active && 'cr-tab--active',
-          unread && 'cr-tab--unread',
-          dragOver === index && dragFrom !== index && 'cr-tab--drop'
-        ]
-          .filter(Boolean)
-          .join(' ')
+      {runs.map((run) => {
+        const group = run.group
+        if (!group)
+          return (
+            <Fragment key={run.items[0].session.key}>
+              {renderTab(run.items[0].session, run.items[0].index)}
+            </Fragment>
+          )
+        const hiddenCount = run.items.filter((i) => hidden.has(i.session.key)).length
+        const label = groupLabel(group)
         return (
-          <Tooltip
-            key={session.key}
-            label={
-              index === tabs.length - 1
-                ? `${title} · ⌘9`
-                : index < 8
-                  ? `${title} · ⌘${index + 1}`
-                  : title
-            }
+          <div
+            key={group.id}
+            role="group"
+            aria-label={label}
+            className={group.collapsed ? 'cr-tab-group cr-tab-group--collapsed' : 'cr-tab-group'}
+            style={{ '--tab-colour': `var(--label-${group.colour})` } as React.CSSProperties}
           >
-            <div
-              role="tab"
-              aria-selected={active}
-              tabIndex={active ? 0 : -1}
-              className={className}
-              draggable={renamingKey !== session.key}
-              onClick={() => onSelect(session.key)}
-              onContextMenu={(e) => {
-                e.preventDefault()
-                menuAnchor.current = e.currentTarget
-                setMenuKey(session.key)
-              }}
-              // Middle-click closes, as it does in every browser.
-              onAuxClick={(e) => {
-                if (e.button === 1) {
-                  e.preventDefault()
-                  onClose(session.key)
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  onSelect(session.key)
-                }
-              }}
-              onDragStart={(e) => {
-                setDragFrom(index)
-                e.dataTransfer.effectAllowed = 'move'
-              }}
-              onDragOver={(e) => {
-                if (dragFrom === null) return
-                e.preventDefault()
-                setDragOver(index)
-              }}
-              onDragLeave={() => setDragOver((v) => (v === index ? null : v))}
-              onDrop={(e) => {
-                e.preventDefault()
-                if (dragFrom !== null && dragFrom !== index) onReorder(dragFrom, index)
-                setDragFrom(null)
-                setDragOver(null)
-              }}
-              onDragEnd={() => {
-                setDragFrom(null)
-                setDragOver(null)
-              }}
+            <Tooltip
+              label={
+                group.collapsed
+                  ? `${label}: click to show ${run.items.length === 1 ? 'its tab' : `its ${run.items.length} tabs`} · right-click to edit`
+                  : `${label}: click to fold away · right-click to edit`
+              }
             >
-              <StatusDot status={session.status} size={8} />
-              {renamingKey === session.key ? (
-                <input
-                  className="cr-tab-rename"
-                  autoFocus
-                  aria-label="Session name"
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    e.stopPropagation()
-                    if (e.key === 'Enter') void submitRename(session)
-                    else if (e.key === 'Escape') setRenamingKey(null)
-                  }}
-                  onBlur={() => void submitRename(session)}
-                />
-              ) : (
-                <span
-                  className="cr-tab-title"
-                  onDoubleClick={(e) => {
-                    // Only a session with a record has a name to change.
-                    if (!session.record) return
-                    e.stopPropagation()
-                    setRenameValue(title)
-                    setRenamingKey(session.key)
-                  }}
-                >
-                  {title}
-                </span>
-              )}
-              {unread && <span className="cr-tab-unread" aria-label="unread" />}
               <button
                 type="button"
-                className="cr-tab-close"
-                aria-label={`Close ${title}`}
-                tabIndex={-1}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onClose(session.key)
+                className="cr-tab-group-label"
+                data-group-id={group.id}
+                aria-expanded={!group.collapsed}
+                aria-label={`${label}, ${run.items.length} ${run.items.length === 1 ? 'tab' : 'tabs'}`}
+                onClick={() => tabLayout.updateGroup(group.id, { collapsed: !group.collapsed })}
+                onContextMenu={(e) => {
+                  e.preventDefault()
+                  groupAnchor.current = e.currentTarget
+                  setEditGroupId(group.id)
                 }}
               >
-                <Icon name="X" size={12} />
+                <span className="cr-tab-group-swatch" aria-hidden="true" />
+                {group.name.trim() && <span className="cr-tab-group-name">{group.name}</span>}
+                {hiddenCount > 0 && <Count value={hiddenCount} />}
               </button>
-            </div>
-          </Tooltip>
+            </Tooltip>
+            {run.items
+              .filter((i) => !hidden.has(i.session.key))
+              .map((i) => renderTab(i.session, i.index))}
+          </div>
         )
       })}
       <Popover
@@ -341,20 +512,57 @@ export default function SessionTabs({
         className="cr-tab-menu"
         aria-label="Tab actions"
       >
-        {menuItems.map((item) => (
-          <button
-            key={item.label}
-            type="button"
-            role="menuitem"
-            className="cr-popover-item"
-            onClick={() => {
-              setMenuKey(null)
-              item.onClick()
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
+        <MenuItems items={menuItems} onPicked={() => setMenuKey(null)} />
+        {/* A grouped tab takes its group's colour; change it on the group. */}
+        {menuSession && !menuGroupId && (
+          <>
+            <div role="separator" className="cr-popover-separator" />
+            <ColourSwatches
+              label="Tab colour"
+              value={layout.colour[menuSession.key] ?? null}
+              onPick={(colour) => tabLayout.setColour(menuSession.key, colour)}
+            />
+          </>
+        )}
+      </Popover>
+      <Popover
+        open={editGroup !== null}
+        onClose={() => setEditGroupId(null)}
+        anchorRef={groupAnchor}
+        placement="bottom-start"
+        className="cr-tab-menu"
+        role="dialog"
+        aria-label="Edit group"
+      >
+        {editGroup && (
+          <>
+            <input
+              className="cr-tab-group-input"
+              autoFocus
+              aria-label="Group name"
+              placeholder="Name this group"
+              value={editGroup.name}
+              onChange={(e) => tabLayout.updateGroup(editGroup.id, { name: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setEditGroupId(null)
+              }}
+            />
+            <ColourSwatches
+              label="Group colour"
+              allowNone={false}
+              value={editGroup.colour}
+              onPick={(colour) => colour && tabLayout.updateGroup(editGroup.id, { colour })}
+            />
+            <div role="separator" className="cr-popover-separator" />
+            <MenuItems
+              onPicked={() => setEditGroupId(null)}
+              items={[
+                { label: 'Ungroup', onClick: () => tabLayout.ungroup(editGroup.id) },
+                { label: 'Close group', onClick: () => onCloseGroup(editGroup.id) }
+              ]}
+            />
+          </>
+        )}
       </Popover>
       {handoffFor?.record && (
         <HandoffNoteDialog

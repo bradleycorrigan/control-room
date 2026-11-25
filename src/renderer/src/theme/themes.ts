@@ -35,6 +35,44 @@ const STATUS_FAMILY: Record<'dark' | 'light', Omit<StatusColors, 'idle'>> = {
   }
 }
 
+/**
+ * Label colours: the colours you can give a tab or a tab group. Like the
+ * status family, one set of fixed hues for every theme at one lightness and
+ * chroma for dark themes and another for light, so they read as a set on any
+ * background. build() nudges each to 3:1 against the page and the cards.
+ */
+export const LABEL_IDS = [
+  'red',
+  'orange',
+  'yellow',
+  'green',
+  'cyan',
+  'blue',
+  'purple',
+  'pink'
+] as const
+export type LabelId = (typeof LABEL_IDS)[number]
+export type LabelColors = Record<LabelId, string>
+
+const LABEL_HUES: Record<LabelId, number> = {
+  red: 25,
+  orange: 55,
+  yellow: 92,
+  green: 150,
+  cyan: 205,
+  blue: 258,
+  purple: 300,
+  pink: 345
+}
+const LABEL_FAMILY: Record<'dark' | 'light', LabelColors> = {
+  dark: Object.fromEntries(
+    LABEL_IDS.map((id) => [id, oklch(0.75, 0.13, LABEL_HUES[id])])
+  ) as LabelColors,
+  light: Object.fromEntries(
+    LABEL_IDS.map((id) => [id, oklch(0.58, 0.15, LABEL_HUES[id])])
+  ) as LabelColors
+}
+
 export interface StatusColors {
   working: string
   attention: string
@@ -79,6 +117,8 @@ export interface Theme {
   accentFg: string
   accentSoft: string
   status: StatusColors
+  /** Tab and tab-group colours (`--label-<id>`). */
+  labels: LabelColors
   termBg: string
   termFg: string
   /** The character colour showing through a block cursor (the cursor itself is termFg). */
@@ -191,6 +231,18 @@ function build(seed: ThemeSeed): Theme {
 
   const accent = nudgeForContrast(seed.accent, [bg], DOT_MIN, lightnessDirection)
 
+  const labels = Object.fromEntries(
+    LABEL_IDS.map((id) => [
+      id,
+      nudgeForContrast(
+        LABEL_FAMILY[isDark ? 'dark' : 'light'][id],
+        [bg, surface],
+        DOT_MIN,
+        lightnessDirection
+      )
+    ])
+  ) as LabelColors
+
   return {
     id: seed.id,
     name: seed.name,
@@ -208,6 +260,7 @@ function build(seed: ThemeSeed): Theme {
     accentFg: seed.accentFg,
     accentSoft: withAlpha(accent, 0.14),
     status,
+    labels,
     termBg: bg,
     termFg: text,
     // Two parts of the terminal did not follow the theme. The selection

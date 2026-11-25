@@ -40,6 +40,8 @@ import ArtifactsScreen from './screens/ArtifactsScreen'
 import ArtifactsRail from './screens/ArtifactsRail'
 import { ArtifactLibraryProvider } from './state/ArtifactLibraryProvider'
 import { useStoredState } from './state/useStoredState'
+import { useTabLayout } from './state/useTabLayout'
+import { hiddenTabs } from './lib/tabLayout'
 import { initShotListener, registerShotScreen, registerShotReset } from './dev/shot'
 import { DEFAULT_TERMINAL_FONT_SIZE } from './components/Terminal'
 // Test and gallery code loads only when a check or the gallery asks for it,
@@ -324,6 +326,9 @@ function App(): React.JSX.Element {
   // there — a card, a notification, back/forward — so this watches
   // openSessionKey rather than each way in. Remembered across restarts.
   const [openTabs, setOpenTabs] = useStoredState<string[]>('session-tabs', [])
+  // Pins, colours and groups; also keeps openTabs in the order the strip shows.
+  const tabLayout = useTabLayout(openTabs, setOpenTabs)
+  const replaceTabLayout = tabLayout.replace
   // The session you were on before this one, so a new tab lands beside it
   // rather than at the far end — as a browser does.
   const previousSessionKey = useRef<string | null>(null)
@@ -349,6 +354,11 @@ function App(): React.JSX.Element {
         .filter((s): s is LiveSession => Boolean(s)),
     [openTabs, sessions]
   )
+  // Tabs in a collapsed group are off the strip, so the keyboard skips them.
+  const visibleTabSessions = useMemo(() => {
+    const hidden = hiddenTabs(openTabs, tabLayout.layout, openSessionKey)
+    return tabSessions.filter((s) => !hidden.has(s.key))
+  }, [tabSessions, openTabs, tabLayout.layout, openSessionKey])
 
   // Tabs you've closed, newest last, for Reopen closed tab (tab menu, ⌘K).
   const [closedTabs, setClosedTabs] = useState<string[]>([])
@@ -358,13 +368,13 @@ function App(): React.JSX.Element {
     []
   )
 
-  const closeTab = useCallback(
-    (key: string) => {
-      rememberClosed([key])
-      const index = openTabs.indexOf(key)
-      const remaining = openTabs.filter((k) => k !== key)
+  const closeTabs = useCallback(
+    (keys: string[]) => {
+      rememberClosed(keys)
+      const index = openTabs.findIndex((k) => keys.includes(k))
+      const remaining = openTabs.filter((k) => !keys.includes(k))
       setOpenTabs(remaining)
-      if (key !== openSessionKey) return
+      if (!openSessionKey || !keys.includes(openSessionKey)) return
       // Like a browser: the tab to the right takes its place, else the left.
       const live = remaining.filter((k) => sessions.some((s) => s.key === k))
       const next = live[Math.min(index, live.length - 1)] ?? null
@@ -372,6 +382,11 @@ function App(): React.JSX.Element {
       if (next) setLastOpenedSessionKey(next)
     },
     [openTabs, openSessionKey, sessions, setOpenTabs, rememberClosed]
+  )
+  const closeTab = useCallback((key: string) => closeTabs([key]), [closeTabs])
+  const closeTabGroup = useCallback(
+    (groupId: string) => closeTabs(openTabs.filter((k) => tabLayout.layout.groupOf[k] === groupId)),
+    [closeTabs, openTabs, tabLayout.layout]
   )
 
   const reorderTabs = useCallback(
@@ -383,21 +398,27 @@ function App(): React.JSX.Element {
       const next = openTabs.filter((k) => k !== fromKey)
       next.splice(next.indexOf(toKey) + (from < to ? 1 : 0), 0, fromKey)
       setOpenTabs(next)
+      // Dropped among a group's tabs, it joins that group; dropped outside
+      // one, it leaves. Pinned tabs stay pinned and out of groups.
+      const { pinned, groupOf } = tabLayout.layout
+      if (!pinned.includes(fromKey) && groupOf[fromKey] !== groupOf[toKey]) {
+        tabLayout.moveToGroup(fromKey, pinned.includes(toKey) ? null : (groupOf[toKey] ?? null))
+      }
     },
-    [openTabs, tabSessions, setOpenTabs]
+    [openTabs, tabSessions, setOpenTabs, tabLayout]
   )
 
   // The pinned list tab is part of the cycle, as a pinned tab is in a browser.
   const stepTab = useCallback(
     (delta: number) => {
-      if (view !== 'sessions' || tabSessions.length === 0) return
-      const order: (string | null)[] = [null, ...tabSessions.map((s) => s.key)]
+      if (view !== 'sessions' || visibleTabSessions.length === 0) return
+      const order: (string | null)[] = [null, ...visibleTabSessions.map((s) => s.key)]
       const index = Math.max(0, order.indexOf(openSessionKey))
       const next = order[(index + delta + order.length) % order.length]
       if (next) openSessionByKey(next)
       else setOpenSessionKey(null)
     },
-    [view, openSessionKey, tabSessions, openSessionByKey]
+    [view, openSessionKey, visibleTabSessions, openSessionByKey]
   )
 
   // The pinned list tab. ⌘0, the house, and Sessions when you're already in
@@ -455,22 +476,24 @@ function App(): React.JSX.Element {
 
   const closeOtherTabs = useCallback(
     (key: string) => {
-      rememberClosed(openTabs.filter((k) => k !== key))
-      setOpenTabs([key])
+      // Pinned tabs stay, as in a browser.
+      const kept = openTabs.filter((k) => k === key || tabLayout.layout.pinned.includes(k))
+      rememberClosed(openTabs.filter((k) => !kept.includes(k)))
+      setOpenTabs(kept)
       if (openSessionKey !== key) openSessionByKey(key)
     },
-    [openTabs, openSessionKey, openSessionByKey, setOpenTabs, rememberClosed]
+    [openTabs, openSessionKey, openSessionByKey, setOpenTabs, rememberClosed, tabLayout.layout]
   )
 
   const closeTabsToRight = useCallback(
     (key: string) => {
       const index = openTabs.indexOf(key)
-      const kept = openTabs.slice(0, index + 1)
-      rememberClosed(openTabs.slice(index + 1))
+      const kept = openTabs.filter((k, i) => i <= index || tabLayout.layout.pinned.includes(k))
+      rememberClosed(openTabs.filter((k) => !kept.includes(k)))
       setOpenTabs(kept)
       if (openSessionKey && !kept.includes(openSessionKey)) openSessionByKey(key)
     },
-    [openTabs, openSessionKey, openSessionByKey, setOpenTabs, rememberClosed]
+    [openTabs, openSessionKey, openSessionByKey, setOpenTabs, rememberClosed, tabLayout.layout]
   )
 
   // The most recently closed tab whose session still exists.
@@ -1062,6 +1085,26 @@ function App(): React.JSX.Element {
       const picks = list.filter((s) => s.record).slice(0, 4)
       setOpenTabs(picks.map((s) => s.key))
       setOpenSessionKey(picks[2]?.key ?? picks[0]?.key ?? null)
+    })
+    // Pinned, coloured and grouped tabs: one pinned, a coloured lone tab, a
+    // named group with the active tab in it, and a folded unnamed group.
+    registerShotScreen('session-tabs-layout', async () => {
+      setView('sessions')
+      setPaletteOpen(false)
+      const list = sessions.length > 0 ? sessions : await listSessions()
+      const k = list.filter((s) => s.record).map((s) => s.key)
+      setOpenTabs(k.slice(0, 7))
+      replaceTabLayout({
+        pinned: [k[0]],
+        colour: { [k[1]]: 'orange' },
+        groups: [
+          { id: 'shot-a', name: 'Review', colour: 'blue', collapsed: false },
+          { id: 'shot-b', name: '', colour: 'green', collapsed: true }
+        ],
+        groupOf: { [k[2]]: 'shot-a', [k[3]]: 'shot-a', [k[4]]: 'shot-b', [k[5]]: 'shot-b' }
+      })
+      setOpenSessionKey(k[3] ?? null)
+      await new Promise((r) => setTimeout(r, 800))
     })
     // Enough tabs to overflow the strip, the last one active: it sits flush
     // with the header's right edge.
@@ -2296,7 +2339,8 @@ function App(): React.JSX.Element {
     refreshSessions,
     refreshProjects,
     setOpenTabs,
-    openSessionByKey
+    openSessionByKey,
+    replaceTabLayout
   ])
 
   // Accepts an optional target session — the sessions list's own per-row
@@ -2428,7 +2472,8 @@ function App(): React.JSX.Element {
     'prev-tab': () => stepTab(-1),
     // ⌘9 is the last tab however many there are, as in a browser.
     'jump-tab': (index) => {
-      const target = index === 8 ? tabSessions[tabSessions.length - 1] : tabSessions[index]
+      const target =
+        index === 8 ? visibleTabSessions[visibleTabSessions.length - 1] : visibleTabSessions[index]
       if (target) openSessionByKey(target.key)
     },
     // The composer; the session it starts opens as a tab of its own, next to
@@ -2640,6 +2685,8 @@ function App(): React.JSX.Element {
                     onCloseOthers={closeOtherTabs}
                     onCloseToRight={closeTabsToRight}
                     onReorder={reorderTabs}
+                    tabLayout={tabLayout}
+                    onCloseGroup={closeTabGroup}
                     onChanged={refreshSessions}
                     onReopenClosed={reopenableKey ? reopenClosedTab : undefined}
                     pushToast={pushToast}
