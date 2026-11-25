@@ -10,6 +10,38 @@
   gap: var(--space-16);
 }
 
+/* Cards in a row share their lines: each card's status, title, branch and
+   footer sit on four rows it borrows from the grid (subgrid), so a long
+   title in one card lines up the branches and footers of its neighbours
+   instead of leaving a gap above their footers. Anything else in the grid
+   (the new-session card) spans the same four rows. */
+.cr-active-grid > * {
+  grid-row: span 4;
+}
+
+.cr-active-grid > .session-card {
+  display: grid;
+  grid-template-rows: subgrid;
+  row-gap: var(--space-1);
+}
+
+.cr-active-grid > .session-card > .session-card-top {
+  grid-row: 1;
+}
+
+.cr-active-grid > .session-card > .session-card-title {
+  grid-row: 2;
+}
+
+.cr-active-grid > .session-card > .session-card-branch {
+  grid-row: 3;
+}
+
+.cr-active-grid > .session-card > .session-card-bottom {
+  grid-row: 4;
+  align-self: end;
+}
+
 .cr-session-card {
   display: flex;
   flex-direction: column;

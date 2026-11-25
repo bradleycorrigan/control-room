@@ -1,9 +1,15 @@
-import { Fragment } from 'react'
-import { Icon, type IconName } from './primitives'
+import { Fragment, useRef, useState } from 'react'
+import { Icon, Popover, type IconName } from './primitives'
 
 export interface MenuItem {
   label: string
+  /** Not called for a row with a submenu: pointing at it opens the submenu. */
   onClick: () => void
+  /**
+   * Opens these beside the row instead of acting, so a list that grows
+   * (groups, projects) keeps the menu itself short.
+   */
+  submenu?: MenuItem[]
   danger?: boolean
   /**
    * Why it can't be used right now. The item stays where it always is,
@@ -35,6 +41,10 @@ export function MenuItems({
   itemClassName?: string
 }): React.JSX.Element {
   const withIcons = items.some((i) => i.icon)
+  // The row whose submenu is showing, and the row it hangs off.
+  const [openSub, setOpenSub] = useState<string | null>(null)
+  const subAnchor = useRef<HTMLElement | null>(null)
+  const subItems = items.find((i) => i.label === openSub)?.submenu ?? null
   return (
     <>
       {items.map((item, i) => (
@@ -55,7 +65,27 @@ export function MenuItems({
               .join(' ')}
             disabled={Boolean(item.disabled)}
             title={item.disabled}
-            onClick={() => {
+            aria-haspopup={item.submenu ? 'menu' : undefined}
+            aria-expanded={item.submenu ? openSub === item.label : undefined}
+            onMouseEnter={(e) => {
+              if (item.submenu) {
+                subAnchor.current = e.currentTarget
+                setOpenSub(item.label)
+              } else setOpenSub(null)
+            }}
+            onKeyDown={(e) => {
+              if (item.submenu && e.key === 'ArrowRight') {
+                e.preventDefault()
+                subAnchor.current = e.currentTarget
+                setOpenSub(item.label)
+              }
+            }}
+            onClick={(e) => {
+              if (item.submenu) {
+                subAnchor.current = e.currentTarget
+                setOpenSub(item.label)
+                return
+              }
               onPicked()
               item.onClick()
             }}
@@ -67,9 +97,33 @@ export function MenuItems({
             )}
             {item.label}
             {item.shortcut && <kbd className="cr-popover-item-kbd">{item.shortcut}</kbd>}
+            {item.submenu && (
+              <span className="cr-popover-item-kbd" aria-hidden="true">
+                <Icon name="ChevronRight" size={14} />
+              </span>
+            )}
           </button>
         </Fragment>
       ))}
+      <Popover
+        open={subItems !== null}
+        onClose={() => setOpenSub(null)}
+        anchorRef={subAnchor}
+        placement="right-start"
+        submenu
+        aria-label={openSub ?? undefined}
+      >
+        {subItems && (
+          <MenuItems
+            items={subItems}
+            itemClassName={itemClassName}
+            onPicked={() => {
+              setOpenSub(null)
+              onPicked()
+            }}
+          />
+        )}
+      </Popover>
     </>
   )
 }

@@ -13,12 +13,13 @@ import { useStoredState } from './useStoredState'
 
 export interface TabLayoutActions {
   layout: TabLayout
-  setPinned: (key: string, pinned: boolean) => void
-  setColour: (key: string, colour: LabelId | null) => void
-  /** Puts the tab in a new group of its own and returns the group's id. */
-  newGroup: (key: string) => string
-  /** null takes the tab out of its group. */
-  moveToGroup: (key: string, groupId: string | null) => void
+  /** Every action takes several tabs: the ones shift-clicked together. */
+  setPinned: (keys: string[], pinned: boolean) => void
+  setColour: (keys: string[], colour: LabelId | null) => void
+  /** Puts the tabs in a new group of their own and returns the group's id. */
+  newGroup: (keys: string[]) => string
+  /** null takes the tabs out of their groups. */
+  moveToGroup: (keys: string[], groupId: string | null) => void
   updateGroup: (groupId: string, patch: Partial<Omit<TabGroup, 'id'>>) => void
   /** Keeps the tabs, drops the group. */
   ungroup: (groupId: string) => void
@@ -51,56 +52,69 @@ export function useTabLayout(
   }, [layout, openTabs, setOpenTabs])
 
   const setPinned = useCallback(
-    (key: string, pinned: boolean) => {
-      const rest = layout.pinned.filter((k) => k !== key)
+    (keys: string[], pinned: boolean) => {
+      const rest = layout.pinned.filter((k) => !keys.includes(k))
       const groupOf = { ...layout.groupOf }
-      if (pinned) delete groupOf[key]
-      setStored({ ...layout, pinned: pinned ? [...rest, key] : rest, groupOf })
+      if (pinned) for (const k of keys) delete groupOf[k]
+      setStored({ ...layout, pinned: pinned ? [...rest, ...keys] : rest, groupOf })
     },
     [layout, setStored]
   )
 
   const setColour = useCallback(
-    (key: string, colour: LabelId | null) => {
+    (keys: string[], colour: LabelId | null) => {
       const next = { ...layout.colour }
-      if (colour) next[key] = colour
-      else delete next[key]
+      for (const k of keys) {
+        if (colour) next[k] = colour
+        else delete next[k]
+      }
       setStored({ ...layout, colour: next })
     },
     [layout, setStored]
   )
 
   const newGroup = useCallback(
-    (key: string): string => {
+    (keys: string[]): string => {
       const id = `g-${Date.now().toString(36)}`
+      // The tabs gather where the first of them sits (arrangeTabs does that);
+      // the group takes the first one's colour if it has one.
+      const first = openTabs.find((k) => keys.includes(k)) ?? keys[0]
       setStored({
         ...layout,
-        pinned: layout.pinned.filter((k) => k !== key),
+        pinned: layout.pinned.filter((k) => !keys.includes(k)),
         groups: [
           ...layout.groups,
-          { id, name: '', colour: layout.colour[key] ?? nextGroupColour(layout), collapsed: false }
+          {
+            id,
+            name: '',
+            colour: layout.colour[first] ?? nextGroupColour(layout),
+            collapsed: false
+          }
         ],
-        groupOf: { ...layout.groupOf, [key]: id }
+        groupOf: { ...layout.groupOf, ...Object.fromEntries(keys.map((k) => [k, id])) }
       })
       return id
     },
-    [layout, setStored]
+    [layout, openTabs, setStored]
   )
 
   const moveToGroup = useCallback(
-    (key: string, groupId: string | null) => {
+    (keys: string[], groupId: string | null) => {
       const groupOf = { ...layout.groupOf }
-      if (groupId) groupOf[key] = groupId
-      else delete groupOf[key]
-      const pinned = groupId ? layout.pinned.filter((k) => k !== key) : layout.pinned
-      // Joining a group: move the tab to sit after the group's last tab, so it
-      // lands at the group's end rather than pulling the group to it.
+      for (const k of keys) {
+        if (groupId) groupOf[k] = groupId
+        else delete groupOf[k]
+      }
+      const pinned = groupId ? layout.pinned.filter((k) => !keys.includes(k)) : layout.pinned
+      // Joining a group: move the tabs to sit after the group's last tab, so
+      // they land at the group's end rather than pulling the group to them.
       if (groupId) {
-        const members = openTabs.filter((k) => k !== key && groupOf[k] === groupId)
+        const members = openTabs.filter((k) => !keys.includes(k) && groupOf[k] === groupId)
         const last = members[members.length - 1]
         if (last) {
-          const next = openTabs.filter((k) => k !== key)
-          next.splice(next.indexOf(last) + 1, 0, key)
+          const moving = openTabs.filter((k) => keys.includes(k))
+          const next = openTabs.filter((k) => !keys.includes(k))
+          next.splice(next.indexOf(last) + 1, 0, ...moving)
           setOpenTabs(next)
         }
       }

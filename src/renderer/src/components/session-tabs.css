@@ -253,6 +253,13 @@
   min-width: 200px;
 }
 
+/* Shift-clicked to act on together: the same wash as a selected row. */
+.cr-tab--picked,
+.cr-tab--picked:hover {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
 /* --- Pinned tabs: first in the strip, as narrow as their name, and a pin
    where the × would be. A little more space after the last one sets them
    apart from the rest. */
@@ -284,13 +291,29 @@
 }
 
 /* --- Colour. A coloured tab, every tab in a group and the group's label
-   carry a line in that colour (--tab-colour, set inline from a --label-*
-   token) along their top edge. An inset shadow, so it follows the tab's
-   rounded corners, and always on top, whether or not it's the tab you're on. */
-.cr-tab--coloured,
-.cr-tab-group .cr-tab,
+   carry a stroke in that colour (--tab-colour, set inline from a --label-*
+   token): along the top edge, round both corners and down each side to the
+   bottom of the tab, an outline open only where the tab meets the header. The same on every tab, the one you're on included.
+   A real border on three sides, so the curve keeps one thickness all the
+   way round; a single top line or inset shadow thinned out at the corners. */
+.cr-tab--coloured::after,
+.cr-tab-group .cr-tab::after,
+.cr-tab-group-label::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  border: 2px solid var(--tab-colour);
+  border-bottom: none;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  pointer-events: none;
+}
+
 .cr-tab-group-label {
-  box-shadow: inset 0 2px 0 var(--tab-colour);
+  position: relative;
 }
 
 /* A group: its label, then its tabs. */
@@ -453,4 +476,41 @@
 
 .cr-session-screen[data-tab-flush-right] .session-detail-header {
   border-top-right-radius: 0;
+}
+
+/* A session's tab colour and group, on a card or list row (SessionLabel.tsx).
+   Same rounded-square swatch as a group's label on the strip. */
+.cr-session-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  max-width: 160px;
+  margin-right: var(--space-8);
+  vertical-align: 1px;
+}
+
+.cr-session-label--named {
+  margin: 0 0 0 var(--space-8);
+  padding: 1px var(--space-8);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+}
+
+.cr-session-label-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--tab-colour);
+}
+
+.cr-session-label-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--text-caption-size);
+  font-weight: var(--text-label-weight);
 }

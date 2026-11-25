@@ -1,4 +1,5 @@
 import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import SessionLabel from '../components/SessionLabel'
 import {
   attentionRank,
   wantsYou,
@@ -791,9 +792,13 @@ function SessionListRow({
               </button>
             </form>
           ) : (
-            <span className="sessions-row-title" title={branch ? `${title}\n${branch}` : title}>
-              {title}
-            </span>
+            <>
+              <SessionLabel sessionKey={session.key} part="swatch" />
+              <span className="sessions-row-title" title={branch ? `${title}\n${branch}` : title}>
+                {title}
+              </span>
+              <SessionLabel sessionKey={session.key} part="group" />
+            </>
           )}
           {!renaming && session.record?.pinned && (
             <span className="sessions-row-pinned" aria-label="Pinned">
@@ -1298,7 +1303,9 @@ export function SessionCard({
           )}
         </div>
         <div className="session-card-title" title={title}>
+          <SessionLabel sessionKey={session.key} part="swatch" />
           {title}
+          <SessionLabel sessionKey={session.key} part="group" />
           {session.record?.pinned && (
             <span className="sessions-row-pinned" aria-label="Pinned">
               <Icon name="Pin" size={12} />

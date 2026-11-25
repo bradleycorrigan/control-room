@@ -615,6 +615,10 @@
   gap: var(--space-8);
 }
 
+.sessions-row-line1 .cr-session-label {
+  margin: 0;
+}
+
 .sessions-row-line1 > svg {
   flex: 0 0 8px;
 }

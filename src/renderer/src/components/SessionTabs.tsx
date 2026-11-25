@@ -30,6 +30,8 @@ export interface SessionTabsProps {
   tabLayout: TabLayoutActions
   /** Closes every tab in a group. */
   onCloseGroup: (groupId: string) => void
+  /** Closes several tabs at once: the ones shift-clicked together. */
+  onCloseTabs: (keys: string[]) => void
   /** After Mark as unread / read, so the strip picks the change up. */
   onChanged: () => void
   /** Present only when a closed tab can come back. */
@@ -64,6 +66,7 @@ export default function SessionTabs({
   onReorder,
   tabLayout,
   onCloseGroup,
+  onCloseTabs,
   onChanged,
   onReopenClosed,
   pushToast
@@ -77,6 +80,20 @@ export default function SessionTabs({
   // menu itself (and menuSession) has closed.
   const [handoffFor, setHandoffFor] = useState<LiveSession | null>(null)
   const menuAnchor = useRef<HTMLElement | null>(null)
+  // Shift-click picks tabs to act on together: right-click one of them and
+  // the menu colours, groups, pins or closes them all. A plain click or
+  // Escape lets them go.
+  const [picked, setPicked] = useState<string[]>([])
+  useEffect(() => {
+    if (picked.length === 0) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setPicked([])
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [picked.length])
+  // A picked tab that closes drops out.
+  const pickedOpen = picked.filter((k) => tabs.some((s) => s.key === k))
   // The group editor (name, colour, ungroup, close), hung off a group's label.
   // Opened by right-clicking the label, and straight after making a group.
   const [editGroupId, setEditGroupId] = useState<string | null>(null)
@@ -174,43 +191,77 @@ export default function SessionTabs({
 
   const menuSession = tabs.find((s) => s.key === menuKey) ?? null
   const menuIndex = menuSession ? tabs.indexOf(menuSession) : -1
-  const menuPinned = menuSession ? layout.pinned.includes(menuSession.key) : false
-  const menuGroupId = menuSession ? layout.groupOf[menuSession.key] : undefined
+  // The tabs the menu acts on: every picked tab when you right-click one of
+  // them, else just the one under the pointer.
+  const menuKeys = menuSession
+    ? pickedOpen.length > 1 && pickedOpen.includes(menuSession.key)
+      ? tabs.map((s) => s.key).filter((k) => pickedOpen.includes(k))
+      : [menuSession.key]
+    : []
+  const multi = menuKeys.length > 1
+  const count = multi ? `${menuKeys.length} tabs` : 'tab'
+  const menuPinned = menuKeys.length > 0 && menuKeys.every((k) => layout.pinned.includes(k))
+  const menuGroups = new Set(menuKeys.map((k) => layout.groupOf[k]).filter(Boolean))
+  const menuGroupId =
+    menuGroups.size === 1 && menuKeys.every((k) => layout.groupOf[k])
+      ? [...menuGroups][0]
+      : undefined
+  // Done with the picked tabs once something has been done to them.
+  const forPicked = (act: () => void) => () => {
+    act()
+    if (multi) setPicked([])
+  }
   const menuItems: MenuItem[] = menuSession
     ? [
         {
-          label: menuPinned ? 'Unpin tab' : 'Pin tab',
+          label: `${menuPinned ? 'Unpin' : 'Pin'} ${count}`,
           icon: menuPinned ? 'PinOff' : 'Pin',
           group: 'layout',
-          onClick: () => tabLayout.setPinned(menuSession.key, !menuPinned)
+          onClick: forPicked(() => tabLayout.setPinned(menuKeys, !menuPinned))
         },
         ...(menuPinned
           ? []
           : [
               {
-                label: 'Add to new group',
+                label: multi ? `Group ${count}` : 'Add to new group',
                 group: 'layout',
-                onClick: () => setPendingGroupId(tabLayout.newGroup(menuSession.key))
+                onClick: forPicked(() => setPendingGroupId(tabLayout.newGroup(menuKeys)))
               },
-              ...layout.groups
-                .filter((g) => g.id !== menuGroupId)
-                .map((g) => ({
-                  label: `Add to “${groupLabel(g)}”`,
-                  group: 'layout',
-                  onClick: () => tabLayout.moveToGroup(menuSession.key, g.id)
-                })),
-              ...(menuGroupId
+              // Existing groups go in a submenu, so the menu stays the same
+              // length however many groups there are.
+              ...(layout.groups.some((g) => g.id !== menuGroupId)
+                ? [
+                    {
+                      label: multi ? `Add ${count} to group` : 'Add to group',
+                      group: 'layout',
+                      onClick: () => {},
+                      submenu: layout.groups
+                        .filter((g) => g.id !== menuGroupId)
+                        .map((g) => ({
+                          label: groupLabel(g),
+                          onClick: forPicked(() => tabLayout.moveToGroup(menuKeys, g.id))
+                        }))
+                    }
+                  ]
+                : []),
+              ...(menuGroups.size > 0
                 ? [
                     {
                       label: 'Remove from group',
                       group: 'layout',
-                      onClick: () => tabLayout.moveToGroup(menuSession.key, null)
+                      onClick: forPicked(() => tabLayout.moveToGroup(menuKeys, null))
                     }
                   ]
                 : [])
             ]),
-        { label: 'Close tab', group: 'close', onClick: () => onClose(menuSession.key) },
-        ...(tabs.length > 1
+        multi
+          ? {
+              label: `Close ${count}`,
+              group: 'close',
+              onClick: forPicked(() => onCloseTabs(menuKeys))
+            }
+          : { label: 'Close tab', group: 'close', onClick: () => onClose(menuSession.key) },
+        ...(!multi && tabs.length > 1
           ? [
               {
                 label: 'Close other tabs',
@@ -219,7 +270,7 @@ export default function SessionTabs({
               }
             ]
           : []),
-        ...(menuIndex < tabs.length - 1
+        ...(!multi && menuIndex < tabs.length - 1
           ? [
               {
                 label: 'Close tabs to the right',
@@ -228,11 +279,11 @@ export default function SessionTabs({
               }
             ]
           : []),
-        ...(onReopenClosed
+        ...(!multi && onReopenClosed
           ? [{ label: 'Reopen closed tab', group: 'close', onClick: onReopenClosed }]
           : []),
-        { ...readAction(menuSession, onChanged), group: 'session' },
-        ...(menuSession.record
+        ...(multi ? [] : [{ ...readAction(menuSession, onChanged), group: 'session' }]),
+        ...(!multi && menuSession.record
           ? [
               {
                 label: 'Write hand-off note…',
@@ -243,6 +294,11 @@ export default function SessionTabs({
           : [])
       ]
     : []
+  // Colour: for tabs outside a group (a grouped tab wears its group's colour).
+  const colourKeys = menuKeys.filter((k) => !layout.groupOf[k])
+  const colourValue = colourKeys.every((k) => layout.colour[k] === layout.colour[colourKeys[0]])
+    ? (layout.colour[colourKeys[0]] ?? null)
+    : null
 
   const editGroup = layout.groups.find((g) => g.id === editGroupId) ?? null
   const hidden = hiddenTabs(
@@ -264,6 +320,7 @@ export default function SessionTabs({
       active && 'cr-tab--active',
       unread && 'cr-tab--unread',
       pinned && 'cr-tab--pinned',
+      pickedOpen.includes(session.key) && 'cr-tab--picked',
       // A grouped tab shares its group's line; only a lone tab draws its own.
       colour && !grouped && 'cr-tab--coloured',
       dragOver === index && dragFrom !== index && 'cr-tab--drop'
@@ -295,9 +352,21 @@ export default function SessionTabs({
               : undefined
           }
           draggable={renamingKey !== session.key}
-          onClick={() => onSelect(session.key)}
+          aria-description={pickedOpen.includes(session.key) ? 'picked' : undefined}
+          onClick={(e) => {
+            if (e.shiftKey) {
+              setPicked((p) =>
+                p.includes(session.key) ? p.filter((k) => k !== session.key) : [...p, session.key]
+              )
+              return
+            }
+            setPicked([])
+            onSelect(session.key)
+          }}
           onContextMenu={(e) => {
             e.preventDefault()
+            // Right-clicking a tab you didn't pick starts over with just it.
+            if (!pickedOpen.includes(session.key)) setPicked([])
             menuAnchor.current = e.currentTarget
             setMenuKey(session.key)
           }}
@@ -514,13 +583,19 @@ export default function SessionTabs({
       >
         <MenuItems items={menuItems} onPicked={() => setMenuKey(null)} />
         {/* A grouped tab takes its group's colour; change it on the group. */}
-        {menuSession && !menuGroupId && (
+        {menuSession && colourKeys.length > 0 && (
           <>
             <div role="separator" className="cr-popover-separator" />
             <ColourSwatches
-              label="Tab colour"
-              value={layout.colour[menuSession.key] ?? null}
-              onPick={(colour) => tabLayout.setColour(menuSession.key, colour)}
+              label={multi ? `Colour for ${colourKeys.length} tabs` : 'Tab colour'}
+              value={colourValue}
+              onPick={(colour) => {
+                tabLayout.setColour(colourKeys, colour)
+                if (multi) {
+                  setPicked([])
+                  setMenuKey(null)
+                }
+              }}
             />
           </>
         )}

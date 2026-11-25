@@ -456,6 +456,11 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
       `colour=${tabs()[1]?.dataset.tabColour}`
     )
     if (document.querySelector('.cr-tab-menu')) await key('Escape')
+    // The list stays mounted under an open session, so its rows can be read here.
+    await check(
+      'a coloured tab shows its colour on its Sessions row',
+      Boolean(document.querySelector('.sessions-row [data-session-label="green"]'))
+    )
 
     await tabMenu(tabs()[1], 'Add to new group')
     const nameField = await until(() => Boolean(document.querySelector('.cr-tab-group-input')))
@@ -501,6 +506,46 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
     await click(tabs()[0])
     await click(groupLabel())
     await check('clicking it again shows them', tabs().length === 2, `tabs=${tabs().length}`)
+
+    // Several tabs at once: shift-click two, colour them, then group them.
+    await click(tabs()[0], 'left', ['shift'])
+    await click(tabs()[1], 'left', ['shift'])
+    await check(
+      'shift-click picks tabs',
+      document.querySelectorAll('.cr-tab--picked').length === 2,
+      `picked=${document.querySelectorAll('.cr-tab--picked').length}`
+    )
+    await click(tabs()[1], 'right')
+    await until(() => Boolean(menuItem('Add 2 tabs to group')))
+    const addTo = menuItem('Add 2 tabs to group')
+    await check(
+      'the menu acts on both picked tabs',
+      Boolean(addTo) && Boolean(menuItem('Close 2 tabs'))
+    )
+    await click(addTo)
+    const sub = await until(() =>
+      [...document.querySelectorAll<HTMLElement>('[data-submenu] .cr-popover-item')].some((b) =>
+        (b.textContent ?? '').includes('Review')
+      )
+    )
+    await click(
+      [...document.querySelectorAll<HTMLElement>('[data-submenu] .cr-popover-item')].find((b) =>
+        (b.textContent ?? '').includes('Review')
+      ) ?? null
+    )
+    await wait(300)
+    await check(
+      'existing groups are in a submenu, and picking one moves every picked tab',
+      sub &&
+        document.querySelectorAll('.cr-tab-group .cr-tab').length === 2 &&
+        document.querySelectorAll('.cr-tab--picked').length === 0,
+      `grouped=${document.querySelectorAll('.cr-tab-group .cr-tab').length}`
+    )
+    // Pinned tabs leave their group when pinned, so take the pinned one back out.
+    await tabMenu(tabs()[0], 'Remove from group')
+    await wait(300)
+    if (!tabs()[0]?.classList.contains('cr-tab--pinned')) await tabMenu(tabs()[0], 'Pin tab')
+    await wait(300)
 
     await click(groupLabel(), 'right')
     const ungroup = await until(() => Boolean(menuItem('Ungroup')))
