@@ -1,28 +1,6 @@
 import type { SessionStatus } from '../../../../main/store/types'
 import StatusDot from './StatusDot'
-
-// Short human words, not the raw enum values — this is the one place every
-// SessionStatus in src/main/store/types.ts gets mapped to what a person reads.
-const WORDS: Record<SessionStatus, string> = {
-  working: 'working',
-  // The pair people could not tell apart. "needs you" and "ready for you"
-  // both said "you"; the difference is that one is blocked on an answer and
-  // the other has simply finished and stopped.
-  needs_attention: 'needs an answer',
-  ready: 'your turn',
-  // See status.ts rule 9. Claude Code reports `idle` for a session sitting at
-  // its prompt, which is every session that has finished its turn — including
-  // one that just asked you a question. "Idle" is its word for the process,
-  // not a description of what you are looking at.
-  done: 'done',
-  idle: 'your turn',
-  shell: 'shell',
-  errored: 'errored',
-  stopped: 'stopped',
-  missing: 'missing',
-  unknown: 'unknown',
-  external: 'another terminal'
-}
+import { statusWord } from '../../lib/statusWords'
 
 export type BadgeVariant = 'chip' | 'bare'
 
@@ -50,7 +28,7 @@ export default function Badge({
   className = '',
   ...rest
 }: BadgeProps): React.JSX.Element {
-  const word = WORDS[status]
+  const word = statusWord(status)
 
   return (
     <span
@@ -64,4 +42,4 @@ export default function Badge({
   )
 }
 
-export { WORDS as STATUS_WORDS }
+export { STATUS_WORDS } from '../../lib/statusWords'

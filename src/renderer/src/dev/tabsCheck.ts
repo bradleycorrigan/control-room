@@ -509,6 +509,14 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
       tabs().length === 1 && groupLabel()?.getAttribute('aria-expanded') === 'false',
       `tabs=${tabs().length}`
     )
+    const foldedLabel = groupLabel()?.getAttribute('aria-label') ?? ''
+    await check(
+      'a folded group says what its hidden tabs are doing',
+      /folded: 1 (working|needs an answer|your turn|done|errored|stopped|shell|missing|unknown|another terminal)/.test(
+        foldedLabel
+      ) && Boolean(groupLabel()?.querySelector('.cr-tab-group-folded')),
+      foldedLabel
+    )
     // It slides shut rather than vanishing: still drawn, no width, out of reach.
     await wait(400)
     const folded = document.querySelector<HTMLElement>('.cr-tab--folded')

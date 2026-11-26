@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { LiveSession } from '../../../main/store/types'
+import type { LiveSession, SessionStatus } from '../../../main/store/types'
+import { statusWord } from '../lib/statusWords'
 import { Count, Icon, Popover, StatusDot, Tooltip } from './primitives'
 import { MenuItems, type MenuItem } from './MenuItems'
 import ColourSwatches from './ColourSwatches'
@@ -53,6 +54,25 @@ function tabTitle(session: LiveSession): string {
  * one you're in. Only the active tab has a live terminal; tmux keeps the
  * others running, so switching costs a reattach and nothing else.
  */
+// What a folded group's label says about the tabs it hides: the status that
+// most wants you, first. Statuses below these aren't worth a dot.
+const LOUDEST: SessionStatus[] = ['needs_attention', 'errored', 'ready', 'idle', 'working']
+
+function loudestStatus(sessions: LiveSession[]): SessionStatus | null {
+  for (const status of LOUDEST) if (sessions.some((s) => s.status === status)) return status
+  return null
+}
+
+/** "1 needs an answer, 1 working": each status word once, with how many. */
+function statusSummary(sessions: LiveSession[]): string {
+  const counts = new Map<string, number>()
+  for (const s of sessions) {
+    const word = statusWord(s.status)
+    counts.set(word, (counts.get(word) ?? 0) + 1)
+  }
+  return [...counts].map(([word, n]) => `${n} ${word}`).join(', ')
+}
+
 export default function SessionTabs({
   tabs,
   activeKey,
@@ -593,7 +613,14 @@ export default function SessionTabs({
               {renderTab(run.items[0].session, run.items[0].index)}
             </Fragment>
           )
-        const hiddenCount = run.items.filter((i) => hidden.has(i.session.key)).length
+        // Folded, the label speaks for the tabs it hides: the status that most
+        // wants you as a dot, how many there are, and the unread dot if any
+        // has something new. The words are in its tooltip and name.
+        const folded = run.items.filter((i) => hidden.has(i.session.key)).map((i) => i.session)
+        const hiddenCount = folded.length
+        const loudest = loudestStatus(folded)
+        const foldedUnread = folded.some((s) => s.unread)
+        const summary = statusSummary(folded)
         const label = groupLabel(group)
         return (
           <div
@@ -605,17 +632,21 @@ export default function SessionTabs({
           >
             <Tooltip
               label={
-                group.collapsed
-                  ? `${label}: click to show ${run.items.length === 1 ? 'its tab' : `its ${run.items.length} tabs`} · right-click to edit`
+                group.collapsed && hiddenCount > 0
+                  ? `${label}: ${summary}${foldedUnread ? ', something new' : ''} · click to show · right-click to edit`
                   : `${label}: click to fold away · right-click to edit`
               }
             >
               <button
                 type="button"
-                className="cr-tab-group-label"
+                className={
+                  foldedUnread
+                    ? 'cr-tab-group-label cr-tab-group-label--unread'
+                    : 'cr-tab-group-label'
+                }
                 data-group-id={group.id}
                 aria-expanded={!group.collapsed}
-                aria-label={`${label}, ${run.items.length} ${run.items.length === 1 ? 'tab' : 'tabs'}`}
+                aria-label={`${label}, ${run.items.length} ${run.items.length === 1 ? 'tab' : 'tabs'}${hiddenCount > 0 ? `, folded: ${summary}${foldedUnread ? ', something new' : ''}` : ''}`}
                 onClick={() => tabLayout.updateGroup(group.id, { collapsed: !group.collapsed })}
                 onContextMenu={(e) => {
                   e.preventDefault()
@@ -625,7 +656,13 @@ export default function SessionTabs({
               >
                 <span className="cr-tab-group-swatch" aria-hidden="true" />
                 {group.name.trim() && <span className="cr-tab-group-name">{group.name}</span>}
-                {hiddenCount > 0 && <Count value={hiddenCount} />}
+                {hiddenCount > 0 && (
+                  <span className="cr-tab-group-folded">
+                    {loudest && <StatusDot status={loudest} size={8} />}
+                    <Count value={hiddenCount} />
+                  </span>
+                )}
+                {foldedUnread && <span className="cr-tab-unread" aria-hidden="true" />}
               </button>
             </Tooltip>
             {run.items.map((i) => renderTab(i.session, i.index, hidden.has(i.session.key)))}

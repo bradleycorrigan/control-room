@@ -364,6 +364,19 @@
   outline-offset: -2px;
 }
 
+/* Folded: the hidden tabs' loudest status and their count, kept together. */
+.cr-tab-group-folded {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-weight: var(--text-label-weight);
+}
+
+.cr-tab-group-label--unread .cr-tab-group-folded {
+  color: var(--text);
+}
+
 /* A rounded square, so it never reads as a status dot. */
 .cr-tab-group-swatch {
   flex: none;
