@@ -66,6 +66,7 @@
   gap: var(--space-8);
   flex: 0 1 220px;
   min-width: 120px;
+  max-width: 220px;
   height: 34px;
   padding: 0 var(--space-8) 0 var(--space-12);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
@@ -75,7 +76,26 @@
   user-select: none;
   transition:
     background var(--motion-fast) var(--motion-easing),
-    color var(--motion-fast) var(--motion-easing);
+    color var(--motion-fast) var(--motion-easing),
+    max-width var(--motion-medium) var(--motion-easing),
+    min-width var(--motion-medium) var(--motion-easing),
+    padding var(--motion-medium) var(--motion-easing),
+    opacity var(--motion-fast) var(--motion-easing);
+}
+
+/* A tab in a folded group slides shut to nothing (and back open), rather
+   than vanishing; the group's line shortens with it. */
+.cr-tab--folded {
+  min-width: 0;
+  max-width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+  /* Cancels the strip's 2px gap, so a folded group's line ends at its label. */
+  margin-left: -2px;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .cr-tab:hover {
@@ -292,9 +312,8 @@
 
 /* --- Colour. A line in the tab's colour (--tab-colour, set inline from a
    --label-* token) along the bottom of the strip, on the edge the header
-   meets. Under a group it runs unbroken beneath the label and every tab.
-   The tab you're on sits over it, joined to the header, as a browser's
-   active tab breaks its group's line. */
+   meets. Under a group it runs unbroken beneath the label and every tab,
+   the one you're on included, so you can see its colour from inside it. */
 .cr-tab--coloured::after,
 .cr-tab-group::after {
   content: '';
@@ -305,14 +324,6 @@
   height: 2px;
   background: var(--tab-colour);
   pointer-events: none;
-}
-
-.cr-tab--coloured.cr-tab--active::after {
-  content: none;
-}
-
-.cr-tab-group .cr-tab--active {
-  z-index: var(--layer-raised);
 }
 
 /* A group: its label, then its tabs. */

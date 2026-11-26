@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { LiveSession } from '../../../main/store/types'
 import { Count, Icon, Popover, StatusDot, Tooltip } from './primitives'
 import { MenuItems, type MenuItem } from './MenuItems'
@@ -308,7 +308,62 @@ export default function SessionTabs({
   )
   const visibleKeys = tabs.map((s) => s.key).filter((k) => !hidden.has(k))
 
-  const renderTab = (session: LiveSession, index: number): React.JSX.Element => {
+  // Tabs glide to where they now belong when the strip's arrangement changes
+  // (grouped, ungrouped, pinned, dragged) rather than jumping there. Each
+  // render notes where every tab and group label sits; when the order or the
+  // grouping changed, each one starts from its old place and slides home.
+  // Folding a group isn't an arrangement change: its tabs' widths animate in
+  // CSS and the neighbours follow on their own.
+  const arrangement = tabs
+    .map(
+      (s) => `${s.key}:${layout.pinned.includes(s.key) ? 'p' : ''}${layout.groupOf[s.key] ?? ''}`
+    )
+    .join('|')
+  const lastArrangement = useRef(arrangement)
+  const lastPlaces = useRef(new Map<string, number>())
+  useLayoutEffect(() => {
+    const strip = stripRef.current
+    if (!strip) return
+    const items = [...strip.querySelectorAll<HTMLElement>('[data-tab-key], [data-group-id]')]
+    const id = (el: HTMLElement): string => el.dataset.tabKey ?? `group:${el.dataset.groupId}`
+    const placeOf = (el: HTMLElement): number => el.getBoundingClientRect().left + strip.scrollLeft
+    const changed = lastArrangement.current !== arrangement
+    lastArrangement.current = arrangement
+    const motion = matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 0
+      : parseFloat(getComputedStyle(strip).getPropertyValue('--motion-medium')) || 0
+    const places = new Map<string, number>()
+    for (const el of items) {
+      const now = placeOf(el)
+      places.set(id(el), now)
+      const before = lastPlaces.current.get(id(el))
+      if (!changed || motion === 0) continue
+      if (before === undefined) {
+        // New to the strip (a group's label just made): fade in where it is.
+        if (el.dataset.groupId)
+          el.animate(
+            [
+              { opacity: 0, transform: 'scale(0.92)' },
+              { opacity: 1, transform: 'none' }
+            ],
+            {
+              duration: motion,
+              easing: 'cubic-bezier(0.16, 1, 0.3, 1)'
+            }
+          )
+        continue
+      }
+      const dx = before - now
+      if (Math.abs(dx) < 1) continue
+      el.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], {
+        duration: motion * 1.4,
+        easing: 'cubic-bezier(0.16, 1, 0.3, 1)'
+      })
+    }
+    lastPlaces.current = places
+  })
+
+  const renderTab = (session: LiveSession, index: number, folded = false): React.JSX.Element => {
     const active = session.key === activeKey
     const title = tabTitle(session)
     const unread = session.unread && !active
@@ -321,6 +376,7 @@ export default function SessionTabs({
       unread && 'cr-tab--unread',
       pinned && 'cr-tab--pinned',
       pickedOpen.includes(session.key) && 'cr-tab--picked',
+      folded && 'cr-tab--folded',
       // A grouped tab shares its group's line; only a lone tab draws its own.
       colour && !grouped && 'cr-tab--coloured',
       dragOver === index && dragFrom !== index && 'cr-tab--drop'
@@ -345,6 +401,11 @@ export default function SessionTabs({
           aria-label={pinned ? `${title}, pinned` : undefined}
           tabIndex={active ? 0 : -1}
           className={className}
+          data-tab-key={session.key}
+          // Folded away in a collapsed group: still drawn, so it can slide
+          // shut and open again, but out of reach.
+          aria-hidden={folded || undefined}
+          inert={folded || undefined}
           data-tab-colour={colour ?? undefined}
           style={
             colour
@@ -567,9 +628,7 @@ export default function SessionTabs({
                 {hiddenCount > 0 && <Count value={hiddenCount} />}
               </button>
             </Tooltip>
-            {run.items
-              .filter((i) => !hidden.has(i.session.key))
-              .map((i) => renderTab(i.session, i.index))}
+            {run.items.map((i) => renderTab(i.session, i.index, hidden.has(i.session.key)))}
           </div>
         )
       })}

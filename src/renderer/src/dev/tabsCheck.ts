@@ -46,8 +46,9 @@ async function key(keyCode: string, modifiers: Modifier[] = []): Promise<void> {
 }
 
 // Session tabs only — the pinned house tab is checked on its own.
+// Not the tabs folded away in a collapsed group: drawn, but not there for you.
 const tabs = (): HTMLElement[] => [
-  ...document.querySelectorAll<HTMLElement>('.cr-tab:not(.cr-tab--home)')
+  ...document.querySelectorAll<HTMLElement>('.cr-tab:not(.cr-tab--home):not(.cr-tab--folded)')
 ]
 const homeTab = (): HTMLElement | null => document.querySelector('.cr-tab--home')
 const onList = (): boolean => homeTab()?.classList.contains('cr-tab--active') ?? false
@@ -461,6 +462,14 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
       'a coloured tab shows its colour on its Sessions row',
       Boolean(document.querySelector('.sessions-row [data-session-label="green"]'))
     )
+    // And on the strip while you're in it: the line runs under the tab you're on.
+    await click(tabs()[1])
+    await check(
+      'the tab you are on keeps its colour line',
+      tabs()[1]?.classList.contains('cr-tab--active') &&
+        getComputedStyle(tabs()[1], '::after').content !== 'none',
+      `content=${tabs()[1] ? getComputedStyle(tabs()[1], '::after').content : '-'}`
+    )
 
     await tabMenu(tabs()[1], 'Add to new group')
     const nameField = await until(() => Boolean(document.querySelector('.cr-tab-group-input')))
@@ -499,6 +508,14 @@ export async function runTabsCheck(ctx: TabsCheckContext): Promise<void> {
       'clicking a group’s label folds its tabs away',
       tabs().length === 1 && groupLabel()?.getAttribute('aria-expanded') === 'false',
       `tabs=${tabs().length}`
+    )
+    // It slides shut rather than vanishing: still drawn, no width, out of reach.
+    await wait(400)
+    const folded = document.querySelector<HTMLElement>('.cr-tab--folded')
+    await check(
+      'a folded tab slides shut to no width and is out of reach',
+      Boolean(folded) && (folded?.offsetWidth ?? 99) <= 2 && folded?.hasAttribute('inert') === true,
+      `width=${folded?.offsetWidth}`
     )
     // Pinned, then the folded tab, then round to the house: ⌘⇧] skips the folded one.
     await key(']', ['meta', 'shift'])
